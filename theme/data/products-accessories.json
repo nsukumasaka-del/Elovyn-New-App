@@ -1,0 +1,98 @@
+[
+  {
+    "title": "Premium Lock",
+    "body_html": "Lightweight yet durable lock with smart integration. Keeps your bike secure in any location.",
+    "vendor": "Maximum Security",
+    "product_type": "Lock",
+    "tags": "accessories, lock, security",
+    "variants": [
+      {
+        "price": "249.99",
+        "compare_at_price": "",
+        "sku": "PL-001",
+        "inventory_management": "shopify",
+        "inventory_quantity": 10,
+        "option1": "Black",
+        "option2": "Default Title"
+      }
+    ],
+    "images": [
+      {
+        "src": "lock.jpg",
+        "alt": "Premium Lock"
+      }
+    ]
+  },
+  {
+    "title": "Bike Lights Set",
+    "body_html": "Integrated front and rear lights with automatic brightness adjustment. USB rechargeable.",
+    "vendor": "Safety & Visibility",
+    "product_type": "Lights",
+    "tags": "accessories, lights, safety",
+    "variants": [
+      {
+        "price": "199.99",
+        "compare_at_price": "",
+        "sku": "BL-001",
+        "inventory_management": "shopify",
+        "inventory_quantity": 10,
+        "option1": "White",
+        "option2": "Default Title"
+      }
+    ],
+    "images": [
+      {
+        "src": "lights.jpg",
+        "alt": "Bike Lights Set"
+      }
+    ]
+  },
+  {
+    "title": "Carrying Bag",
+    "body_html": "Spacious and durable carrying bag designed for comfortable transport. Weather-resistant material.",
+    "vendor": "Easy Transport",
+    "product_type": "Bag",
+    "tags": "accessories, bag, transport",
+    "variants": [
+      {
+        "price": "299.99",
+        "compare_at_price": "",
+        "sku": "CB-001",
+        "inventory_management": "shopify",
+        "inventory_quantity": 10,
+        "option1": "Navy",
+        "option2": "Default Title"
+      }
+    ],
+    "images": [
+      {
+        "src": "bag.jpg",
+        "alt": "Carrying Bag"
+      }
+    ]
+  },
+  {
+    "title": "Phone Holder",
+    "body_html": "Secure phone mount with 360-degree rotation. Compatible with all phone sizes.",
+    "vendor": "Navigation Ready",
+    "product_type": "Phone Accessory",
+    "tags": "accessories, phone, mount",
+    "variants": [
+      {
+        "price": "149.99",
+        "compare_at_price": "",
+        "sku": "PH-001",
+        "inventory_management": "shopify",
+        "inventory_quantity": 10,
+        "option1": "Silver",
+        "option2": "Default Title"
+      }
+    ],
+    "images": [
+      {
+        "src": "phone-holder.jpg",
+        "alt": "Phone Holder"
+      }
+    ]
+  }
+]

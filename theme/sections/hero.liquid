@@ -1,0 +1,133 @@
+{% comment %}
+  Hero section with background image and call-to-action
+{% endcomment %}
+
+<section class="relative h-screen w-full overflow-hidden">
+  {%- comment -%} Background Image {%- endcomment -%}
+  <div class="absolute inset-0">
+    {%- if section.settings.hero_image != blank -%}
+      <img
+        src="{{ section.settings.hero_image | image_url: width: 1920 }}"
+        alt="{{ section.settings.hero_image.alt | escape }}"
+        class="w-full h-full object-cover object-top"
+        loading="eager"
+      >
+    {%- endif -%}
+    <div class="absolute inset-0 bg-gradient-to-r from-background/80 via-background/40 to-transparent"></div>
+    <div class="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent"></div>
+  </div>
+
+  {%- comment -%} Content {%- endcomment -%}
+  <div class="relative z-10 h-full flex flex-col justify-center container mx-auto px-6">
+    <div class="max-w-2xl">
+      <h3 class="text-4xl md:text-6xl lg:text-7xl font-bold leading-[0.95] tracking-tight text-foreground mb-6 font-playfair italic text-shadow">
+        {{ section.settings.heading | default: "Modern Looks." }}
+        <br>
+        {{ section.settings.subheading | default: "Timeless feel." }}
+      </h3>
+      <p class="text-lg md:text-xl text-foreground/70 mb-8">
+        {{ section.settings.description | default: "Find our latest products below." }}
+      </p>
+      <div>
+        <a 
+          href="{% if section.settings.button_link != blank %}{{ section.settings.button_link }}{% else %}#clothing{% endif %}" 
+          class="inline-flex items-center justify-center px-8 py-4 text-sm font-medium bg-foreground text-background rounded-full transition-all duration-300 hover:bg-sand hover:text-background hover:scale-105"
+        >
+          {{ section.settings.button_text | default: "Shop Now" }}
+        </a>
+      </div>
+    </div>
+
+    {%- comment -%} Bottom Features Bar {%- endcomment -%}
+    <div class="absolute bottom-8 left-6 right-6">
+      <div class="container mx-auto">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 py-6 border-t border-foreground/10">
+          {%- for block in section.blocks -%}
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center">
+                <span class="text-sm font-bold text-accent">{{ block.settings.icon }}</span>
+              </div>
+              <div>
+                <p class="text-sm font-medium text-foreground">{{ block.settings.title }}</p>
+                <p class="text-xs text-foreground/50">{{ block.settings.subtitle }}</p>
+              </div>
+            </div>
+          {%- endfor -%}
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+{% schema %}
+{
+  "name": "Hero",
+  "settings": [
+    {
+      "type": "image_picker",
+      "id": "hero_image",
+      "label": "Hero Image"
+    },
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Modern Looks."
+    },
+    {
+      "type": "text",
+      "id": "subheading",
+      "label": "Subheading",
+      "default": "Timeless feel."
+    },
+    {
+      "type": "textarea",
+      "id": "description",
+      "label": "Description",
+      "default": "Find our latest products below."
+    },
+    {
+      "type": "text",
+      "id": "button_text",
+      "label": "Button Text",
+      "default": "Shop Now"
+    },
+    {
+      "type": "url",
+      "id": "button_link",
+      "label": "Button Link"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "feature",
+      "name": "Feature",
+      "settings": [
+        {
+          "type": "text",
+          "id": "icon",
+          "label": "Icon (emoji or text)",
+          "default": "★"
+        },
+        {
+          "type": "text",
+          "id": "title",
+          "label": "Title",
+          "default": "Award-winning design"
+        },
+        {
+          "type": "text",
+          "id": "subtitle",
+          "label": "Subtitle",
+          "default": "Assembled in Europe"
+        }
+      ]
+    }
+  ],
+  "presets": [
+    {
+      "name": "Hero"
+    }
+  ]
+}
+{% endschema %}

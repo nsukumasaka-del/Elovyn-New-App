@@ -1,0 +1,125 @@
+{
+  "sections": {
+    "hero": {
+      "type": "hero",
+      "settings": {
+        "heading": "Modern Looks.",
+        "subheading": "Timeless feel.",
+        "description": "Find our latest products below.",
+        "button_text": "Shop Now",
+        "button_link": "#bikes"
+      },
+      "blocks": {
+        "feature_1": {
+          "type": "feature",
+          "settings": {
+            "icon": "★",
+            "title": "Award-winning design",
+            "subtitle": "Assembled in Europe"
+          }
+        },
+        "feature_2": {
+          "type": "feature",
+          "settings": {
+            "icon": "⚡",
+            "title": "Natural ride feel",
+            "subtitle": "AdaptivePower™ technology"
+          }
+        },
+        "feature_3": {
+          "type": "feature",
+          "settings": {
+            "icon": "🔒",
+            "title": "On guard 24/7",
+            "subtitle": "Pioneering theft detection"
+          }
+        }
+      },
+      "block_order": [
+        "feature_1",
+        "feature_2",
+        "feature_3"
+      ]
+    },
+    "press_marquee": {
+      "type": "press-marquee",
+      "settings": {},
+      "blocks": {
+        "press_1": {
+          "type": "press_item",
+          "settings": {
+            "press_name": "TECHCRUNCH",
+            "quote": "Best e-bike for commuters"
+          }
+        },
+        "press_2": {
+          "type": "press_item",
+          "settings": {
+            "press_name": "THE VERGE",
+            "quote": "It's truly a beast in all the best possible ways"
+          }
+        },
+        "press_3": {
+          "type": "press_item",
+          "settings": {
+            "press_name": "TIME",
+            "quote": "Best Inventions Award"
+          }
+        },
+        "press_4": {
+          "type": "press_item",
+          "settings": {
+            "press_name": "GQ",
+            "quote": "GQ Tech Award Best e-bike"
+          }
+        },
+        "press_5": {
+          "type": "press_item",
+          "settings": {
+            "press_name": "MASHABLE",
+            "quote": "That fork!"
+          }
+        },
+        "press_6": {
+          "type": "press_item",
+          "settings": {
+            "press_name": "WALLPAPER*",
+            "quote": "A new e-bike glides into town"
+          }
+        }
+      },
+      "block_order": ["press_1", "press_2", "press_3", "press_4", "press_5", "press_6"]
+    },
+    "clothing_showcase": {
+      "type": "clothing-showcase",
+      "settings": {
+        "heading": "Premium Clothing Collection",
+        "description": "Discover our curated selection of premium clothing for every style.",
+        "products_to_show": 4
+      }
+    },
+    "hair_products_showcase": {
+      "type": "hair-products-showcase",
+      "settings": {
+        "heading": "ENHANCE YOUR LOOK",
+        "description": "Unmatched Hair. Unstoppable Confidence.",
+        "products_to_show": 4
+      }
+    },
+    "accessories_showcase": {
+      "type": "accessories-showcase",
+      "settings": {
+        "heading": "Packed full of tech.",
+        "description": "Premium accessories to enhance your ride and experience.",
+        "products_to_show": 4
+      }
+    }
+  },
+  "order": [
+    "hero",
+    "press_marquee",
+    "clothing_showcase",
+    "hair_products_showcase",
+    "accessories_showcase"
+  ]
+}

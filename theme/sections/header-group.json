@@ -1,0 +1,49 @@
+{
+  "type": "header",
+  "name": "Header",
+  "sections": {
+    "header": {
+      "type": "header",
+      "settings": {},
+      "blocks": {
+        "nav_clothes": {
+          "type": "nav_link",
+          "settings": {
+            "label": "Clothes",
+            "url": "#clothing"
+          }
+        },
+        "nav_hair": {
+          "type": "nav_link",
+          "settings": {
+            "label": "Hair Products",
+            "url": "#bikes"
+          }
+        },
+        "nav_accessories": {
+          "type": "nav_link",
+          "settings": {
+            "label": "Accessories",
+            "url": "#features"
+          }
+        },
+        "nav_connect": {
+          "type": "nav_link",
+          "settings": {
+            "label": "Connect",
+            "url": "#community"
+          }
+        },
+        "nav_leasing": {
+          "type": "nav_link",
+          "settings": {
+            "label": "Leasing",
+            "url": "#"
+          }
+        }
+      },
+      "block_order": ["nav_clothes", "nav_hair", "nav_accessories", "nav_connect", "nav_leasing"]
+    }
+  },
+  "order": ["header"]
+}

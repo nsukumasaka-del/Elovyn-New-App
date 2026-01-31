@@ -1,0 +1,128 @@
+{% comment %}
+  Hair Products Showcase Section - Displays products from a collection
+{% endcomment %}
+
+<section id="bikes" class="py-24 md:py-32 bg-background">
+  <div class="container mx-auto px-6">
+    <div class="text-center mb-16">
+      <h2 class="text-4xl md:text-5xl lg:text-6xl font-bold text-foreground mb-4">
+        {{ section.settings.heading | default: "ENHANCE YOUR LOOK" }}
+      </h2>
+      <p class="text-lg text-foreground/60 max-w-xl mx-auto">
+        {{ section.settings.description | default: "Unmatched Hair. Unstoppable Confidence." }}
+      </p>
+    </div>
+
+    {%- if section.settings.collection != blank -%}
+      {%- assign collection = collections[section.settings.collection] -%}
+      {%- if collection != blank and collection.products.size > 0 -%}
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          {%- for product in collection.products limit: section.settings.products_to_show -%}
+            <div class="group relative bg-card rounded-3xl overflow-hidden cursor-pointer">
+              <a href="{{ product.url }}">
+                <div class="aspect-[4/5] relative overflow-hidden">
+                  {%- if product.featured_image != blank -%}
+                    {%- comment -%} Special handling for styling tool - use object-contain {%- endcomment -%}
+                    {%- if product.title contains 'Styling Tool' or product.title contains 'MESCOMB' -%}
+                      <img
+                        src="{{ product.featured_image | image_url: width: 600 }}"
+                        alt="{{ product.featured_image.alt | escape }}"
+                        class="w-full h-full object-contain transition-transform duration-700 group-hover:scale-105"
+                        loading="lazy"
+                      >
+                    {%- else -%}
+                      <img
+                        src="{{ product.featured_image | image_url: width: 600 }}"
+                        alt="{{ product.featured_image.alt | escape }}"
+                        class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                        loading="lazy"
+                      >
+                    {%- endif -%}
+                  {%- else -%}
+                    {{ 'product-1' | placeholder_svg_tag: 'w-full h-full object-cover' }}
+                  {%- endif -%}
+                  <div class="absolute inset-0 bg-gradient-to-t from-background/90 via-background/20 to-transparent"></div>
+                </div>
+                
+                <div class="absolute bottom-0 left-0 right-0 p-6">
+                  <div class="absolute inset-0 bg-background/40 backdrop-blur-sm rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  <div class="relative z-10">
+                    {%- comment -%} Use vendor as tagline {%- endcomment -%}
+                    {%- if product.vendor != blank -%}
+                      <p class="text-xs font-medium text-accent uppercase tracking-wider mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                        {{ product.vendor }}
+                      </p>
+                    {%- elsif product.metafields.custom.tagline != blank -%}
+                      <p class="text-xs font-medium text-accent uppercase tracking-wider mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                        {{ product.metafields.custom.tagline }}
+                      </p>
+                    {%- endif -%}
+                    <h3 class="text-2xl md:text-3xl font-bold text-foreground mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                      {{ product.title }}
+                    </h3>
+                    {%- if product.description != blank -%}
+                      <p class="text-sm text-foreground/60 mb-4 max-w-xs opacity-0 group-hover:opacity-100 transition-opacity duration-300 line-clamp-2">
+                        {{ product.description | strip_html | truncate: 100 }}
+                      </p>
+                    {%- endif -%}
+                    <div class="flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                      <span class="text-sm font-medium text-foreground/80">
+                        {{ product.price | money }}
+                      </span>
+                      <a href="{{ product.url }}" class="btn-hero text-xs">
+                        View
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </a>
+            </div>
+          {%- endfor -%}
+        </div>
+      {%- else -%}
+        <p class="text-center text-foreground/60">No products found in this collection.</p>
+      {%- endif -%}
+    {%- else -%}
+      <p class="text-center text-foreground/60">Please select a collection in the theme editor.</p>
+    {%- endif -%}
+  </div>
+</section>
+
+{% schema %}
+{
+  "name": "Hair Products Showcase",
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "ENHANCE YOUR LOOK"
+    },
+    {
+      "type": "textarea",
+      "id": "description",
+      "label": "Description",
+      "default": "Unmatched Hair. Unstoppable Confidence."
+    },
+    {
+      "type": "collection",
+      "id": "collection",
+      "label": "Collection"
+    },
+    {
+      "type": "range",
+      "id": "products_to_show",
+      "label": "Products to show",
+      "min": 3,
+      "max": 12,
+      "step": 1,
+      "default": 3
+    }
+  ],
+  "presets": [
+    {
+      "name": "Hair Products Showcase"
+    }
+  ]
+}
+{% endschema %}

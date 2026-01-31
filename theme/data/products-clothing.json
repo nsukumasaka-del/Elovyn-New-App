@@ -1,0 +1,126 @@
+[
+  {
+    "title": "Premium Shirt",
+    "body_html": "High‑quality cotton‑blend men's T‑shirt with a sleek athletic fit.",
+    "vendor": "Comfort & Style",
+    "product_type": "Shirt",
+    "tags": "clothing, shirt, premium, men",
+    "variants": [
+      {
+        "price": "443.21",
+        "compare_at_price": "",
+        "sku": "PSH-001",
+        "inventory_management": "shopify",
+        "inventory_quantity": 10,
+        "option1": "Navy",
+        "option2": "Default Title"
+      }
+    ],
+    "images": [
+      {
+        "src": "shirt-1.jpg",
+        "alt": "Premium Shirt"
+      }
+    ],
+    "metafields": [
+      {
+        "key": "purchase_link",
+        "value": "https://amzn.to/4sMHRqW",
+        "type": "single_line_text_field"
+      }
+    ]
+  },
+  {
+    "title": "Premium Shirt 2",
+    "body_html": "Men's Muscle Fit Textured Polo Shirt – Casual & Stylish.",
+    "vendor": "COMFORT & STYLE",
+    "product_type": "Shirt",
+    "tags": "clothing, shirt, polo, men",
+    "variants": [
+      {
+        "price": "427.42",
+        "compare_at_price": "",
+        "sku": "PSH-002",
+        "inventory_management": "shopify",
+        "inventory_quantity": 10,
+        "option1": "Blue",
+        "option2": "Default Title"
+      }
+    ],
+    "images": [
+      {
+        "src": "shirt-2.jpg",
+        "alt": "Premium Shirt 2"
+      }
+    ],
+    "metafields": [
+      {
+        "key": "purchase_link",
+        "value": "https://amzn.to/4pOb8ii",
+        "type": "single_line_text_field"
+      }
+    ]
+  },
+  {
+    "title": "Summer Dress",
+    "body_html": "Men's Vintage Print Hoodie Jogging Suit – Casual & Sporty",
+    "vendor": "Light & Breezy",
+    "product_type": "Jogging Suit",
+    "tags": "clothing, jogging suit, hoodie, men",
+    "variants": [
+      {
+        "price": "418.59",
+        "compare_at_price": "837.21",
+        "sku": "SD-001",
+        "inventory_management": "shopify",
+        "inventory_quantity": 10,
+        "option1": "White",
+        "option2": "Default Title"
+      }
+    ],
+    "images": [
+      {
+        "src": "two-piece.jpg",
+        "alt": "Summer Dress"
+      }
+    ],
+    "metafields": [
+      {
+        "key": "purchase_link",
+        "value": "https://s.click.aliexpress.com/e/_c4SAW5hN",
+        "type": "single_line_text_field"
+      }
+    ]
+  },
+  {
+    "title": "Casual Hoodie",
+    "body_html": "Soft and comfortable hoodie ideal for layering. Premium fabric with modern design.",
+    "vendor": "Cozy Essential",
+    "product_type": "Hoodie",
+    "tags": "clothing, hoodie, casual, men",
+    "variants": [
+      {
+        "price": "549.99",
+        "compare_at_price": "",
+        "sku": "CH-001",
+        "inventory_management": "shopify",
+        "inventory_quantity": 10,
+        "option1": "Grey",
+        "option2": "Default Title"
+      }
+    ],
+    "images": [
+      {
+        "src": "clothing.jpg",
+        "alt": "Casual Hoodie"
+      }
+    ],
+    "metafields": [
+      {
+        "key": "purchase_link",
+        "value": "#",
+        "type": "single_line_text_field"
+      }
+    ]
+  }
+]

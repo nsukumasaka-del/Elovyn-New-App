@@ -1,0 +1,169 @@
+{% comment %}
+  Footer section - replica of original React app
+  Default: Hair Products, Accessories, Company, Support columns; socials; © Cowboy; Privacy/Terms/Cookies
+{% endcomment %}
+
+<footer class="bg-background border-t border-border/30 pt-16 pb-8">
+  <div class="container mx-auto px-6">
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8 mb-12">
+      {%- comment -%} Logo & Socials - matches React {%- endcomment -%}
+      <div class="col-span-2 md:col-span-4 lg:col-span-1 mb-8 lg:mb-0">
+        <a href="{{ routes.root_url }}" class="inline-block">
+          {%- if section.settings.logo != blank -%}
+            <img src="{{ section.settings.logo | image_url: width: 200 }}" alt="{{ shop.name }}" style="height: 12rem; width: auto;">
+          {%- else -%}
+            <span class="text-2xl font-bold">{{ shop.name }}</span>
+          {%- endif -%}
+        </a>
+        <p class="text-sm text-foreground/50 mt-4 mb-6 max-w-xs">
+          {{ section.settings.description | default: "The ultimate connected e-bikes designed in Belgium, assembled in Europe." }}
+        </p>
+        {%- if section.settings.show_social_icons -%}
+          <div class="flex gap-4">
+            <a href="{% if settings.social_instagram_link != blank %}{{ settings.social_instagram_link }}{% else %}#{% endif %}" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Instagram</a>
+            <a href="{% if settings.social_twitter_link != blank %}{{ settings.social_twitter_link }}{% else %}#{% endif %}" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Twitter</a>
+            <a href="{% if settings.social_facebook_link != blank %}{{ settings.social_facebook_link }}{% else %}#{% endif %}" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Facebook</a>
+            <a href="{% if settings.social_youtube_link != blank %}{{ settings.social_youtube_link }}{% else %}#{% endif %}" class="text-sm text-foreground/50 hover:text-foreground transition-colors">YouTube</a>
+          </div>
+        {%- endif -%}
+      </div>
+
+      {%- comment -%} Link columns - default static content matches React; override with menus when set {%- endcomment -%}
+      {%- assign has_menus = false -%}
+      {%- for block in section.blocks -%}
+        {%- if block.type == 'link_list' and block.settings.menu != blank -%}
+          {%- assign has_menus = true -%}
+          {%- break -%}
+        {%- endif -%}
+      {%- endfor -%}
+
+      {%- if has_menus -%}
+        {%- for block in section.blocks -%}
+          {%- if block.type == 'link_list' and block.settings.menu != blank and linklists[block.settings.menu] != blank -%}
+            <div>
+              <h4 class="text-sm font-semibold text-foreground mb-4">{{ block.settings.heading }}</h4>
+              <ul class="space-y-3">
+                {%- for link in linklists[block.settings.menu].links -%}
+                  <li><a href="{{ link.url }}" class="text-sm text-foreground/50 hover:text-foreground transition-colors">{{ link.title }}</a></li>
+                {%- endfor -%}
+              </ul>
+            </div>
+          {%- endif -%}
+        {%- endfor -%}
+      {%- else -%}
+        {%- comment -%} Static default replica of React footer {%- endcomment -%}
+        <div>
+          <h4 class="text-sm font-semibold text-foreground mb-4">Hair Products</h4>
+          <ul class="space-y-3">
+            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Cruiser</a></li>
+            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Cruiser ST</a></li>
+            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Cross</a></li>
+            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Cross ST</a></li>
+            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Compare bikes</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4 class="text-sm font-semibold text-foreground mb-4">Accessories</h4>
+          <ul class="space-y-3">
+            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">All accessories</a></li>
+            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Bags</a></li>
+            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Locks</a></li>
+            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Lights</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4 class="text-sm font-semibold text-foreground mb-4">Company</h4>
+          <ul class="space-y-3">
+            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">About us</a></li>
+            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Careers</a></li>
+            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Press</a></li>
+            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Stories</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4 class="text-sm font-semibold text-foreground mb-4">Support</h4>
+          <ul class="space-y-3">
+            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Help center</a></li>
+            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Contact us</a></li>
+            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Stores</a></li>
+            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Test rides</a></li>
+          </ul>
+        </div>
+      {%- endif -%}
+    </div>
+
+    {%- comment -%} Bottom - matches React: © Cowboy. All rights reserved. | Privacy | Terms | Cookies {%- endcomment -%}
+    <div class="border-t border-border/30 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
+      <p class="text-xs text-foreground/40">
+        © {{ 'now' | date: '%Y' }} {{ section.settings.copyright_name | default: "Cowboy" }}. All rights reserved.
+      </p>
+      <div class="flex gap-6">
+        <a href="#" class="text-xs text-foreground/40 hover:text-foreground/60 transition-colors">Privacy Policy</a>
+        <a href="#" class="text-xs text-foreground/40 hover:text-foreground/60 transition-colors">Terms of Service</a>
+        <a href="#" class="text-xs text-foreground/40 hover:text-foreground/60 transition-colors">Cookie Settings</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<style>
+  .space-y-3 > * + * { margin-top: 0.75rem; }
+</style>
+
+{% schema %}
+{
+  "name": "Footer",
+  "settings": [
+    {
+      "type": "image_picker",
+      "id": "logo",
+      "label": "Logo"
+    },
+    {
+      "type": "textarea",
+      "id": "description",
+      "label": "Description",
+      "default": "The ultimate connected e-bikes designed in Belgium, assembled in Europe."
+    },
+    {
+      "type": "checkbox",
+      "id": "show_social_icons",
+      "label": "Show social links",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "copyright_name",
+      "label": "Copyright name",
+      "default": "Cowboy"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "link_list",
+      "name": "Link List",
+      "settings": [
+        {
+          "type": "text",
+          "id": "heading",
+          "label": "Heading"
+        },
+        {
+          "type": "link_list",
+          "id": "menu",
+          "label": "Menu",
+          "info": "When set, replaces the default static links with this menu."
+        }
+      ]
+    }
+  ],
+  "default": {
+    "blocks": [
+      { "type": "link_list", "settings": { "heading": "Hair Products" } },
+      { "type": "link_list", "settings": { "heading": "Accessories" } },
+      { "type": "link_list", "settings": { "heading": "Company" } },
+      { "type": "link_list", "settings": { "heading": "Support" } }
+    ]
+  }
+}
+{% endschema %}

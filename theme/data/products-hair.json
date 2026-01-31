@@ -1,0 +1,94 @@
+[
+  {
+    "title": "Bundles",
+    "body_html": "16A Raw Brazilian Virgin Human Hair Bundles, Body Wave (18–24\")",
+    "vendor": "Luxury Weave",
+    "product_type": "Hair Extensions",
+    "tags": "hair, extensions, bundles, weave",
+    "variants": [
+      {
+        "price": "1969.05",
+        "compare_at_price": "",
+        "sku": "BUN-001",
+        "inventory_management": "shopify",
+        "inventory_quantity": 10,
+        "option1": "Sand",
+        "option2": "Default Title"
+      }
+    ],
+    "images": [
+      {
+        "src": "weave-1.jpg",
+        "alt": "Bundles"
+      }
+    ],
+    "metafields": [
+      {
+        "key": "purchase_link",
+        "value": "https://amzn.to/4jGX4pm",
+        "type": "single_line_text_field"
+      }
+    ]
+  },
+  {
+    "title": "Shampoo",
+    "body_html": "Moisture Renewal Shampoo & Conditioner Set.",
+    "vendor": "Hydration Boost",
+    "product_type": "Hair Care",
+    "tags": "hair, shampoo, conditioner, care",
+    "variants": [
+      {
+        "price": "339.69",
+        "compare_at_price": "",
+        "sku": "SH-001",
+        "inventory_management": "shopify",
+        "inventory_quantity": 10,
+        "option1": "Default Title"
+      }
+    ],
+    "images": [
+      {
+        "src": "shampoo-1.jpg",
+        "alt": "Shampoo"
+      }
+    ],
+    "metafields": [
+      {
+        "key": "purchase_link",
+        "value": "https://amzn.to/4sKmpmB",
+        "type": "single_line_text_field"
+      }
+    ]
+  },
+  {
+    "title": "5‑in‑1 Hair Styling Tool",
+    "body_html": "MESCOMB 5‑in‑1 Hot Air Styler for drying, curling, and smooth styling.",
+    "vendor": "Beyond boundaries",
+    "product_type": "Hair Styling Tool",
+    "tags": "hair, styling, tool, mescomb",
+    "variants": [
+      {
+        "price": "1923.48",
+        "compare_at_price": "",
+        "sku": "HST-001",
+        "inventory_management": "shopify",
+        "inventory_quantity": 10,
+        "option1": "White",
+        "option2": "Default Title"
+      }
+    ],
+    "images": [
+      {
+        "src": "hand-bag-combo.jpg",
+        "alt": "5‑in‑1 Hair Styling Tool"
+      }
+    ],
+    "metafields": [
+      {
+        "key": "purchase_link",
+        "value": "https://amzn.to/3NqTzYg",
+        "type": "single_line_text_field"
+      }
+    ]
+  }
+]

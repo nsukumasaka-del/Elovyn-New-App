@@ -1,0 +1,102 @@
+{% comment %}
+  Press Marquee Section - Scrolling press quotes
+{% endcomment %}
+
+{% comment %}
+  Press Marquee - replica of original React app (6 items, repeated 4x for seamless loop)
+{% endcomment %}
+<section class="py-12 bg-charcoal overflow-hidden border-y border-border/20">
+  <div class="relative">
+    <div class="flex animate-marquee">
+      {%- for i in (1..4) -%}
+        {%- for block in section.blocks -%}
+          <div class="flex items-center gap-8 px-12 flex-shrink-0">
+            <span class="text-lg md:text-xl font-bold text-foreground/40 tracking-wider whitespace-nowrap">
+              {{ block.settings.press_name }}
+            </span>
+            <span class="text-sm md:text-base text-foreground/70 italic whitespace-nowrap">
+              "{{ block.settings.quote }}"
+            </span>
+            <span class="text-foreground/20">•</span>
+          </div>
+        {%- endfor -%}
+      {%- endfor -%}
+    </div>
+  </div>
+</section>
+
+{% schema %}
+{
+  "name": "Press Marquee",
+  "settings": [],
+  "blocks": [
+    {
+      "type": "press_item",
+      "name": "Press Item",
+      "settings": [
+        {
+          "type": "text",
+          "id": "press_name",
+          "label": "Press Name",
+          "default": "TECHCRUNCH"
+        },
+        {
+          "type": "text",
+          "id": "quote",
+          "label": "Quote",
+          "default": "Best e-bike for commuters"
+        }
+      ]
+    }
+  ],
+  "presets": [
+    {
+      "name": "Press Marquee",
+      "blocks": [
+        {
+          "type": "press_item",
+          "settings": {
+            "press_name": "TECHCRUNCH",
+            "quote": "Best e-bike for commuters"
+          }
+        },
+        {
+          "type": "press_item",
+          "settings": {
+            "press_name": "THE VERGE",
+            "quote": "It's truly a beast in all the best possible ways"
+          }
+        },
+        {
+          "type": "press_item",
+          "settings": {
+            "press_name": "TIME",
+            "quote": "Best Inventions Award"
+          }
+        },
+        {
+          "type": "press_item",
+          "settings": {
+            "press_name": "GQ",
+            "quote": "GQ Tech Award Best e-bike"
+          }
+        },
+        {
+          "type": "press_item",
+          "settings": {
+            "press_name": "MASHABLE",
+            "quote": "That fork!"
+          }
+        },
+        {
+          "type": "press_item",
+          "settings": {
+            "press_name": "WALLPAPER*",
+            "quote": "A new e-bike glides into town"
+          }
+        }
+      ]
+    }
+  ]
+}
+{% endschema %}

@@ -1,0 +1,130 @@
+[
+  {
+    "name": "theme_info",
+    "theme_name": "Elovyn",
+    "theme_version": "1.0.0",
+    "theme_author": "Elovyn",
+    "theme_documentation_url": "",
+    "theme_support_url": ""
+  },
+  {
+    "name": "Colors",
+    "settings": [
+      {
+        "type": "color",
+        "id": "colors_background",
+        "label": "Background",
+        "default": "#000000"
+      },
+      {
+        "type": "color",
+        "id": "colors_foreground",
+        "label": "Foreground",
+        "default": "#ffffff"
+      },
+      {
+        "type": "color",
+        "id": "colors_accent",
+        "label": "Accent",
+        "default": "#d4a574"
+      }
+    ]
+  },
+  {
+    "name": "Typography",
+    "settings": [
+      {
+        "type": "font_picker",
+        "id": "type_header_font",
+        "label": "Heading font",
+        "default": "assistant_n4"
+      },
+      {
+        "type": "font_picker",
+        "id": "type_body_font",
+        "label": "Body font",
+        "default": "inter_n4"
+      },
+      {
+        "type": "range",
+        "id": "body_scale",
+        "label": "Body text scale",
+        "min": 100,
+        "max": 130,
+        "step": 5,
+        "default": 100,
+        "unit": "%"
+      },
+      {
+        "type": "range",
+        "id": "heading_scale",
+        "label": "Heading scale",
+        "min": 100,
+        "max": 150,
+        "step": 5,
+        "default": 100,
+        "unit": "%"
+      }
+    ]
+  },
+  {
+    "name": "Layout",
+    "settings": [
+      {
+        "type": "range",
+        "id": "page_width",
+        "label": "Page width",
+        "min": 1000,
+        "max": 1600,
+        "step": 100,
+        "default": 1400,
+        "unit": "px"
+      }
+    ]
+  },
+  {
+    "name": "Social media",
+    "settings": [
+      {
+        "type": "url",
+        "id": "social_facebook_link",
+        "label": "Facebook"
+      },
+      {
+        "type": "url",
+        "id": "social_instagram_link",
+        "label": "Instagram"
+      },
+      {
+        "type": "url",
+        "id": "social_twitter_link",
+        "label": "Twitter"
+      },
+      {
+        "type": "url",
+        "id": "social_youtube_link",
+        "label": "YouTube"
+      }
+    ]
+  },
+  {
+    "name": "Favicon",
+    "settings": [
+      {
+        "type": "image_picker",
+        "id": "favicon",
+        "label": "Favicon image"
+      }
+    ]
+  },
+  {
+    "name": "Sharing",
+    "settings": [
+      {
+        "type": "image_picker",
+        "id": "share_image",
+        "label": "Default share image"
+      }
+    ]
+  }
+]
