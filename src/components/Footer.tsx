@@ -1,57 +1,31 @@
-import { motion } from "framer-motion";
 import elovynLogo from "../assets/ELOVYN THE FINAL.png";
 
-const footerLinks = {
-  "Hair Products": ["Cruiser", "Cruiser ST", "Cross", "Cross ST", "Compare bikes"],
-  "Accessories": ["All accessories", "Bags", "Locks", "Lights"],
-  "Company": ["About us", "Careers", "Press", "Stories"],
-  "Support": ["Help center", "Contact us", "Stores", "Test rides"],
+const footerGroups = {
+  Shop: ["New Arrivals", "Streetwear", "T-Shirts", "Hoodies", "Accessories", "Wigs", "Sale"],
+  Help: ["Contact", "Shipping", "Returns", "FAQ", "Size Guide"],
+  About: ["Our Story", "Community", "Terms", "Privacy"],
+  Follow: ["Instagram", "TikTok", "Facebook"],
 };
-
-const socialLinks = [
-  { name: "Instagram", href: "#" },
-  { name: "Twitter", href: "#" },
-  { name: "Facebook", href: "#" },
-  { name: "YouTube", href: "#" },
-];
 
 export const Footer = () => {
   return (
-    <footer className="bg-background border-t border-border/30 pt-16 pb-8">
-      <div className="container mx-auto px-6">
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8 mb-12">
-          {/* Logo & Socials */}
-          <div className="col-span-2 md:col-span-4 lg:col-span-1 mb-8 lg:mb-0">
-            <a href="#" className="inline-block">
-              <img src={elovynLogo} alt="Elovyn Logo" className="h-48 w-auto" />
-            </a>
-            <p className="text-sm text-foreground/50 mt-4 mb-6 max-w-xs">
-              The ultimate connected e-bikes designed in Belgium, assembled in Europe.
+    <footer className="bg-neutral-950 pt-16 text-white">
+      <div className="section-shell">
+        <div className="grid gap-10 border-b border-white/10 pb-10 md:grid-cols-2 lg:grid-cols-[1.2fr_1fr_1fr_1fr]">
+          <div>
+            <img src={elovynLogo} alt="Elovyn logo" className="h-16 w-auto" />
+            <p className="mt-5 max-w-xs text-sm text-white/60">
+              Premium streetwear and lifestyle essentials designed for effortless everyday wear.
             </p>
-            <div className="flex gap-4">
-              {socialLinks.map((link) => (
-                <a
-                  key={link.name}
-                  href={link.href}
-                  className="text-sm text-foreground/50 hover:text-foreground transition-colors"
-                >
-                  {link.name}
-                </a>
-              ))}
-            </div>
           </div>
 
-          {/* Link columns */}
-          {Object.entries(footerLinks).map(([title, links]) => (
+          {Object.entries(footerGroups).map(([title, links]) => (
             <div key={title}>
-              <h4 className="text-sm font-semibold text-foreground mb-4">{title}</h4>
-              <ul className="space-y-3">
+              <h3 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/55">{title}</h3>
+              <ul className="mt-5 space-y-3">
                 {links.map((link) => (
                   <li key={link}>
-                    <a
-                      href="#"
-                      className="text-sm text-foreground/50 hover:text-foreground transition-colors"
-                    >
+                    <a href="#" className="text-sm text-white/70 transition-colors hover:text-white">
                       {link}
                     </a>
                   </li>
@@ -61,21 +35,12 @@ export const Footer = () => {
           ))}
         </div>
 
-        {/* Bottom */}
-        <div className="border-t border-border/30 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
-          <p className="text-xs text-foreground/40">
-            © {new Date().getFullYear()} Cowboy. All rights reserved.
-          </p>
+        <div className="flex flex-col gap-4 py-6 text-sm text-white/50 sm:flex-row sm:items-center sm:justify-between">
+          <p>© {new Date().getFullYear()} Elovyn. All rights reserved.</p>
           <div className="flex gap-6">
-            <a href="#" className="text-xs text-foreground/40 hover:text-foreground/60 transition-colors">
-              Privacy Policy
-            </a>
-            <a href="#" className="text-xs text-foreground/40 hover:text-foreground/60 transition-colors">
-              Terms of Service
-            </a>
-            <a href="#" className="text-xs text-foreground/40 hover:text-foreground/60 transition-colors">
-              Cookie Settings
-            </a>
+            <a href="#" className="hover:text-white">Privacy</a>
+            <a href="#" className="hover:text-white">Terms</a>
+            <a href="#" className="hover:text-white">Shipping</a>
           </div>
         </div>
       </div>

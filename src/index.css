@@ -4,145 +4,100 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Playfair+Display:wght@400;500;600;700;800;900&display=swap');
 
-/* Cowboy-inspired Design System */
-
 @layer base {
   :root {
-    --background: 0 0% 0%;
-    --foreground: 0 0% 100%;
-
-    --card: 0 0% 6%;
-    --card-foreground: 0 0% 100%;
-
-    --popover: 0 0% 6%;
-    --popover-foreground: 0 0% 100%;
-
-    --primary: 0 0% 100%;
-    --primary-foreground: 0 0% 0%;
-
-    --secondary: 0 0% 12%;
-    --secondary-foreground: 0 0% 100%;
-
-    --muted: 0 0% 15%;
-    --muted-foreground: 0 0% 60%;
-
-    --accent: 38 30% 55%;
-    --accent-foreground: 0 0% 100%;
-
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 100%;
-
-    --border: 0 0% 20%;
-    --input: 0 0% 20%;
-    --ring: 0 0% 100%;
-
-    --radius: 0.5rem;
-
-    /* Custom Cowboy colors */
-    --sand: 38 30% 85%;
-    --sand-dark: 38 25% 65%;
-    --charcoal: 0 0% 8%;
-    --smoke: 0 0% 45%;
-
-    --sidebar-background: 0 0% 4%;
-    --sidebar-foreground: 0 0% 100%;
-    --sidebar-primary: 0 0% 100%;
-    --sidebar-primary-foreground: 0 0% 0%;
-    --sidebar-accent: 0 0% 15%;
-    --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 0 0% 20%;
-    --sidebar-ring: 0 0% 100%;
+    --background: 245 240 233;
+    --foreground: 18 18 18;
+    --card: 255 255 255;
+    --card-foreground: 18 18 18;
+    --popover: 255 255 255;
+    --popover-foreground: 18 18 18;
+    --primary: 18 18 18;
+    --primary-foreground: 255 255 255;
+    --secondary: 242 242 240;
+    --secondary-foreground: 18 18 18;
+    --muted: 242 242 240;
+    --muted-foreground: 92 92 92;
+    --accent: 52 52 52;
+    --accent-foreground: 255 255 255;
+    --destructive: 188 36 36;
+    --destructive-foreground: 255 255 255;
+    --border: 223 223 219;
+    --input: 223 223 219;
+    --ring: 18 18 18;
+    --radius: 1.25rem;
   }
 
-  .dark {
-    --background: 0 0% 0%;
-    --foreground: 0 0% 100%;
-
-    --card: 0 0% 6%;
-    --card-foreground: 0 0% 100%;
-
-    --popover: 0 0% 6%;
-    --popover-foreground: 0 0% 100%;
-
-    --primary: 0 0% 100%;
-    --primary-foreground: 0 0% 0%;
-
-    --secondary: 0 0% 12%;
-    --secondary-foreground: 0 0% 100%;
-
-    --muted: 0 0% 15%;
-    --muted-foreground: 0 0% 60%;
-
-    --accent: 38 30% 55%;
-    --accent-foreground: 0 0% 100%;
-
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 100%;
-
-    --border: 0 0% 20%;
-    --input: 0 0% 20%;
-    --ring: 0 0% 100%;
-
-    --sidebar-background: 0 0% 4%;
-    --sidebar-foreground: 0 0% 100%;
-    --sidebar-primary: 0 0% 100%;
-    --sidebar-primary-foreground: 0 0% 0%;
-    --sidebar-accent: 0 0% 15%;
-    --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 0 0% 20%;
-    --sidebar-ring: 0 0% 100%;
-  }
-}
-
-@layer base {
   * {
-    @apply border-border;
-  }
-
-  body {
-    @apply bg-background text-foreground font-sans antialiased;
+    box-sizing: border-box;
   }
 
   html {
     scroll-behavior: smooth;
+    background: rgb(var(--background));
+  }
+
+  body {
+    @apply bg-[rgb(var(--background))] text-[rgb(var(--foreground))] antialiased;
+    font-family: 'Inter', sans-serif;
+    letter-spacing: -0.02em;
+  }
+
+  img {
+    display: block;
+    max-width: 100%;
+  }
+
+  a {
+    text-decoration: none;
+  }
+
+  button,
+  input {
+    font: inherit;
   }
 }
 
 @layer components {
-  .btn-hero {
-    @apply inline-flex items-center justify-center px-6 py-3 text-sm font-medium 
-           bg-primary text-primary-foreground rounded-full
-           transition-all duration-300 ease-out
-           hover:bg-sand hover:text-background hover:scale-105;
+  .section-shell {
+    @apply mx-auto max-w-[1280px] px-4 sm:px-6 lg:px-8;
   }
 
-  .btn-outline-hero {
-    @apply inline-flex items-center justify-center px-6 py-3 text-sm font-medium 
-           bg-transparent text-foreground border border-foreground/30 rounded-full
-           transition-all duration-300 ease-out
-           hover:bg-foreground/10 hover:border-foreground/60;
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.24em] text-neutral-500;
   }
 
-  .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-foreground to-smoke;
+  .section-heading {
+    @apply text-3xl font-black tracking-[-0.06em] text-neutral-950 sm:text-4xl lg:text-6xl;
   }
 
-  .glass-card {
-    @apply bg-card/40 backdrop-blur-xl border border-border/30 rounded-2xl;
+  .section-copy {
+    @apply max-w-2xl text-base text-neutral-600 sm:text-lg;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-full bg-neutral-950 px-5 py-3 text-sm font-medium text-white transition-all duration-200 hover:bg-neutral-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center rounded-full border border-neutral-300 bg-white px-5 py-3 text-sm font-medium text-neutral-900 transition-all duration-200 hover:border-neutral-950 hover:bg-neutral-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2;
+  }
+
+  .product-card {
+    @apply relative overflow-hidden rounded-[1.4rem] border border-neutral-200 bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_16px_40px_rgba(15,15,15,0.08)];
+  }
+
+  .category-card {
+    @apply relative overflow-hidden rounded-[1.7rem] border border-neutral-200 bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_18px_38px_rgba(15,15,15,0.08)];
+  }
+
+  .announcement-bar {
+    @apply bg-neutral-950 text-white;
   }
 }
 
 @layer utilities {
-  .animation-delay-200 {
-    animation-delay: 200ms;
-  }
-  .animation-delay-400 {
-    animation-delay: 400ms;
-  }
-  .animation-delay-600 {
-    animation-delay: 600ms;
-  }
-  .text-shadow {
-    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  .text-balance {
+    text-wrap: balance;
   }
 }

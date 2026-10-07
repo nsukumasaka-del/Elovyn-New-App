@@ -1,20 +1,13 @@
 import { motion, useInView } from "framer-motion";
 import { useRef } from "react";
 
-const stats = [
-  { value: "229", suffix: "M+", label: "Kilometers ridden" },
-  { value: "37", suffix: "K+", label: "Active riders" },
-  { value: "15", suffix: "+", label: "Countries" },
-  { value: "4.8", suffix: "/5", label: "App Store rating" },
-];
-
 const communityImages = [
-  "https://cdn.shopify.com/s/files/1/1772/1703/files/index-community-0.jpg?v=1764771097",
-  "https://cdn.shopify.com/s/files/1/1772/1703/files/index-community-1.jpg?v=1764771097",
-  "https://cdn.shopify.com/s/files/1/1772/1703/files/index-community-2.jpg?v=1764771098",
-  "https://cdn.shopify.com/s/files/1/1772/1703/files/index-community-4.jpg?v=1764771097",
-  "https://cdn.shopify.com/s/files/1/1772/1703/files/index-community-5.jpg?v=1764771098",
-  "https://cdn.shopify.com/s/files/1/1772/1703/files/index-community-6.jpg?v=1764771098",
+  "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&w=900&q=80",
+  "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=900&q=80",
+  "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=900&q=80",
+  "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=900&q=80",
+  "https://images.unsplash.com/photo-1496747611176-843222e1e57c?auto=format&fit=crop&w=900&q=80",
+  "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=900&q=80",
 ];
 
 export const Community = () => {
@@ -22,61 +15,35 @@ export const Community = () => {
   const isInView = useInView(ref, { once: true, margin: "-100px" });
 
   return (
-    <section id="community" className="py-24 md:py-32 bg-background overflow-hidden">
-      <div className="container mx-auto px-6">
+    <section id="community" className="bg-[#f3efe9] py-16 sm:py-20 lg:py-24">
+      <div className="section-shell">
         <motion.div
           ref={ref}
-          initial={{ opacity: 0, y: 40 }}
+          initial={{ opacity: 0, y: 30 }}
           animate={isInView ? { opacity: 1, y: 0 } : {}}
-          transition={{ duration: 0.8 }}
-          className="text-center mb-16"
+          transition={{ duration: 0.6 }}
+          className="mb-10 text-left sm:text-center"
         >
-          <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-foreground mb-4">
-            You'll never ride alone
-          </h2>
-          <p className="text-lg text-foreground/60 max-w-2xl mx-auto">
-            Together we have ridden hundreds of millions of kilometres. Every day, 
-            that's one pedal closer to safer, cleaner cities.
+          <p className="eyebrow">Wear it your way</p>
+          <h2 className="section-heading mt-3 text-balance">Style that feels personal.</h2>
+          <p className="section-copy mt-4 sm:mx-auto">
+            A community built around confidence, individuality, and everyday essentials that move with you.
           </p>
         </motion.div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-16">
-          {stats.map((stat, index) => (
-            <motion.div
-              key={stat.label}
-              initial={{ opacity: 0, y: 30 }}
-              animate={isInView ? { opacity: 1, y: 0 } : {}}
-              transition={{ duration: 0.5, delay: index * 0.1 }}
-              className="text-center"
-            >
-              <div className="flex items-baseline justify-center">
-                <span className="text-4xl md:text-5xl font-bold text-foreground">
-                  {stat.value}
-                </span>
-                <span className="text-2xl md:text-3xl font-bold text-accent">
-                  {stat.suffix}
-                </span>
-              </div>
-              <p className="text-sm text-foreground/50 mt-2">{stat.label}</p>
-            </motion.div>
-          ))}
-        </div>
-
-        {/* Image Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <div className="grid gap-4 md:grid-cols-3">
           {communityImages.map((image, index) => (
             <motion.div
               key={index}
-              initial={{ opacity: 0, scale: 0.9 }}
+              initial={{ opacity: 0, scale: 0.98 }}
               animate={isInView ? { opacity: 1, scale: 1 } : {}}
-              transition={{ duration: 0.5, delay: 0.3 + index * 0.1 }}
-              className="aspect-square rounded-2xl overflow-hidden"
+              transition={{ duration: 0.5, delay: index * 0.08 }}
+              className={`overflow-hidden rounded-[1.6rem] border border-neutral-200 bg-white ${index === 0 || index === 2 ? "md:translate-y-8" : ""}`}
             >
               <img
                 src={image}
-                alt={`Community rider ${index + 1}`}
-                className="w-full h-full object-cover hover:scale-105 transition-transform duration-500"
+                alt={`Community style ${index + 1}`}
+                className="h-[280px] w-full object-cover transition-transform duration-500 hover:scale-105 md:h-[420px]"
               />
             </motion.div>
           ))}
