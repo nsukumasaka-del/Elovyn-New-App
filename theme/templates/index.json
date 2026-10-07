@@ -1,125 +1,559 @@
+/*
+ * ------------------------------------------------------------
+ * IMPORTANT: The contents of this file are auto-generated.
+ *
+ * This file may be updated by the Shopify admin theme editor
+ * or related systems. Please exercise caution as any changes
+ * made to this file may be overwritten.
+ * ------------------------------------------------------------
+ */
 {
   "sections": {
     "hero": {
       "type": "hero",
       "settings": {
-        "heading": "Modern Looks.",
-        "subheading": "Timeless feel.",
-        "description": "Find our latest products below.",
-        "button_text": "Shop Now",
-        "button_link": "#bikes"
-      },
+        "hero_image": "shopify://shop_images/philipp-lansing-REOoETloFqE-unsplash.jpg",
+        "hero_image_url": "https://images.unsplash.com/photo-1556821840-3a63f95609a7",
+        "hero_height": 100,
+        "hero_zoom": 105,
+        "hero_focal_point": "center",
+        "hero_zoom_mobile": 110,
+        "hero_focal_point_mobile": "center",
+        "overlay_darkness": 65,
+        "combine_headings": false,
+        "show_feature_bar": false,
+        "heading": "Built different.",
+        "subheading": "Worn daily.",
+        "description": "Premium hoodies, sweatshirts, and graphic tees — minimal design, maximum comfort.",
+        "heading_text_color": "#ffffff",
+        "description_text_color": "#ffffff",
+        "button_text": "Shop now",
+        "button_link": "/collections/all",
+        "secondary_button_text": "New releases",
+        "secondary_button_link": "/collections/all"
+      }
+    },
+    "best_sellers_home": {
+      "type": "product-grid-flex",
+      "settings": {
+        "heading": "Best sellers",
+        "subheading": "Customer favorites — shop our most-loved pieces.",
+        "collection": "all",
+        "products_to_show": 8,
+        "layout": "grid",
+        "enable_quick_add": true,
+        "quick_add_label": "Quick add",
+        "quick_add_done_label": "Added",
+        "choose_options_label": "Choose options",
+        "button_text": "View product",
+        "show_view_all": true,
+        "view_all_text": "Shop all"
+      }
+    },
+    "category_split_home": {
+      "type": "category-split",
       "blocks": {
-        "feature_1": {
-          "type": "feature",
+        "cat_m": {
+          "type": "category_panel",
           "settings": {
-            "icon": "★",
-            "title": "Award-winning design",
-            "subtitle": "Assembled in Europe"
+            "image": "shopify://shop_images/ryan-grice-VKDzcs8kD8E-unsplash.jpg",
+            "kicker": "Men",
+            "heading": "APPARREL FOR MEN",
+            "button_text": "Shop now",
+            "link": "shopify://collections/men"
           }
         },
-        "feature_2": {
-          "type": "feature",
+        "cat_w": {
+          "type": "category_panel",
           "settings": {
-            "icon": "⚡",
-            "title": "Natural ride feel",
-            "subtitle": "AdaptivePower™ technology"
-          }
-        },
-        "feature_3": {
-          "type": "feature",
-          "settings": {
-            "icon": "🔒",
-            "title": "On guard 24/7",
-            "subtitle": "Pioneering theft detection"
+            "image": "shopify://shop_images/behrouz-sasani-QJUpI_05POo-unsplash.jpg",
+            "kicker": "Women",
+            "heading": "Everyday layers",
+            "button_text": "Shop now",
+            "link": "shopify://collections/women"
           }
         }
       },
       "block_order": [
-        "feature_1",
-        "feature_2",
-        "feature_3"
-      ]
+        "cat_m",
+        "cat_w"
+      ],
+      "settings": {
+        "overlay_strength": 40
+      }
     },
-    "press_marquee": {
-      "type": "press-marquee",
-      "settings": {},
+    "featured_new_releases": {
+      "type": "product-grid-flex",
+      "settings": {
+        "heading": "New arrivals",
+        "subheading": "Latest drops — grab yours before they’re gone.",
+        "collection": "new-arrivals",
+        "products_to_show": 8,
+        "layout": "horizontal",
+        "enable_quick_add": true,
+        "quick_add_label": "Quick add",
+        "quick_add_done_label": "Added",
+        "choose_options_label": "Choose options",
+        "button_text": "View product",
+        "show_view_all": true,
+        "view_all_text": "Shop all"
+      }
+    },
+    "image_banner_flex": {
+      "type": "image-banner-flex",
+      "settings": {
+        "image": "shopify://shop_images/ali-saadat-ikLELWYbyxk-unsplash.jpg",
+        "heading": "Hoodies built to last",
+        "text": "Heavyweight fabrics and clean fits.",
+        "button_text": "Shop hoodies",
+        "button_link": "/collections/hoodies"
+      }
+    },
+    "image_banner_tees": {
+      "type": "image-banner-flex",
+      "settings": {
+        "image": "shopify://shop_images/56DC2184C733E70606D2BCCC9429CB42.jpg",
+        "heading": "Graphic tees",
+        "text": "Bold prints. Soft hand-feel.",
+        "button_text": "Shop tees",
+        "button_link": "shopify://collections/frontpage"
+      }
+    },
+    "grid_hoodies": {
+      "type": "product-grid-flex",
+      "settings": {
+        "heading": "Hoodies",
+        "subheading": "Heavyweight comfort and clean silhouettes.",
+        "collection": "hoodies",
+        "products_to_show": 8,
+        "layout": "grid",
+        "enable_quick_add": true,
+        "quick_add_label": "Quick add",
+        "quick_add_done_label": "Added",
+        "choose_options_label": "Choose options",
+        "button_text": "View product",
+        "show_view_all": true,
+        "view_all_text": "View all hoodies"
+      }
+    },
+    "grid_sweatshirts": {
+      "type": "product-grid-flex",
+      "settings": {
+        "heading": "Sweatshirts",
+        "subheading": "Everyday layers with a premium feel.",
+        "collection": "sweatshirts",
+        "products_to_show": 8,
+        "layout": "grid",
+        "enable_quick_add": true,
+        "quick_add_label": "Quick add",
+        "quick_add_done_label": "Added",
+        "choose_options_label": "Choose options",
+        "button_text": "View product",
+        "show_view_all": true,
+        "view_all_text": "View all sweatshirts"
+      }
+    },
+    "grid_graphic_tees": {
+      "type": "product-grid-flex",
+      "settings": {
+        "heading": "Graphic Tees",
+        "subheading": "Bold prints designed for self-expression.",
+        "collection": "frontpage",
+        "products_to_show": 8,
+        "layout": "grid",
+        "enable_quick_add": true,
+        "quick_add_label": "Quick add",
+        "quick_add_done_label": "Added",
+        "choose_options_label": "Choose options",
+        "button_text": "View product",
+        "show_view_all": true,
+        "view_all_text": "Shop all tees"
+      }
+    },
+    "shop_the_look_home": {
+      "type": "shop-the-look",
       "blocks": {
-        "press_1": {
-          "type": "press_item",
+        "st1": {
+          "type": "tile",
           "settings": {
-            "press_name": "TECHCRUNCH",
-            "quote": "Best e-bike for commuters"
+            "image": "shopify://shop_images/A290D71EF30E7DE97CE7111F93EF41AF.jpg",
+            "product": "",
+            "link": "",
+            "caption": "Layer up"
           }
         },
-        "press_2": {
-          "type": "press_item",
+        "st2": {
+          "type": "tile",
           "settings": {
-            "press_name": "THE VERGE",
-            "quote": "It's truly a beast in all the best possible ways"
+            "image": "shopify://shop_images/90E1113E500248F742FB22FC110F7877.jpg",
+            "product": "",
+            "link": "",
+            "caption": "Core fit"
           }
         },
-        "press_3": {
-          "type": "press_item",
+        "st3": {
+          "type": "tile",
           "settings": {
-            "press_name": "TIME",
-            "quote": "Best Inventions Award"
+            "image": "shopify://shop_images/8976D4F4E6654B7F76A8DC9E91C2A1B8.jpg",
+            "product": "",
+            "link": "",
+            "caption": "Street"
           }
         },
-        "press_4": {
-          "type": "press_item",
+        "st4": {
+          "type": "tile",
           "settings": {
-            "press_name": "GQ",
-            "quote": "GQ Tech Award Best e-bike"
+            "image": "shopify://shop_images/7B837DCA7EF03C7BCCEE6C8A5E211F57.jpg",
+            "product": "",
+            "link": "",
+            "caption": "Rest day"
           }
         },
-        "press_5": {
-          "type": "press_item",
+        "st5": {
+          "type": "tile",
           "settings": {
-            "press_name": "MASHABLE",
-            "quote": "That fork!"
+            "image": "shopify://shop_images/hoodie-front-grey.jpg",
+            "product": "",
+            "link": "",
+            "caption": "Training"
           }
         },
-        "press_6": {
-          "type": "press_item",
+        "st6": {
+          "type": "tile",
           "settings": {
-            "press_name": "WALLPAPER*",
-            "quote": "A new e-bike glides into town"
+            "image": "shopify://shop_images/hoodie-front-black.jpg",
+            "product": "",
+            "link": "",
+            "caption": "Recovery"
           }
         }
       },
-      "block_order": ["press_1", "press_2", "press_3", "press_4", "press_5", "press_6"]
-    },
-    "clothing_showcase": {
-      "type": "clothing-showcase",
+      "block_order": [
+        "st1",
+        "st2",
+        "st3",
+        "st4",
+        "st5",
+        "st6"
+      ],
       "settings": {
-        "heading": "Premium Clothing Collection",
-        "description": "Discover our curated selection of premium clothing for every style.",
-        "products_to_show": 4
+        "heading": "Shop the look",
+        "subheading": "Tag us — we feature real customers.",
+        "tile_cta_text": "Shop now"
       }
     },
-    "hair_products_showcase": {
-      "type": "hair-products-showcase",
+    "trust_marquee": {
+      "type": "press-marquee",
+      "blocks": {
+        "t1": {
+          "type": "press_item",
+          "settings": {
+            "press_name": "PREMIUM COMFORT",
+            "quote": "Designed for everyday wear"
+          }
+        },
+        "t2": {
+          "type": "press_item",
+          "settings": {
+            "press_name": "STREETWEAR",
+            "quote": "Style that stands out"
+          }
+        },
+        "t3": {
+          "type": "press_item",
+          "settings": {
+            "press_name": "CUSTOM TEES",
+            "quote": "Express yourself"
+          }
+        },
+        "t4": {
+          "type": "press_item",
+          "settings": {
+            "press_name": "CURATED",
+            "quote": "Handpicked for you"
+          }
+        },
+        "t5": {
+          "type": "press_item",
+          "settings": {
+            "press_name": "FAST SHIPPING",
+            "quote": "Delivered to your door"
+          }
+        },
+        "t6": {
+          "type": "press_item",
+          "settings": {
+            "press_name": "BEST SELLERS",
+            "quote": "Loved by thousands"
+          }
+        }
+      },
+      "block_order": [
+        "t1",
+        "t2",
+        "t3",
+        "t4",
+        "t5",
+        "t6"
+      ],
+      "settings": {}
+    },
+    "collection_grid_shop_WdircH": {
+      "type": "collection-grid-shop",
+      "blocks": {
+        "product_link_KqWxni": {
+          "type": "product_link",
+          "settings": {
+            "product": "",
+            "url": "",
+            "button_text": ""
+          }
+        },
+        "product_link_WPdQrD": {
+          "type": "product_link",
+          "settings": {
+            "product": "",
+            "url": "",
+            "button_text": ""
+          }
+        },
+        "product_link_iWb7qw": {
+          "type": "product_link",
+          "settings": {
+            "product": "",
+            "url": "",
+            "button_text": ""
+          }
+        },
+        "product_link_XFHAUk": {
+          "type": "product_link",
+          "settings": {
+            "product": "",
+            "url": "",
+            "button_text": ""
+          }
+        },
+        "product_link_DQC74D": {
+          "type": "product_link",
       "settings": {
-        "heading": "ENHANCE YOUR LOOK",
-        "description": "Unmatched Hair. Unstoppable Confidence.",
-        "products_to_show": 4
+            "product": "",
+            "url": "",
+            "button_text": ""
+          }
+        },
+        "product_link_PtqAai": {
+          "type": "product_link",
+      "settings": {
+            "product": "",
+            "url": "",
+            "button_text": ""
+          }
+        },
+        "product_link_XMUgjF": {
+          "type": "product_link",
+      "settings": {
+            "product": "",
+            "url": "",
+            "button_text": ""
+          }
+        },
+        "product_link_rUG4Ei": {
+          "type": "product_link",
+          "settings": {
+            "product": "",
+            "url": "",
+            "button_text": ""
+          }
+        }
+      },
+      "block_order": [
+        "product_link_KqWxni",
+        "product_link_WPdQrD",
+        "product_link_iWb7qw",
+        "product_link_XFHAUk",
+        "product_link_DQC74D",
+        "product_link_PtqAai",
+        "product_link_XMUgjF",
+        "product_link_rUG4Ei"
+      ],
+      "disabled": true,
+      "name": "Sponsored picks",
+      "settings": {
+        "section_id": "shop",
+        "collection": "",
+        "products_to_show": 8,
+        "heading": "Sponsored picks",
+        "description": "Handpicked favorites. Click through for the best deals.",
+        "button_text": "View on Amazon",
+        "athletic_fit_tee_amazon_url": "",
+        "coofandy_button_amazon_url": "",
+        "extra_link_1_contains": "",
+        "extra_link_1_url": "",
+        "extra_link_2_contains": "",
+        "extra_link_2_url": "",
+        "extra_link_3_contains": "",
+        "extra_link_3_url": "",
+        "show_view_all": true,
+        "view_all_text": "View all"
       }
     },
-    "accessories_showcase": {
-      "type": "accessories-showcase",
+    "testimonials_home": {
+      "type": "testimonials",
+      "blocks": {
+        "t1": {
+          "type": "testimonial",
+          "settings": {
+            "quote": "Great quality and fit. Shipping was smooth and support was fast.",
+            "name": "Verified Customer",
+            "meta": "South Africa"
+          }
+        },
+        "t2": {
+          "type": "testimonial",
+          "settings": {
+            "quote": "The hoodie material feels premium and the print quality is excellent.",
+            "name": "Verified Customer",
+            "meta": "Cape Town"
+          }
+        },
+        "t3": {
+          "type": "testimonial",
+          "settings": {
+            "quote": "Easy checkout and quick updates after I placed my order.",
+            "name": "Verified Customer",
+            "meta": "Johannesburg"
+          }
+        }
+      },
+      "block_order": [
+        "t1",
+        "t2",
+        "t3"
+      ],
       "settings": {
-        "heading": "Packed full of tech.",
-        "description": "Premium accessories to enhance your ride and experience.",
-        "products_to_show": 4
+        "heading": "What customers say",
+        "subheading": "Trusted by shoppers who value quality streetwear."
+      }
+    },
+    "faq_home": {
+      "type": "faq-accordion",
+      "blocks": {
+        "f1": {
+          "type": "faq",
+          "settings": {
+            "question": "How long does shipping take?",
+            "answer": "Processing time is 1–3 business days. Delivery usually takes 7–12 business days."
+          }
+        },
+        "f2": {
+          "type": "faq",
+          "settings": {
+            "question": "What is your return window?",
+            "answer": "You can request a return within 14 days of receiving your order, provided items are unused and in original packaging."
+          }
+        },
+        "f3": {
+          "type": "faq",
+          "settings": {
+            "question": "Which payment options are supported?",
+            "answer": "Checkout supports trusted methods including PayFast, PayPal, and Stripe."
+          }
+        }
+      },
+      "block_order": [
+        "f1",
+        "f2",
+        "f3"
+      ],
+      "settings": {
+        "heading": "Frequently asked questions",
+        "subheading": "Quick answers before you buy."
+      }
+    },
+    "cta_home": {
+      "type": "cta-flex",
+      "settings": {
+        "heading": "Join the list",
+        "text": "Get early access to drops and exclusive offers.",
+        "button_text": "Shop now",
+        "button_link": "/collections/all"
+      }
+    },
+    "popup_newsletter": {
+      "type": "popup-newsletter",
+      "settings": {
+        "enable_popup": false,
+        "heading": "GET 15% OFF",
+        "subheading": "Subscribe for exclusive drops and your first order discount.",
+        "placeholder": "Enter your email",
+        "button_text": "SUBSCRIBE",
+        "privacy_text": "We respect your privacy. Unsubscribe anytime."
+      }
+    },
+    "top_trust_minimal": {
+      "type": "trust-minimal",
+      "blocks": {},
+      "settings": {
+        "show_top_bar": true,
+        "top_bar_text": "Free shipping over R500 • Easy 14-day returns • Secure checkout",
+        "show_main": false,
+        "heading": "Why shop with us",
+        "subheading": "Fast shipping, easy returns, and secure checkout on every order."
+      }
+    },
+    "trust_minimal_main": {
+      "type": "trust-minimal",
+      "blocks": {
+        "tm1": { "type": "column", "settings": { "title": "Fast dispatch", "description": "Orders ship within 1–3 business days." } },
+        "tm2": { "type": "column", "settings": { "title": "Easy returns", "description": "Hassle-free returns within 14 days." } },
+        "tm3": { "type": "column", "settings": { "title": "Secure checkout", "description": "Encrypted payments you can trust." } },
+        "tm4": { "type": "column", "settings": { "title": "Quality first", "description": "Curated pieces built for everyday wear." } }
+      },
+      "block_order": ["tm1", "tm2", "tm3", "tm4"],
+      "settings": {
+        "show_top_bar": false,
+        "top_bar_text": "Free shipping over R500 • Easy 14-day returns • Secure checkout",
+        "show_main": true,
+        "heading": "Why shop with us",
+        "subheading": "Fast shipping, easy returns, and secure checkout on every order."
+      }
+    },
+    "trust_minimal_main": {
+      "type": "trust-minimal",
+      "blocks": {
+        "tm1": { "type": "column", "settings": { "title": "Fast dispatch", "description": "Orders ship within 1–3 business days." } },
+        "tm2": { "type": "column", "settings": { "title": "Easy returns", "description": "Hassle-free returns within 14 days." } },
+        "tm3": { "type": "column", "settings": { "title": "Secure checkout", "description": "Encrypted payments you can trust." } },
+        "tm4": { "type": "column", "settings": { "title": "Quality first", "description": "Curated pieces built for everyday wear." } }
+      },
+      "block_order": ["tm1", "tm2", "tm3", "tm4"],
+      "settings": {
+        "show_top_bar": false,
+        "top_bar_text": "Free shipping over R500 • Easy 14-day returns • Secure checkout",
+        "show_main": true,
+        "heading": "Why shop with us",
+        "subheading": "Fast shipping, easy returns, and secure checkout on every order."
       }
     }
   },
   "order": [
+    "top_trust_minimal",
     "hero",
-    "press_marquee",
-    "clothing_showcase",
-    "hair_products_showcase",
-    "accessories_showcase"
+    "best_sellers_home",
+    "featured_new_releases",
+    "trust_minimal_main",
+    "category_split_home",
+    "image_banner_flex",
+    "image_banner_tees",
+    "grid_hoodies",
+    "grid_sweatshirts",
+    "grid_graphic_tees",
+    "shop_the_look_home",
+    "trust_marquee",
+    "collection_grid_shop_WdircH",
+    "testimonials_home",
+    "faq_home",
+    "cta_home",
+    "popup_newsletter"
   ]
 }

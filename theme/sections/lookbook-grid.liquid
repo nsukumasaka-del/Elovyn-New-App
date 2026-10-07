@@ -1,0 +1,54 @@
+<section class="elite-lookbook section-spacing">
+  <div class="container">
+    <header class="elite-lookbook__head">
+      <h2>{{ section.settings.heading | default: "Lookbook" }}</h2>
+      <p>{{ section.settings.subheading | default: "Lifestyle visuals to build social proof." }}</p>
+    </header>
+    <div class="elite-lookbook__grid">
+      {% for block in section.blocks %}
+        <a href="{{ block.settings.link | default: '/collections/all' }}" class="elite-lookbook__tile" {{ block.shopify_attributes }}>
+          {% if block.settings.image != blank %}
+            <img src="{{ block.settings.image | image_url: width: 1200 }}" alt="{{ block.settings.caption | escape }}" loading="lazy" width="{{ block.settings.image.width }}" height="{{ block.settings.image.height }}">
+          {% else %}
+            <img src="https://images.unsplash.com/photo-1517832207067-4db24a2ae47c?auto=format&fit=crop&w=1200&q=80" alt="{{ block.settings.caption | escape }}" loading="lazy" width="1200" height="1200">
+          {% endif %}
+          {% if block.settings.caption != blank %}<span class="elite-lookbook__caption">{{ block.settings.caption }}</span>{% endif %}
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+<style>
+  .elite-lookbook__head{text-align:center;margin:0 0 1rem}
+  .elite-lookbook__head h2{margin:0 0 .35rem;text-transform:uppercase;font-size:clamp(1.4rem,3.2vw,2.2rem)}
+  .elite-lookbook__head p{margin:0;color:rgba(0,0,0,.65)}
+  .elite-lookbook__grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem}
+  @media(min-width:980px){.elite-lookbook__grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:1rem}}
+  .elite-lookbook__tile{position:relative;display:block;overflow:hidden;aspect-ratio:1/1;text-decoration:none}
+  .elite-lookbook__tile img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .35s ease}
+  .elite-lookbook__tile:hover img{transform:scale(1.03)}
+  .elite-lookbook__caption{position:absolute;left:.55rem;bottom:.55rem;background:rgba(0,0,0,.52);color:#fff;padding:.3rem .45rem;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase}
+</style>
+
+{% schema %}
+{
+  "name": "Lookbook grid",
+  "settings": [
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Lookbook" },
+    { "type": "text", "id": "subheading", "label": "Subheading", "default": "Lifestyle visuals to build social proof." }
+  ],
+  "blocks": [
+    {
+      "type": "tile",
+      "name": "Tile",
+      "settings": [
+        { "type": "image_picker", "id": "image", "label": "Image" },
+        { "type": "text", "id": "caption", "label": "Caption", "default": "Shop now" },
+        { "type": "url", "id": "link", "label": "Link" }
+      ]
+    }
+  ],
+  "max_blocks": 12,
+  "presets": [{ "name": "Lookbook grid", "blocks": [{ "type": "tile" }, { "type": "tile" }, { "type": "tile" }, { "type": "tile" }] }]
+}
+{% endschema %}

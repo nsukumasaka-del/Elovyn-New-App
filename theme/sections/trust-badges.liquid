@@ -1,0 +1,37 @@
+<section class="elite-trust-badges section-spacing">
+  <div class="container">
+    <div class="elite-trust-badges__row">
+      {% for block in section.blocks %}
+        <div class="elite-trust-badges__item" {{ block.shopify_attributes }}>
+          <span class="elite-trust-badges__icon">{{ block.settings.icon | default: "✓" }}</span>
+          <span class="elite-trust-badges__text">{{ block.settings.text | default: "Trusted quality" }}</span>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+<style>
+  .elite-trust-badges__row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem}
+  @media(min-width:980px){.elite-trust-badges__row{grid-template-columns:repeat(4,minmax(0,1fr));gap:1rem}}
+  .elite-trust-badges__item{display:flex;align-items:center;gap:.5rem;padding:.75rem;border:1px solid rgba(0,0,0,.12);background:#fff}
+  .elite-trust-badges__icon{display:inline-flex;align-items:center;justify-content:center;width:1.5rem;height:1.5rem;font-weight:700}
+  .elite-trust-badges__text{font-size:.84rem;font-weight:600}
+</style>
+
+{% schema %}
+{
+  "name": "Trust badges",
+  "blocks": [
+    {
+      "type": "badge",
+      "name": "Badge",
+      "settings": [
+        { "type": "text", "id": "icon", "label": "Icon", "default": "✓" },
+        { "type": "text", "id": "text", "label": "Text", "default": "Secure checkout" }
+      ]
+    }
+  ],
+  "max_blocks": 8,
+  "presets": [{ "name": "Trust badges", "blocks": [{ "type": "badge" }, { "type": "badge" }, { "type": "badge" }, { "type": "badge" }] }]
+}
+{% endschema %}

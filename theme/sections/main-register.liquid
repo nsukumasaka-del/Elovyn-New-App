@@ -1,0 +1,104 @@
+{% comment %}
+  Customer register (sign up) page section.
+{% endcomment %}
+
+<section class="py-16 md:py-24 bg-background min-h-[60vh]">
+  <div class="container mx-auto px-6">
+    <div class="max-w-md mx-auto">
+      <h1 class="text-3xl md:text-4xl font-bold text-foreground mb-2">
+        {{ 'customers.register.title' | t | default: 'Create account' }}
+      </h1>
+      <p class="text-foreground/60 mb-8">
+        {{ 'customers.register.subtext' | t | default: 'Create your account to track orders and save your details.' }}
+      </p>
+
+      {% form 'create_customer', return_to: routes.account_url, class: 'space-y-5' %}
+        {% if form.errors %}
+          <div class="rounded-xl border border-red-500/50 bg-red-500/10 p-4 text-red-200 text-sm" role="alert">
+            {{ form.errors | default_errors }}
+          </div>
+        {% endif %}
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label for="RegisterFirstName" class="block text-sm font-medium text-foreground mb-2">
+              {{ 'customers.register.first_name' | t | default: 'First name' }}
+            </label>
+            <input
+              type="text"
+              name="customer[first_name]"
+              id="RegisterFirstName"
+              value="{{ form.first_name }}"
+              autocomplete="given-name"
+              class="w-full px-4 py-3 rounded-xl border border-border bg-card text-foreground placeholder-foreground/40 focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+              placeholder="{{ 'customers.register.first_name' | t | default: 'First name' }}"
+            >
+          </div>
+          <div>
+            <label for="RegisterLastName" class="block text-sm font-medium text-foreground mb-2">
+              {{ 'customers.register.last_name' | t | default: 'Last name' }}
+            </label>
+            <input
+              type="text"
+              name="customer[last_name]"
+              id="RegisterLastName"
+              value="{{ form.last_name }}"
+              autocomplete="family-name"
+              class="w-full px-4 py-3 rounded-xl border border-border bg-card text-foreground placeholder-foreground/40 focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+              placeholder="{{ 'customers.register.last_name' | t | default: 'Last name' }}"
+            >
+          </div>
+        </div>
+
+        <div>
+          <label for="RegisterEmail" class="block text-sm font-medium text-foreground mb-2">
+            {{ 'customers.register.email' | t | default: 'Email' }}
+          </label>
+          <input
+            type="email"
+            name="customer[email]"
+            id="RegisterEmail"
+            value="{{ form.email }}"
+            autocomplete="email"
+            required
+            class="w-full px-4 py-3 rounded-xl border border-border bg-card text-foreground placeholder-foreground/40 focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+            placeholder="email@example.com"
+          >
+        </div>
+
+        <div>
+          <label for="RegisterPassword" class="block text-sm font-medium text-foreground mb-2">
+            {{ 'customers.register.password' | t | default: 'Password' }}
+          </label>
+          <input
+            type="password"
+            name="customer[password]"
+            id="RegisterPassword"
+            autocomplete="new-password"
+            required
+            class="w-full px-4 py-3 rounded-xl border border-border bg-card text-foreground placeholder-foreground/40 focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+            placeholder="••••••••"
+          >
+        </div>
+
+        <button type="submit" class="w-full py-3.5 px-6 rounded-xl bg-accent text-accent-foreground font-semibold hover:opacity-90 transition-opacity">
+          {{ 'customers.register.submit' | t | default: 'Create account' }}
+        </button>
+      {% endform %}
+
+      <p class="mt-6 text-center text-foreground/60 text-sm">
+        {{ 'customers.login.have_account' | t | default: 'Already have an account?' }}
+        <a href="{{ routes.account_login_url }}" class="text-accent hover:underline font-medium">
+          {{ 'customers.login.sign_in' | t | default: 'Sign in' }}
+        </a>
+      </p>
+    </div>
+  </div>
+</section>
+
+{% schema %}
+{
+  "name": "Register",
+  "settings": []
+}
+{% endschema %}

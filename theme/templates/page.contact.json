@@ -1,0 +1,41 @@
+/*
+ * ------------------------------------------------------------
+ * IMPORTANT: The contents of this file are auto-generated.
+ *
+ * This file may be updated by the Shopify admin theme editor
+ * or related systems. Please exercise caution as any changes
+ * made to this file may be overwritten.
+ * ------------------------------------------------------------
+ */
+{
+  "layout": "theme",
+  "sections": {
+    "contact_page": {
+      "type": "contact",
+      "settings": {
+        "heading": "Contact us",
+        "subheading": "For questions about hoodies, graphic shirts, and sweatshirts, reach our Elovyn support team and we'll get back to you within 24–48 hours.",
+        "show_form": true,
+        "contact_email": "elovyn.shop@gmail.com",
+        "contact_phone": "066 1151 202",
+        "address_line_1": "South Africa",
+        "address_line_2": "",
+        "city_country": "South Africa",
+        "hours_text": "Monday – Friday: 9am – 5pm\nResponse time: 24–48 hours\nTimezone: South Africa (SAST)",
+        "show_social": true
+      },
+      "blocks": {
+        "link_faq": {
+          "type": "link",
+          "settings": {
+            "label": "Help center",
+            "text": "FAQ & Returns",
+            "url": "/pages/faq"
+          }
+        }
+      },
+      "block_order": ["link_faq"]
+    }
+  },
+  "order": ["contact_page"]
+}

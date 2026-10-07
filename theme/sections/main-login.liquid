@@ -1,0 +1,83 @@
+{% comment %}
+  Customer login page section.
+{% endcomment %}
+
+<section class="py-16 md:py-24 bg-background min-h-[60vh]">
+  <div class="container mx-auto px-6">
+    <div class="max-w-md mx-auto">
+      <h1 class="text-3xl md:text-4xl font-bold text-foreground mb-2">
+        {{ 'customers.login.title' | t | default: 'Sign in' }}
+      </h1>
+      <p class="text-foreground/60 mb-8">
+        {{ 'customers.login.subtext' | t | default: 'Sign in to your account to manage orders and details.' }}
+      </p>
+
+      {% form 'customer_login', class: 'space-y-5' %}
+        {% if form.errors %}
+          <div class="rounded-xl border border-red-500/50 bg-red-500/10 p-4 text-red-200 text-sm" role="alert">
+            {{ form.errors | default_errors }}
+          </div>
+        {% endif %}
+
+        <div>
+          <label for="CustomerEmail" class="block text-sm font-medium text-foreground mb-2">
+            {{ 'customers.login.email' | t | default: 'Email' }}
+          </label>
+          <input
+            type="email"
+            name="customer[email]"
+            id="CustomerEmail"
+            value="{{ form.email }}"
+            autocomplete="email"
+            required
+            class="w-full px-4 py-3 rounded-xl border border-border bg-card text-foreground placeholder-foreground/40 focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+            placeholder="email@example.com"
+          >
+        </div>
+
+        <div>
+          <label for="CustomerPassword" class="block text-sm font-medium text-foreground mb-2">
+            {{ 'customers.login.password' | t | default: 'Password' }}
+          </label>
+          <input
+            type="password"
+            name="customer[password]"
+            id="CustomerPassword"
+            autocomplete="current-password"
+            required
+            class="w-full px-4 py-3 rounded-xl border border-border bg-card text-foreground placeholder-foreground/40 focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+            placeholder="••••••••"
+          >
+        </div>
+
+        <div class="flex items-center justify-between">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" name="customer[remember_me]" value="1" class="rounded border-border bg-card text-accent focus:ring-accent">
+            <span class="text-sm text-foreground/80">{{ 'customers.login.remember_me' | t | default: 'Remember me' }}</span>
+          </label>
+          <a href="{{ routes.account_recover_url }}" class="text-sm text-accent hover:underline">
+            {{ 'customers.login.forgot_password' | t | default: 'Forgot your password?' }}
+          </a>
+        </div>
+
+        <button type="submit" class="w-full py-3.5 px-6 rounded-xl bg-accent text-accent-foreground font-semibold hover:opacity-90 transition-opacity">
+          {{ 'customers.login.sign_in' | t | default: 'Sign in' }}
+        </button>
+      {% endform %}
+
+      <p class="mt-6 text-center text-foreground/60 text-sm">
+        {{ 'customers.login.no_account' | t | default: "Don't have an account?" }}
+        <a href="{{ routes.account_register_url }}" class="text-accent hover:underline font-medium">
+          {{ 'customers.register.title' | t | default: 'Create account' }}
+        </a>
+      </p>
+    </div>
+  </div>
+</section>
+
+{% schema %}
+{
+  "name": "Login",
+  "settings": []
+}
+{% endschema %}

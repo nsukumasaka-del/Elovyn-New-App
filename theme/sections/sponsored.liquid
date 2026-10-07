@@ -1,0 +1,297 @@
+{% comment %}
+  Sponsored section – block-based. Each block is one sponsored product with:
+  Select Product, Affiliate Link, Button Label. Settings appear in theme editor sidebar when you click a block.
+{% endcomment %}
+
+<section class="sponsored-section py-16 md:py-24 bg-background" {{ section.shopify_attributes }}>
+  <div class="container mx-auto px-6">
+    {% if section.settings.heading != blank %}
+      <header class="text-center mb-12 md:mb-16">
+        <h2 class="text-4xl md:text-5xl lg:text-6xl font-bold text-foreground mb-4">
+          {{ section.settings.heading }}
+        </h2>
+        {% if section.settings.description != blank %}
+          <div class="text-lg text-foreground/60 max-w-2xl mx-auto">
+            {{ section.settings.description }}
+          </div>
+        {% endif %}
+      </header>
+    {% endif %}
+
+    {% if section.blocks.size > 0 %}
+      <div class="sponsored-grid">
+        {% for block in section.blocks %}
+          {%- assign product = block.settings.product -%}
+          {%- if product == blank and block.settings.product != blank -%}
+            {%- assign product = all_products[block.settings.product] -%}
+          {%- endif -%}
+
+          {% if product != blank %}
+            <article class="sponsored-card" {{ block.shopify_attributes }}>
+              <span class="sponsored-card__badge" aria-hidden="true">{{ 'general.amazon.sponsored' | t | default: 'Sponsored' }}</span>
+              <div class="sponsored-card__media">
+                {% if block.settings.affiliate_url != blank %}
+                  <a href="{{ block.settings.affiliate_url }}" target="_blank" rel="noopener noreferrer" class="sponsored-card__link">
+                    {% if product.featured_image != blank %}
+                      <img src="{{ product.featured_image | image_url: width: 600 }}" alt="{{ product.featured_image.alt | escape }}" class="sponsored-card__img" loading="lazy" width="300" height="375">
+                    {% else %}
+                      {{ 'product-1' | placeholder_svg_tag: 'sponsored-card__img' }}
+                    {% endif %}
+                  </a>
+                {% else %}
+                  <a href="{{ product.url }}" class="sponsored-card__link">
+                    {% if product.featured_image != blank %}
+                      <img src="{{ product.featured_image | image_url: width: 600 }}" alt="{{ product.featured_image.alt | escape }}" class="sponsored-card__img" loading="lazy" width="300" height="375">
+                    {% else %}
+                      {{ 'product-1' | placeholder_svg_tag: 'sponsored-card__img' }}
+                    {% endif %}
+                  </a>
+                {% endif %}
+              </div>
+              <div class="sponsored-card__body">
+                {% if product.vendor != blank %}
+                  <p class="sponsored-card__vendor">{{ product.vendor }}</p>
+                {% endif %}
+                {% if block.settings.affiliate_url != blank %}
+                  <a href="{{ block.settings.affiliate_url }}" target="_blank" rel="noopener noreferrer" class="sponsored-card__title" title="{{ product.title | escape }}">{{ product.title }}</a>
+                {% else %}
+                  <a href="{{ product.url }}" class="sponsored-card__title" title="{{ product.title | escape }}">{{ product.title }}</a>
+                {% endif %}
+                {% if product.description != blank %}
+                  <p class="sponsored-card__desc">{{ product.description | strip_html | truncate: 80 }}</p>
+                {% endif %}
+                {% if block.settings.affiliate_url != blank %}
+                  <a href="{{ block.settings.affiliate_url }}" class="sponsored-card__cta" target="_blank" rel="noopener noreferrer">{{ block.settings.button_label | default: 'View Product' }}</a>
+                {% else %}
+                  <a href="{{ product.url }}" class="sponsored-card__cta sponsored-card__cta--secondary">{{ 'general.amazon.view_product' | t | default: 'View Product' }}</a>
+                {% endif %}
+              </div>
+            </article>
+          {% else %}
+            <article class="sponsored-card sponsored-card--placeholder" {{ block.shopify_attributes }}>
+              <div class="sponsored-card__media">
+                {{ 'product-1' | placeholder_svg_tag: 'sponsored-card__img sponsored-card__img--muted' }}
+              </div>
+              <div class="sponsored-card__body">
+                <p class="sponsored-card__placeholder-text">Select a product in the block settings</p>
+              </div>
+            </article>
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="text-center py-12 px-6 rounded-2xl border-2 border-dashed border-border text-foreground/60">
+        <p class="mb-2">No sponsored products yet.</p>
+        <p class="text-sm">Click <strong>Add block</strong> in the left sidebar, then <strong>Sponsored Product</strong>. Select a product and set the affiliate link and button label.</p>
+      </div>
+    {% endif %}
+  </div>
+</section>
+
+<style>
+  .sponsored-section .sponsored-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.25rem;
+  }
+  @media (min-width: 768px) {
+    .sponsored-section .sponsored-grid {
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+    }
+  }
+  @media (min-width: 1024px) {
+    .sponsored-section .sponsored-grid {
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.75rem;
+    }
+  }
+
+  .sponsored-section .sponsored-card {
+    position: relative;
+    background: hsl(var(--card));
+    border-radius: 1rem;
+    overflow: hidden;
+    border: 1px solid hsl(var(--border) / 0.5);
+    box-shadow: 0 1px 3px hsl(var(--foreground) / 0.06);
+    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.2s ease;
+    display: flex;
+    flex-direction: column;
+  }
+  .sponsored-section .sponsored-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 24px hsl(var(--foreground) / 0.1);
+    border-color: hsl(var(--accent) / 0.4);
+  }
+
+  .sponsored-section .sponsored-card__badge {
+    position: absolute;
+    top: 0.75rem;
+    left: 0.75rem;
+    z-index: 2;
+    display: inline-block;
+    padding: 0.25rem 0.625rem;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    background: hsl(var(--foreground));
+    color: hsl(var(--background));
+    border-radius: 9999px;
+  }
+
+  .sponsored-section .sponsored-card__media {
+    position: relative;
+    aspect-ratio: 4 / 5;
+    overflow: hidden;
+    background: hsl(var(--muted) / 0.5);
+  }
+  .sponsored-section .sponsored-card__link {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .sponsored-section .sponsored-card__img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.4s ease;
+  }
+  .sponsored-section .sponsored-card:hover .sponsored-card__img {
+    transform: scale(1.05);
+  }
+  .sponsored-section .sponsored-card__img--muted {
+    opacity: 0.5;
+  }
+
+  .sponsored-section .sponsored-card__body {
+    padding: 1rem 1.25rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    flex: 1;
+  }
+  .sponsored-section .sponsored-card__vendor {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: hsl(var(--accent));
+  }
+  .sponsored-section .sponsored-card__title {
+    font-size: 0.9375rem;
+    font-weight: 700;
+    line-height: 1.3;
+    color: hsl(var(--foreground));
+    text-decoration: none;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    transition: color 0.2s ease;
+  }
+  .sponsored-section .sponsored-card__title:hover {
+    color: hsl(var(--accent));
+  }
+  .sponsored-section .sponsored-card__desc {
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    color: hsl(var(--foreground) / 0.65);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin: 0;
+  }
+  .sponsored-section .sponsored-card__cta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 0.5rem;
+    padding: 0.625rem 1rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    text-decoration: none;
+    border-radius: 0.5rem;
+    transition: opacity 0.2s ease, transform 0.15s ease;
+    background: hsl(var(--foreground));
+    color: hsl(var(--background));
+  }
+  .sponsored-section .sponsored-card__cta:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+  }
+  .sponsored-section .sponsored-card__cta--secondary {
+    background: transparent;
+    color: hsl(var(--foreground));
+    border: 1.5px solid hsl(var(--border));
+  }
+  .sponsored-section .sponsored-card__cta--secondary:hover {
+    border-color: hsl(var(--accent));
+    color: hsl(var(--accent));
+  }
+  .sponsored-section .sponsored-card__placeholder-text {
+    font-size: 0.8125rem;
+    color: hsl(var(--foreground) / 0.5);
+    margin: 0;
+  }
+  .sponsored-section .sponsored-card--placeholder {
+    border-style: dashed;
+  }
+</style>
+
+{% schema %}
+{
+  "name": "Sponsored",
+  "tag": "section",
+  "class": "section-sponsored",
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Sponsored"
+    },
+    {
+      "type": "textarea",
+      "id": "description",
+      "label": "Description"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "sponsored_product",
+      "name": "Sponsored Product",
+      "settings": [
+        {
+          "type": "product",
+          "id": "product",
+          "label": "Select Product"
+        },
+        {
+          "type": "url",
+          "id": "affiliate_url",
+          "label": "Affiliate Link"
+        },
+        {
+          "type": "text",
+          "id": "button_label",
+          "label": "Button Label",
+          "default": "View Product"
+        }
+      ]
+    }
+  ],
+  "max_blocks": 20,
+  "presets": [
+    {
+      "name": "Sponsored",
+      "blocks": [
+        { "type": "sponsored_product" },
+        { "type": "sponsored_product" },
+        { "type": "sponsored_product" }
+      ]
+    }
+  ]
+}
+{% endschema %}

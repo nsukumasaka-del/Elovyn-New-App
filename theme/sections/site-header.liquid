@@ -1,0 +1,1004 @@
+{% comment %}
+  Store header — three-zone layout (nav | logo | icons), light theme, sticky with header-group.
+  Loaded via {% sections 'header-group' %} in layout/theme.liquid (Online Store 2.0). Do not add {% section 'site-header' %} elsewhere.
+{% endcomment %}
+{%- assign logo_w = section.settings.logo_width | default: 180 -%}
+{%- assign logo_scale = section.settings.logo_scale | default: 100 | times: 1.0 | divided_by: 100.0 -%}
+{%- assign logo_render_w = logo_w | times: logo_scale | round -%}
+<style>
+  /* Single source for header row + notification bar (sibling sections read from wrapper) */
+  #layout-header-wrapper {
+    --header-stack-bg: #ffffff;
+    --header-stack-fg: #0a0a0a;
+    --header-stack-border: #e8e8e8;
+  }
+  #elovyn-header-wrap.store-header {
+    --store-header-fg: var(--header-stack-fg);
+    --store-header-bg: var(--header-stack-bg);
+    --store-header-border: var(--header-stack-border);
+    --store-header-muted: rgba(10, 10, 10, 0.55);
+    display: block !important;
+    position: relative;
+    width: 100%;
+    z-index: 2;
+    background: var(--store-header-bg);
+    color: var(--store-header-fg);
+    transition: box-shadow 0.3s ease, background 0.3s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #elovyn-header-wrap.store-header.is-scrolled {
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06), 0 6px 16px rgba(0, 0, 0, 0.06);
+  }
+  #elovyn-header-wrap.store-header.header-not-sticky {
+    position: relative;
+  }
+  .store-header__banner {
+    margin: 0;
+    background: inherit;
+  }
+  .store-header__inner {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 0.75rem 1rem;
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 0 1rem;
+    min-height: 4.25rem;
+    border-bottom: 1px solid var(--store-header-border);
+    transition: min-height 0.3s ease, padding 0.3s ease;
+  }
+  @media (min-width: 768px) {
+    .store-header__inner {
+      padding: 0 1.5rem;
+      min-height: 5rem;
+    }
+  }
+  #elovyn-header-wrap.store-header.is-scrolled .store-header__inner {
+    min-height: 3.5rem;
+  }
+  @media (min-width: 768px) {
+    #elovyn-header-wrap.store-header.is-scrolled .store-header__inner {
+      min-height: 4rem;
+    }
+  }
+  #elovyn-header-wrap.store-header--shrink.is-scrolled .store-header__logo-img {
+    transform: scale(0.82);
+    transform-origin: center center;
+  }
+  .store-header__cell--left {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+  .store-header__cell--center {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  .store-header__cell--right {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.125rem;
+    min-width: 0;
+  }
+  @media (max-width: 1023px) {
+    .store-header__inner {
+      grid-template-columns: auto 1fr auto;
+    }
+    .store-header__nav {
+      display: none !important;
+    }
+    .store-header__burger {
+      display: inline-flex !important;
+    }
+  }
+  @media (min-width: 1024px) {
+    .store-header__burger {
+      display: none !important;
+    }
+    .store-header__nav {
+      display: flex !important;
+    }
+  }
+  .store-header__burger {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--store-header-fg);
+    cursor: pointer;
+    border-radius: 6px;
+  }
+  .store-header__burger:hover,
+  .store-header__burger:focus-visible {
+    opacity: 0.65;
+    outline: 2px solid var(--store-header-fg);
+    outline-offset: 2px;
+  }
+  .store-header__burger .icon-close {
+    display: none;
+  }
+  .store-header__burger.is-open .icon-open {
+    display: none;
+  }
+  .store-header__burger.is-open .icon-close {
+    display: block !important;
+  }
+  .store-header__nav {
+    align-items: center;
+  }
+  .store-header__nav .nav-list {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: clamp(1rem, 2.5vw, 2rem);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .store-header__nav .nav-link,
+  .store-header__nav a {
+    color: var(--store-header-fg);
+    text-decoration: none;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    transition: opacity 0.2s ease, color 0.2s ease;
+    white-space: nowrap;
+  }
+  .store-header__nav .nav-link:hover,
+  .store-header__nav a:hover {
+    opacity: 0.55;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+  .store-header__logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    color: var(--store-header-fg);
+    font-weight: 800;
+    font-size: 1.25rem;
+    letter-spacing: 0.02em;
+  }
+  .store-header__logo-img {
+    display: block;
+    height: auto;
+    width: auto;
+    max-height: none;
+    object-fit: contain;
+    transition: transform 0.3s ease;
+  }
+  @media (min-width: 768px) {
+    .store-header__logo-img {
+      max-height: none;
+    }
+  }
+  @media (min-width: 1200px) {
+    .store-header__logo-img {
+      max-height: none;
+    }
+  }
+  /* CRO: icon buttons only — text contact link uses separate class below */
+  .store-header__icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--store-header-fg);
+    cursor: pointer;
+    border-radius: 6px;
+    text-decoration: none;
+    transition: opacity 0.2s ease, background 0.2s ease;
+  }
+  .store-header__icon-btn:hover {
+    opacity: 0.55;
+  }
+  .store-header__icon-btn:focus-visible {
+    outline: 2px solid var(--store-header-fg);
+    outline-offset: 2px;
+  }
+  /* CRO: visible “Contact” in header (desktop + wide tablet) */
+  .store-header__contact-link {
+    display: none;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 0.35rem;
+    margin-right: 0.25rem;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--store-header-fg);
+    white-space: nowrap;
+    border-radius: 6px;
+  }
+  .store-header__contact-link:hover {
+    opacity: 0.55;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+  .store-header__contact-link:focus-visible {
+    outline: 2px solid var(--store-header-fg);
+    outline-offset: 2px;
+  }
+  @media (min-width: 768px) {
+    .store-header__contact-link {
+      display: inline-flex;
+    }
+  }
+  .store-header__cart-wrap {
+    position: relative;
+    display: inline-flex;
+  }
+  .store-header__badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    min-width: 1.125rem;
+    height: 1.125rem;
+    padding: 0 4px;
+    font-size: 0.625rem;
+    font-weight: 700;
+    line-height: 1.125rem;
+    text-align: center;
+    color: #fff;
+    background: var(--store-header-fg);
+    border-radius: 999px;
+  }
+  .store-header__badge--empty {
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .store-header__currency .header-currency-select {
+    min-height: 32px;
+    padding: 0.2rem 0.65rem;
+    border-radius: 6px;
+    border: 1px solid var(--store-header-border);
+    background: var(--store-header-bg);
+    color: var(--store-header-fg);
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+  /* Dropdown */
+  .store-header__nav .nav-item--dropdown {
+    position: relative;
+  }
+  .store-header__nav .nav-link--parent {
+    cursor: default;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.5rem 0;
+  }
+  .store-header__nav .nav-link--parent::after {
+    content: '';
+    border: 4px solid transparent;
+    border-top-color: var(--store-header-fg);
+    margin-top: 0.2rem;
+    opacity: 0.7;
+  }
+  .store-header__mega {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    min-width: 220px;
+    padding: 0.75rem 0;
+    background: #fff;
+    border: 1px solid var(--store-header-border);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(6px);
+    transition: opacity 0.2s ease, visibility 0.2s ease, transform 0.2s ease;
+    z-index: 100050;
+  }
+  .store-header__nav .nav-item--dropdown::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    height: 10px;
+  }
+  .store-header__nav .nav-item--dropdown:hover .store-header__mega,
+  .store-header__nav .nav-item--dropdown:focus-within .store-header__mega {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  .store-header__mega a {
+    display: block;
+    padding: 0.5rem 1.25rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--store-header-fg);
+    text-decoration: none;
+  }
+  .store-header__mega a:hover {
+    background: rgba(0, 0, 0, 0.04);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  /* Mobile drawer */
+  #store-mobile-drawer {
+    position: fixed;
+    inset: 0;
+    z-index: 100040;
+    display: flex;
+    flex-direction: column;
+    pointer-events: none;
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 0.25s ease, visibility 0.25s ease;
+  }
+  #store-mobile-drawer.is-open {
+    pointer-events: auto;
+    visibility: visible;
+    opacity: 1;
+  }
+  #store-mobile-drawer .store-mobile-drawer__backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    cursor: pointer;
+  }
+  #store-mobile-drawer .store-mobile-drawer__panel {
+    position: relative;
+    z-index: 1;
+    margin: 5.5rem 1rem 1rem;
+    max-height: calc(100vh - 6.5rem);
+    background: #fff;
+    border: 1px solid var(--store-header-border);
+    border-radius: 12px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
+    overflow-y: auto;
+    transform: translateY(-8px);
+    transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  #store-mobile-drawer.is-open .store-mobile-drawer__panel {
+    transform: translateY(0);
+  }
+  #store-mobile-drawer nav {
+    display: flex;
+    flex-direction: column;
+    padding: 0.5rem 0;
+  }
+  .store-mobile-link {
+    color: var(--store-header-fg);
+    text-decoration: none;
+    font-size: 1rem;
+    font-weight: 500;
+    padding: 0.875rem 1.25rem;
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+  }
+  .store-mobile-link:hover {
+    background: rgba(0, 0, 0, 0.04);
+  }
+  .store-mobile-link--label {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--store-header-muted);
+    pointer-events: none;
+  }
+  .store-mobile-link--sub {
+    padding-left: 1.75rem;
+    font-size: 0.9375rem;
+  }
+  .store-mobile-dropdown {
+    border-bottom: 1px solid var(--store-header-border);
+    padding-bottom: 0.25rem;
+    margin-bottom: 0.25rem;
+  }
+  @media (min-width: 1024px) {
+    #store-mobile-drawer {
+      display: none !important;
+    }
+  }
+  /* Search drawer */
+  .store-search-drawer {
+    position: fixed;
+    inset: 0;
+    z-index: 100060;
+    display: none;
+    pointer-events: none;
+  }
+  .store-search-drawer.is-active {
+    display: block;
+    pointer-events: auto;
+  }
+  .store-search-drawer__overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+  }
+  .store-search-drawer__panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: min(420px, 100%);
+    height: 100%;
+    background: #fff;
+    padding: 1.5rem;
+    box-shadow: -8px 0 32px rgba(0, 0, 0, 0.12);
+  }
+  .store-search-drawer__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 44px;
+    height: 44px;
+    border: none;
+    background: #0a0a0a;
+    color: #fff;
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 6px;
+  }
+  .store-search-drawer__close:hover {
+    opacity: 0.88;
+  }
+  .store-search-drawer__form {
+    margin-top: 3.5rem;
+  }
+  .store-search-drawer__form input[type='search'] {
+    width: 100%;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    border: 1px solid var(--store-header-border);
+    border-radius: 6px;
+    font-size: 1rem;
+    color: var(--store-header-fg);
+  }
+  .store-search-drawer__submit {
+    width: 100%;
+    padding: 12px 20px;
+    background: #0a0a0a;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .store-search-drawer__submit:hover {
+    opacity: 0.9;
+  }
+</style>
+
+<div
+  id="elovyn-header-wrap"
+  class="store-header{% if section.settings.shrink_on_scroll %} store-header--shrink{% endif %}{% unless section.settings.enable_sticky_header %} header-not-sticky{% endunless %}"
+>
+  <header class="store-header__banner elovyn-header site-header" role="banner">
+    <div class="store-header__inner elovyn-header-inner">
+      <div class="store-header__cell store-header__cell--left">
+        <button
+          type="button"
+          class="store-header__burger"
+          aria-controls="store-mobile-drawer"
+          aria-expanded="false"
+          aria-label="{{ 'accessibility.menu' | t | default: 'Menu' }}"
+        >
+          <span class="icon-open">{% render 'icon-menu', width: 22, height: 22 %}</span>
+          <span class="icon-close">{% render 'icon-x', width: 22, height: 22 %}</span>
+        </button>
+
+        <nav class="store-header__nav elovyn-nav site-nav" role="navigation" aria-label="{{ 'accessibility.main_navigation' | t | default: 'Main' }}">
+          <ul class="nav-list">
+            {%- for block in section.blocks -%}
+              {%- if block.type == 'nav_link' -%}
+                {%- assign link_url = block.settings.url | default: '/' -%}
+                <li class="nav-item" {{ block.shopify_attributes }}>
+                  <a href="{{ link_url }}" class="nav-link">{{ block.settings.text | default: 'Link' }}</a>
+                </li>
+              {%- elsif block.type == 'nav_dropdown' -%}
+                <li class="nav-item nav-item--dropdown" {{ block.shopify_attributes }}>
+                  <span class="nav-link nav-link--parent" role="button" tabindex="0" aria-haspopup="true">{{ block.settings.title | default: 'Shop' }}</span>
+                  <div class="store-header__mega mega-dropdown" role="menu">
+                    {%- if block.settings.link_1_text != blank and block.settings.link_1_url != blank -%}
+                      <a role="menuitem" href="{{ block.settings.link_1_url }}">{{ block.settings.link_1_text }}</a>
+                    {%- endif -%}
+                    {%- if block.settings.link_2_text != blank and block.settings.link_2_url != blank -%}
+                      <a role="menuitem" href="{{ block.settings.link_2_url }}">{{ block.settings.link_2_text }}</a>
+                    {%- endif -%}
+                    {%- if block.settings.link_3_text != blank and block.settings.link_3_url != blank -%}
+                      <a role="menuitem" href="{{ block.settings.link_3_url }}">{{ block.settings.link_3_text }}</a>
+                    {%- endif -%}
+                    {%- if block.settings.link_4_text != blank and block.settings.link_4_url != blank -%}
+                      <a role="menuitem" href="{{ block.settings.link_4_url }}">{{ block.settings.link_4_text }}</a>
+                    {%- endif -%}
+                    {%- if block.settings.link_5_text != blank and block.settings.link_5_url != blank -%}
+                      <a role="menuitem" href="{{ block.settings.link_5_url }}">{{ block.settings.link_5_text }}</a>
+                    {%- endif -%}
+                    {%- if block.settings.link_6_text != blank and block.settings.link_6_url != blank -%}
+                      <a role="menuitem" href="{{ block.settings.link_6_url }}">{{ block.settings.link_6_text }}</a>
+                    {%- endif -%}
+                  </div>
+                </li>
+              {%- endif -%}
+            {%- endfor -%}
+          </ul>
+        </nav>
+      </div>
+
+      <div class="store-header__cell store-header__cell--center">
+        {%- assign logo_alt = section.settings.logo_alt | default: settings.header_logo_alt | default: shop.name -%}
+        {%- assign logo_link = section.settings.logo_link | default: settings.header_logo_link | default: routes.root_url -%}
+        <a href="{{ logo_link }}" class="store-header__logo elovyn-logo-link">
+          {%- if section.settings.logo_image != blank -%}
+            <img
+              src="{{ section.settings.logo_image | image_url: width: 600 }}"
+              alt="{{ logo_alt | escape }}"
+              class="store-header__logo-img elovyn-logo-img"
+              width="{{ logo_render_w }}"
+              loading="eager"
+              style="max-width: {{ logo_render_w }}px;"
+            >
+          {%- elsif section.settings.logo != blank -%}
+            <img
+              src="{{ section.settings.logo | image_url: width: 600 }}"
+              alt="{{ logo_alt | escape }}"
+              class="store-header__logo-img elovyn-logo-img"
+              width="{{ logo_render_w }}"
+              loading="eager"
+              style="max-width: {{ logo_render_w }}px;"
+            >
+          {%- elsif settings.header_logo != blank -%}
+            <img
+              src="{{ settings.header_logo | image_url: width: 600 }}"
+              alt="{{ logo_alt | escape }}"
+              class="store-header__logo-img elovyn-logo-img"
+              width="{{ logo_render_w }}"
+              loading="eager"
+              style="max-width: {{ logo_render_w }}px;"
+            >
+          {%- else -%}
+            <span class="store-header__wordmark">{{ shop.name }}</span>
+          {%- endif -%}
+        </a>
+      </div>
+
+      <div class="store-header__cell store-header__cell--right header-icons elovyn-header-right">
+        {%- comment -%} CRO: optional contact link — set URL in Theme Editor → Site header {%- endcomment -%}
+        {%- if section.settings.show_header_contact and section.settings.header_contact_url != blank -%}
+          <a href="{{ section.settings.header_contact_url }}" class="store-header__contact-link">
+            {{- section.settings.header_contact_label | default: 'Contact' -}}
+          </a>
+        {%- endif -%}
+        <button
+          type="button"
+          class="store-header__icon-btn header-search-toggle"
+          aria-label="{{ 'general.search.placeholder' | t | default: 'Search' }}"
+        >
+          {% render 'icon-search', width: 22, height: 22 %}
+        </button>
+        <a href="{{ routes.account_login_url }}" class="store-header__icon-btn" aria-label="{{ 'customer.account.title' | t | default: 'Account' }}">
+          {% render 'icon-user', width: 22, height: 22 %}
+        </a>
+        <a href="{{ routes.cart_url }}" class="store-header__icon-btn store-header__cart-wrap" aria-label="{{ 'templates.cart.cart' | t | default: 'Cart' }}">
+          {% render 'icon-shopping-bag', width: 22, height: 22 %}
+          <span
+            class="store-header__badge{% if cart.item_count == 0 %} store-header__badge--empty{% endif %}"
+            data-cart-count
+            aria-hidden="{% if cart.item_count == 0 %}true{% else %}false{% endif %}"
+          >
+            {{- cart.item_count -}}
+          </span>
+        </a>
+        {%- if shop.enabled_currencies.size > 1 -%}
+          <div class="store-header__currency header-currency-form">
+            {%- form 'currency', id: 'HeaderCurrencyForm' -%}
+              <label class="visually-hidden" for="HeaderCurrencySelect">{{ 'localization.country_label' | t | default: 'Currency' }}</label>
+              <select id="HeaderCurrencySelect" name="currency_code" class="header-currency-select" onchange="this.form.submit()">
+                {%- for currency in shop.enabled_currencies -%}
+                  <option value="{{ currency.iso_code }}" {% if currency.iso_code == cart.currency.iso_code %}selected{% endif %}>
+                    {{ currency.iso_code }} {{ currency.symbol }}
+                  </option>
+                {%- endfor -%}
+              </select>
+            {%- endform -%}
+          </div>
+        {%- endif -%}
+      </div>
+    </div>
+  </header>
+
+  <div id="store-mobile-drawer" class="menu-drawer" role="dialog" aria-modal="true" aria-hidden="true" aria-label="{{ 'accessibility.menu' | t | default: 'Menu' }}">
+    <div class="store-mobile-drawer__backdrop" aria-hidden="true"></div>
+    <div class="store-mobile-drawer__panel elovyn-mobile-menu-panel">
+      <nav role="navigation" aria-label="{{ 'accessibility.menu' | t | default: 'Menu' }}">
+        {%- for block in section.blocks -%}
+          {%- if block.type == 'nav_link' -%}
+            {%- assign link_url = block.settings.url | default: '/' -%}
+            <a href="{{ link_url }}" class="store-mobile-link elovyn-mobile-link">{{ block.settings.text | default: 'Link' }}</a>
+          {%- elsif block.type == 'nav_dropdown' -%}
+            <div class="store-mobile-dropdown elovyn-mobile-dropdown" role="group">
+              <span class="store-mobile-link store-mobile-link--label elovyn-mobile-link--label">{{ block.settings.title | default: 'Shop' }}</span>
+              {%- if block.settings.link_1_text != blank and block.settings.link_1_url != blank -%}
+                <a href="{{ block.settings.link_1_url }}" class="store-mobile-link store-mobile-link--sub elovyn-mobile-link elovyn-mobile-link--sub">{{ block.settings.link_1_text }}</a>
+              {%- endif -%}
+              {%- if block.settings.link_2_text != blank and block.settings.link_2_url != blank -%}
+                <a href="{{ block.settings.link_2_url }}" class="store-mobile-link store-mobile-link--sub elovyn-mobile-link elovyn-mobile-link--sub">{{ block.settings.link_2_text }}</a>
+              {%- endif -%}
+              {%- if block.settings.link_3_text != blank and block.settings.link_3_url != blank -%}
+                <a href="{{ block.settings.link_3_url }}" class="store-mobile-link store-mobile-link--sub elovyn-mobile-link elovyn-mobile-link--sub">{{ block.settings.link_3_text }}</a>
+              {%- endif -%}
+              {%- if block.settings.link_4_text != blank and block.settings.link_4_url != blank -%}
+                <a href="{{ block.settings.link_4_url }}" class="store-mobile-link store-mobile-link--sub elovyn-mobile-link elovyn-mobile-link--sub">{{ block.settings.link_4_text }}</a>
+              {%- endif -%}
+              {%- if block.settings.link_5_text != blank and block.settings.link_5_url != blank -%}
+                <a href="{{ block.settings.link_5_url }}" class="store-mobile-link store-mobile-link--sub elovyn-mobile-link elovyn-mobile-link--sub">{{ block.settings.link_5_text }}</a>
+              {%- endif -%}
+              {%- if block.settings.link_6_text != blank and block.settings.link_6_url != blank -%}
+                <a href="{{ block.settings.link_6_url }}" class="store-mobile-link store-mobile-link--sub elovyn-mobile-link elovyn-mobile-link--sub">{{ block.settings.link_6_text }}</a>
+              {%- endif -%}
+            </div>
+          {%- endif -%}
+        {%- endfor -%}
+        {%- comment -%} CRO: contact on mobile menu (thumb-friendly) {%- endcomment -%}
+        {%- if section.settings.show_header_contact and section.settings.header_contact_url != blank -%}
+          <a href="{{ section.settings.header_contact_url }}" class="store-mobile-link store-mobile-link--contact elovyn-mobile-link">
+            {{- section.settings.header_contact_label | default: 'Contact' -}}
+          </a>
+        {%- endif -%}
+      </nav>
+    </div>
+  </div>
+
+  <div class="store-search-drawer" id="StoreSearchDrawer" aria-hidden="true">
+    <div class="store-search-drawer__overlay" aria-hidden="true"></div>
+    <div class="store-search-drawer__panel">
+      <button type="button" class="store-search-drawer__close search-close" aria-label="{{ 'general.search.close' | t | default: 'Close' }}">&times;</button>
+      <form action="{{ routes.search_url }}" method="get" role="search" class="store-search-drawer__form search-drawer-form">
+        <input type="search" name="q" value="{{ search.terms | escape }}" placeholder="{{ 'general.search.placeholder' | t | default: 'Search…' }}" autocomplete="off">
+        <button type="submit" class="store-search-drawer__submit search-drawer-submit">{{ 'general.search.submit' | t | default: 'Search' }}</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    function init() {
+      var wrap = document.getElementById('elovyn-header-wrap');
+      var drawer = document.getElementById('store-mobile-drawer');
+      var burger = wrap && wrap.querySelector('.store-header__burger');
+      var backdrop = drawer && drawer.querySelector('.store-mobile-drawer__backdrop');
+      var searchBtn = wrap && wrap.querySelector('.header-search-toggle');
+      var searchDrawer = document.getElementById('StoreSearchDrawer');
+      var searchClose = searchDrawer && searchDrawer.querySelector('.search-close');
+      var searchOverlay = searchDrawer && searchDrawer.querySelector('.store-search-drawer__overlay');
+
+      function onScroll() {
+        if (!wrap) return;
+        var y = window.pageYOffset || document.documentElement.scrollTop;
+        wrap.classList.toggle('is-scrolled', y > 6);
+      }
+      onScroll();
+      window.addEventListener('scroll', onScroll, { passive: true });
+
+      function openDrawer() {
+        if (!drawer || !burger) return;
+        drawer.classList.add('is-open');
+        burger.classList.add('is-open');
+        burger.setAttribute('aria-expanded', 'true');
+        drawer.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+      }
+      function closeDrawer() {
+        if (!drawer || !burger) return;
+        drawer.classList.remove('is-open');
+        burger.classList.remove('is-open');
+        burger.setAttribute('aria-expanded', 'false');
+        drawer.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+      }
+      if (burger && drawer) {
+        burger.addEventListener('click', function (e) {
+          e.preventDefault();
+          if (drawer.classList.contains('is-open')) closeDrawer();
+          else openDrawer();
+        });
+      }
+      if (backdrop) backdrop.addEventListener('click', closeDrawer);
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+          if (drawer && drawer.classList.contains('is-open')) closeDrawer();
+          if (searchDrawer && searchDrawer.classList.contains('is-active')) {
+            searchDrawer.classList.remove('is-active');
+            searchDrawer.setAttribute('aria-hidden', 'true');
+          }
+        }
+      });
+      if (drawer) {
+        drawer.querySelectorAll('a.store-mobile-link, a.elovyn-mobile-link').forEach(function (a) {
+          a.addEventListener('click', function () {
+            closeDrawer();
+          });
+        });
+      }
+
+      if (searchBtn && searchDrawer) {
+        searchBtn.addEventListener('click', function () {
+          searchDrawer.classList.add('is-active');
+          searchDrawer.setAttribute('aria-hidden', 'false');
+          var input = searchDrawer.querySelector('input[type="search"]');
+          if (input) input.focus();
+        });
+      }
+      function closeSearch() {
+        if (!searchDrawer) return;
+        searchDrawer.classList.remove('is-active');
+        searchDrawer.setAttribute('aria-hidden', 'true');
+      }
+      if (searchClose) searchClose.addEventListener('click', closeSearch);
+      if (searchOverlay) searchOverlay.addEventListener('click', closeSearch);
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+    else init();
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "Site Header",
+  "tag": "div",
+  "class": "section-header",
+  "settings": [
+    {
+      "type": "header",
+      "content": "Logo"
+    },
+    {
+      "type": "image_picker",
+      "id": "logo",
+      "label": "Logo image"
+    },
+    {
+      "type": "image_picker",
+      "id": "logo_image",
+      "label": "Logo override"
+    },
+    {
+      "type": "range",
+      "id": "logo_width",
+      "label": "Logo max width (px)",
+      "min": 80,
+      "max": 700,
+      "step": 10,
+      "default": 180,
+      "info": "Step size keeps the slider within Shopify’s limit (max 101 steps) while still allowing large logos."
+    },
+    {
+      "type": "range",
+      "id": "logo_scale",
+      "label": "Logo size multiplier (%)",
+      "min": 50,
+      "max": 250,
+      "step": 5,
+      "default": 100
+    },
+    {
+      "type": "text",
+      "id": "logo_alt",
+      "label": "Logo alt text",
+      "default": "Store logo"
+    },
+    {
+      "type": "url",
+      "id": "logo_link",
+      "label": "Logo link",
+      "default": "/"
+    },
+    {
+      "type": "header",
+      "content": "Contact link"
+    },
+    {
+      "type": "paragraph",
+      "content": "CRO: Shows a Contact link next to search/account (desktop) and in the mobile drawer."
+    },
+    {
+      "type": "checkbox",
+      "id": "show_header_contact",
+      "label": "Show contact link",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "header_contact_label",
+      "label": "Contact link label",
+      "default": "Contact"
+    },
+    {
+      "type": "text",
+      "id": "header_contact_url",
+      "label": "Contact link URL",
+      "default": "/pages/contact",
+      "info": "Use your Contact page path or mailto:you@store.com"
+    },
+    {
+      "type": "header",
+      "content": "Behavior"
+    },
+    {
+      "type": "checkbox",
+      "id": "enable_sticky_header",
+      "label": "Sticky with announcement (fixed top stack)",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "shrink_on_scroll",
+      "label": "Shrink logo when scrolled",
+      "default": true
+    },
+    {
+      "type": "paragraph",
+      "content": "Layout: navigation left, centered logo, search / account / cart right. Add menu blocks below."
+    }
+  ],
+  "blocks": [
+    {
+      "type": "nav_link",
+      "name": "Navigation link",
+      "settings": [
+        {
+          "type": "text",
+          "id": "text",
+          "label": "Label",
+          "default": "Shop"
+        },
+        {
+          "type": "url",
+          "id": "url",
+          "label": "Link",
+          "default": "/"
+        }
+      ]
+    },
+    {
+      "type": "nav_dropdown",
+      "name": "Dropdown menu",
+      "settings": [
+        {
+          "type": "text",
+          "id": "title",
+          "label": "Parent label",
+          "default": "Collections"
+        },
+        {
+          "type": "header",
+          "content": "Dropdown links"
+        },
+        {
+          "type": "paragraph",
+          "content": "Paths like /collections/all or full URLs."
+        },
+        {
+          "type": "text",
+          "id": "link_1_text",
+          "label": "Link 1 text",
+          "default": "Hoodies"
+        },
+        {
+          "type": "text",
+          "id": "link_1_url",
+          "label": "Link 1 URL",
+          "default": "/collections/hoodies"
+        },
+        {
+          "type": "text",
+          "id": "link_2_text",
+          "label": "Link 2 text",
+          "default": "Sweatshirts"
+        },
+        {
+          "type": "text",
+          "id": "link_2_url",
+          "label": "Link 2 URL",
+          "default": "/collections/sweatshirts"
+        },
+        {
+          "type": "text",
+          "id": "link_3_text",
+          "label": "Link 3 text",
+          "default": "Graphic tees"
+        },
+        {
+          "type": "text",
+          "id": "link_3_url",
+          "label": "Link 3 URL",
+          "default": "/collections/graphic-tees"
+        },
+        {
+          "type": "text",
+          "id": "link_4_text",
+          "label": "Link 4 text",
+          "default": "Shop all"
+        },
+        {
+          "type": "text",
+          "id": "link_4_url",
+          "label": "Link 4 URL",
+          "default": "/collections/all"
+        },
+        {
+          "type": "text",
+          "id": "link_5_text",
+          "label": "Link 5 text"
+        },
+        {
+          "type": "text",
+          "id": "link_5_url",
+          "label": "Link 5 URL"
+        },
+        {
+          "type": "text",
+          "id": "link_6_text",
+          "label": "Link 6 text"
+        },
+        {
+          "type": "text",
+          "id": "link_6_url",
+          "label": "Link 6 URL"
+        }
+      ]
+    }
+  ],
+  "presets": [
+    {
+      "name": "Header",
+      "category": "Header",
+      "blocks": [
+        {
+          "type": "nav_link",
+          "settings": { "text": "Shop", "url": "/collections/all" }
+        },
+        {
+          "type": "nav_link",
+          "settings": { "text": "Men", "url": "/collections/all" }
+        },
+        {
+          "type": "nav_link",
+          "settings": { "text": "Women", "url": "/collections/all" }
+        },
+        {
+          "type": "nav_dropdown",
+          "settings": { "title": "Collections" }
+        }
+      ]
+    }
+  ]
+}
+{% endschema %}

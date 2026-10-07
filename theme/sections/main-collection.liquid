@@ -1,0 +1,1061 @@
+{% comment %}
+  Premium collection PLP: header, category shortcuts, sticky filter/sort bar,
+  desktop sidebar + mobile drawer filters (Storefront filters), 4/2 grid,
+  hover image swap, quick add with variant pick (AJAX).
+{% endcomment %}
+
+{%- liquid
+  assign per_page = section.settings.products_per_page | default: 24
+  assign current_sort = collection.sort_by | default: collection.default_sort_by
+-%}
+
+{%- capture filter_fields -%}
+  {%- if collection.filters.size == 0 -%}
+    <p class="col-plp-filters__empty">
+      {{ section.settings.filters_empty_text | default: 'Turn on filters in Shopify Admin → Search & Discovery to filter by size, color, price, and product type.' }}
+    </p>
+  {%- else -%}
+    {%- for filter in collection.filters -%}
+      <div class="col-plp-filter-group" data-filter-group>
+        <button type="button" class="col-plp-filter-group__head" data-filter-accordion aria-expanded="true">
+          <span>{{ filter.label }}</span>
+          <span class="col-plp-filter-group__chev" aria-hidden="true"></span>
+        </button>
+        <div class="col-plp-filter-group__body">
+          {%- case filter.type -%}
+            {%- when 'price_range' -%}
+              <div class="col-plp-price-range">
+                <label class="col-plp-sr-only" for="Filter-{{ filter.label | handle }}-min">{{ 'collections.filters.from' | t }}</label>
+                <input
+                  class="col-plp-input"
+                  name="{{ filter.min_value.param_name }}"
+                  id="Filter-{{ filter.label | handle }}-min"
+                  {% if filter.min_value.value %}
+                    value="{{ filter.min_value.value }}"
+                  {% endif %}
+                  type="number"
+                  inputmode="numeric"
+                  min="0"
+                  step="1"
+                  placeholder="Min"
+                >
+                <span class="col-plp-price-sep">—</span>
+                <label class="col-plp-sr-only" for="Filter-{{ filter.label | handle }}-max">{{ 'collections.filters.to' | t }}</label>
+                <input
+                  class="col-plp-input"
+                  name="{{ filter.max_value.param_name }}"
+                  id="Filter-{{ filter.label | handle }}-max"
+                  {% if filter.max_value.value %}
+                    value="{{ filter.max_value.value }}"
+                  {% endif %}
+                  type="number"
+                  inputmode="numeric"
+                  min="0"
+                  step="1"
+                  placeholder="Max"
+                >
+              </div>
+              <p class="col-plp-price-hint">{{ section.settings.price_filter_hint | default: 'Values use your store currency minor units (e.g. cents) as in Shopify filter URLs.' }}</p>
+            {%- else -%}
+              <ul class="col-plp-filter-list" role="list">
+                {%- for filter_value in filter.values -%}
+                  {%- assign fv_param = filter_value.param_name | default: filter.param_name -%}
+                  <li>
+                    <label class="col-plp-check{% if filter_value.count == 0 and filter_value.active == false %} col-plp-check--disabled{% endif %}">
+                      <input
+                        type="checkbox"
+                        name="{{ fv_param }}"
+                        value="{{ filter_value.value }}"
+                        {% if filter_value.active %}checked{% endif %}
+                        {% if filter_value.count == 0 and filter_value.active == false %}disabled{% endif %}
+                        class="col-plp-check__input"
+                      >
+                      <span class="col-plp-check__box" aria-hidden="true"></span>
+                      <span class="col-plp-check__label">{{ filter_value.label }}</span>
+                      <span class="col-plp-check__count">({{ filter_value.count }})</span>
+                    </label>
+                  </li>
+                {%- endfor -%}
+              </ul>
+          {%- endcase -%}
+        </div>
+      </div>
+    {%- endfor -%}
+  {%- endif -%}
+{%- endcapture -%}
+
+<section class="col-plp section-{{ section.id }}" data-section-id="{{ section.id }}">
+  <div class="col-plp__inner">
+    {%- comment -%} Header {%- endcomment -%}
+    <header class="col-plp-header">
+      <h1 class="col-plp-header__title">{{ collection.title }}</h1>
+      {%- if collection.description != blank -%}
+        <div class="col-plp-header__desc rte">{{ collection.description }}</div>
+      {%- endif -%}
+    </header>
+
+    {%- comment -%} Category shortcuts {%- endcomment -%}
+    {%- if section.settings.show_shortcuts and section.blocks.size > 0 -%}
+      <div class="col-plp-shortcuts-wrap">
+        <nav class="col-plp-shortcuts" aria-label="{{ section.settings.shortcuts_heading | default: 'Categories' | escape }}">
+          {%- for block in section.blocks -%}
+            {%- if block.type == 'shortcut' -%}
+              <a href="{{ block.settings.link | default: '#' }}" class="col-plp-shortcuts__pill" {{ block.shopify_attributes }}>
+                {{ block.settings.label | default: 'Category' }}
+              </a>
+            {%- endif -%}
+          {%- endfor -%}
+        </nav>
+      </div>
+    {%- endif -%}
+
+    {% paginate collection.products by per_page %}
+      <form id="CollectionFiltersForm" class="col-plp-form" method="get" action="{{ collection.url }}" role="search">
+        {%- comment -%} Sticky toolbar {%- endcomment -%}
+        <div class="col-plp-toolbar" id="CollectionToolbar">
+          <div class="col-plp-toolbar__row">
+            <button
+              type="button"
+              class="col-plp-toolbar__filters-btn"
+              id="ColFilterDrawerOpen"
+              aria-controls="ColFilterDrawer"
+              aria-expanded="false"
+            >
+              {{ section.settings.filter_drawer_label | default: 'Filters' }}
+              {%- if collection.filters.size > 0 -%}
+                {%- assign active_count = 0 -%}
+                {%- for filter in collection.filters -%}
+                  {%- assign active_count = active_count | plus: filter.active_values.size -%}
+                {%- endfor -%}
+                {%- if active_count > 0 -%}
+                  <span class="col-plp-toolbar__badge">{{ active_count }}</span>
+                {%- endif -%}
+              {%- endif -%}
+            </button>
+
+            <div class="col-plp-toolbar__count">
+              <span>{{ collection.products_count }} {{ 'collections.general.products_count_suffix' | t }}</span>
+            </div>
+
+            <div class="col-plp-toolbar__sort">
+              <label class="col-plp-sr-only" for="ColSortBy">{{ 'collections.sorting.title' | t | default: 'Sort' }}</label>
+              <select name="sort_by" id="ColSortBy" class="col-plp-sort-select" data-col-sort>
+                <option value="manual" {% if current_sort == 'manual' %}selected{% endif %}>{{ section.settings.sort_featured | default: 'Featured' }}</option>
+                <option value="best-selling" {% if current_sort == 'best-selling' %}selected{% endif %}>{{ section.settings.sort_best_selling | default: 'Best selling' }}</option>
+                <option value="created-descending" {% if current_sort == 'created-descending' %}selected{% endif %}>{{ section.settings.sort_newest | default: 'Newest' }}</option>
+                <option value="price-ascending" {% if current_sort == 'price-ascending' %}selected{% endif %}>{{ section.settings.sort_price_low | default: 'Price: Low to high' }}</option>
+                <option value="price-descending" {% if current_sort == 'price-descending' %}selected{% endif %}>{{ section.settings.sort_price_high | default: 'Price: High to low' }}</option>
+                <option value="title-ascending" {% if current_sort == 'title-ascending' %}selected{% endif %}>{{ section.settings.sort_az | default: 'Name A–Z' }}</option>
+              </select>
+            </div>
+          </div>
+
+          {%- assign has_active = false -%}
+          {%- for filter in collection.filters -%}
+            {%- for v in filter.active_values -%}
+              {%- assign has_active = true -%}
+              {%- break -%}
+            {%- endfor -%}
+          {%- endfor -%}
+          {%- if has_active -%}
+            <div class="col-plp-active">
+              <a href="{{ collection.url }}" class="col-plp-active__clear">{{ section.settings.clear_all_label | default: 'Clear all' }}</a>
+              {%- for filter in collection.filters -%}
+                {%- for v in filter.active_values -%}
+                  <a href="{{ v.url_to_remove }}" class="col-plp-active__chip">{{ v.label }}</a>
+                {%- endfor -%}
+              {%- endfor -%}
+            </div>
+          {%- endif -%}
+        </div>
+
+        <div class="col-plp-layout">
+          <div class="col-plp-filter-overlay" id="ColFilterOverlay" data-drawer-close hidden tabindex="-1"></div>
+          <aside
+            class="col-plp-sidebar"
+            id="ColFilterDrawer"
+            aria-label="{{ 'collections.filters.title' | t | default: 'Filters' }}"
+            aria-hidden="false"
+          >
+            <div class="col-plp-sidebar__mobile-head">
+              <h2 id="ColDrawerTitle" class="col-plp-sidebar__mobile-title">{{ section.settings.filter_drawer_label | default: 'Filters' }}</h2>
+              <button type="button" class="col-plp-sidebar__mobile-x" data-drawer-close aria-label="{{ 'accessibility.close' | t }}">&times;</button>
+            </div>
+            <div class="col-plp-sidebar__inner">
+              {{ filter_fields }}
+              <button type="submit" class="col-plp-apply col-plp-apply--desktop">{{ section.settings.apply_filters_label | default: 'Apply filters' }}</button>
+            </div>
+            <div class="col-plp-sidebar__mobile-foot">
+              <button type="button" class="col-plp-sidebar__foot-secondary" data-drawer-close>{{ 'accessibility.close' | t }}</button>
+              <button type="submit" class="col-plp-sidebar__foot-primary">{{ section.settings.apply_filters_label | default: 'View results' }}</button>
+            </div>
+          </aside>
+
+          {%- comment -%} Product grid {%- endcomment -%}
+          <div class="col-plp-main">
+            {%- if collection.products.size == 0 -%}
+              <p class="col-plp-empty">{{ 'collections.general.no_matches' | t | default: 'No products in this collection.' }}</p>
+            {%- else -%}
+              {%- if collection.handle == 'sponsored' -%}
+                <div class="col-plp-grid">
+                  {%- for product in collection.products -%}
+                    {%- assign affiliate_url = product.metafields.affiliate.external_url.value | default: product.metafields.affiliate.external_url -%}
+                    {%- assign affiliate_label = product.metafields.affiliate.button_label.value | default: product.metafields.affiliate.button_label | default: 'Shop' -%}
+                    {% render 'collection-product-card', product: product, affiliate_url: affiliate_url, affiliate_label: affiliate_label %}
+                  {%- endfor -%}
+                </div>
+              {%- else -%}
+                <div class="col-plp-grid">
+                  {%- for product in collection.products -%}
+                    {% render 'collection-product-card', product: product %}
+                  {%- endfor -%}
+                </div>
+              {%- endif -%}
+            {%- endif -%}
+
+            {%- if paginate.pages > 1 -%}
+              <nav class="col-plp-pagination" aria-label="{{ 'general.pagination.label' | t | default: 'Pagination' }}">
+                {%- if paginate.previous -%}
+                  <a href="{{ paginate.previous.url }}" class="col-plp-page-btn">{{ 'general.pagination.previous' | t | default: 'Previous' }}</a>
+                {%- endif -%}
+                <span class="col-plp-page-info">{{ paginate.current_page }} / {{ paginate.pages }}</span>
+                {%- if paginate.next -%}
+                  <a href="{{ paginate.next.url }}" class="col-plp-page-btn">{{ 'general.pagination.next' | t | default: 'Next' }}</a>
+                {%- endif -%}
+              </nav>
+            {%- endif -%}
+          </div>
+        </div>
+      </form>
+    {% endpaginate %}
+  </div>
+</section>
+
+<style>
+  #shopify-section-{{ section.id }} .col-plp {
+    --col-plp-gap: 1rem;
+    --col-plp-black: #0a0a0a;
+    --col-plp-muted: #6b7280;
+    background: #fff;
+    color: var(--col-plp-black);
+    padding-bottom: 3rem;
+  }
+  #shopify-section-{{ section.id }} .col-plp__inner {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 0 1rem;
+  }
+  @media (min-width: 768px) {
+    #shopify-section-{{ section.id }} .col-plp__inner { padding: 0 1.5rem; }
+  }
+  #shopify-section-{{ section.id }} .col-plp-header {
+    text-align: center;
+    padding: 2rem 0 1.5rem;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  #shopify-section-{{ section.id }} .col-plp-header__title {
+    font-family: var(--font-heading-family, system-ui, sans-serif);
+    font-size: clamp(1.75rem, 4vw, 2.75rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    text-transform: uppercase;
+    margin: 0 0 0.75rem;
+    line-height: 1.05;
+  }
+  #shopify-section-{{ section.id }} .col-plp-header__desc {
+    max-width: 42rem;
+    margin: 0 auto;
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    color: var(--col-plp-muted);
+  }
+  #shopify-section-{{ section.id }} .col-plp-header__desc p { margin: 0; }
+  #shopify-section-{{ section.id }} .col-plp-shortcuts-wrap {
+    border-bottom: 1px solid #e5e7eb;
+    padding: 1rem 0;
+  }
+  #shopify-section-{{ section.id }} .col-plp-shortcuts {
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+    padding-bottom: 0.25rem;
+    scrollbar-width: thin;
+  }
+  #shopify-section-{{ section.id }} .col-plp-shortcuts__pill {
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+    padding: 0.65rem 1.25rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--col-plp-black);
+    border: 1px solid #e5e7eb;
+    white-space: nowrap;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  #shopify-section-{{ section.id }} .col-plp-shortcuts__pill:hover {
+    background: #f9fafb;
+    border-color: #d1d5db;
+  }
+  #shopify-section-{{ section.id }} .col-plp-toolbar {
+    position: sticky;
+    top: var(--header-height, 72px);
+    z-index: 40;
+    background: rgba(255, 255, 255, 0.96);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid #e5e7eb;
+    margin: 0 -1rem;
+    padding: 0.75rem 1rem;
+  }
+  @media (min-width: 768px) {
+    #shopify-section-{{ section.id }} .col-plp-toolbar { margin: 0 -1.5rem; padding: 0.75rem 1.5rem; }
+  }
+  #shopify-section-{{ section.id }} .col-plp-toolbar__row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  #shopify-section-{{ section.id }} .col-plp-toolbar__filters-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 44px;
+    padding: 0 1rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    background: #fff;
+    border: 1px solid var(--col-plp-black);
+    color: var(--col-plp-black);
+    cursor: pointer;
+  }
+  @media (min-width: 1024px) {
+    #shopify-section-{{ section.id }} .col-plp-toolbar__filters-btn { display: none; }
+  }
+  #shopify-section-{{ section.id }} .col-plp-toolbar__badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.25rem;
+    height: 1.25rem;
+    padding: 0 0.35rem;
+    font-size: 0.65rem;
+    background: var(--col-plp-black);
+    color: #fff;
+    border-radius: 999px;
+  }
+  #shopify-section-{{ section.id }} .col-plp-toolbar__count {
+    flex: 1;
+    font-size: 0.8125rem;
+    color: var(--col-plp-muted);
+  }
+  @media (min-width: 1024px) {
+    #shopify-section-{{ section.id }} .col-plp-toolbar__count { order: -1; flex: 0 0 auto; margin-right: auto; }
+  }
+  #shopify-section-{{ section.id }} .col-plp-sort-select {
+    min-height: 44px;
+    padding: 0 2rem 0 0.75rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    border: 1px solid #e5e7eb;
+    background: #fff;
+    color: var(--col-plp-black);
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath fill='%23000' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.65rem center;
+  }
+  #shopify-section-{{ section.id }} .col-plp-active {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.65rem;
+    align-items: center;
+  }
+  #shopify-section-{{ section.id }} .col-plp-active__clear {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--col-plp-black);
+  }
+  #shopify-section-{{ section.id }} .col-plp-active__chip {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.6rem;
+    border: 1px solid #e5e7eb;
+    text-decoration: none;
+    color: var(--col-plp-black);
+  }
+  #shopify-section-{{ section.id }} .col-plp-layout {
+    display: block;
+    padding-top: 1.25rem;
+  }
+  @media (min-width: 1024px) {
+    #shopify-section-{{ section.id }} .col-plp-layout {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      gap: 2rem;
+      align-items: start;
+    }
+  }
+  #shopify-section-{{ section.id }} .col-plp-filter-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 100038;
+    background: rgba(0, 0, 0, 0.45);
+  }
+  #shopify-section-{{ section.id }} .col-plp-filter-overlay:not([hidden]) {
+    display: block;
+  }
+  @media (min-width: 1024px) {
+    #shopify-section-{{ section.id }} .col-plp-filter-overlay {
+      display: none !important;
+    }
+  }
+  #shopify-section-{{ section.id }} .col-plp-sidebar {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    max-height: 100dvh;
+    z-index: 100039;
+    background: #fff;
+    transform: translateX(100%);
+    transition: transform 0.28s ease;
+    overflow: hidden;
+    border-left: 1px solid #e5e7eb;
+  }
+  #shopify-section-{{ section.id }} .col-plp-sidebar.col-plp-sidebar--open {
+    transform: translateX(0);
+  }
+  @media (min-width: 1024px) {
+    #shopify-section-{{ section.id }} .col-plp-sidebar {
+      position: sticky;
+      top: calc(var(--header-height, 72px) + 3.5rem);
+      align-self: start;
+      width: auto;
+      max-width: none;
+      height: auto;
+      max-height: calc(100vh - var(--header-height, 72px) - 4rem);
+      transform: none !important;
+      overflow-y: auto;
+      border-left: none;
+      z-index: 1;
+    }
+    #shopify-section-{{ section.id }} .col-plp-sidebar.col-plp-sidebar--open {
+      transform: none !important;
+    }
+  }
+  #shopify-section-{{ section.id }} .col-plp-sidebar__mobile-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid #e5e7eb;
+    flex-shrink: 0;
+  }
+  @media (min-width: 1024px) {
+    #shopify-section-{{ section.id }} .col-plp-sidebar__mobile-head {
+      display: none;
+    }
+  }
+  #shopify-section-{{ section.id }} .col-plp-sidebar__mobile-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+  #shopify-section-{{ section.id }} .col-plp-sidebar__mobile-x {
+    background: none;
+    border: none;
+    font-size: 1.75rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0.25rem;
+  }
+  #shopify-section-{{ section.id }} .col-plp-sidebar__inner {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 1.25rem 1rem;
+  }
+  @media (min-width: 1024px) {
+    #shopify-section-{{ section.id }} .col-plp-sidebar__inner {
+      padding: 0;
+      overflow: visible;
+    }
+  }
+  #shopify-section-{{ section.id }} .col-plp-sidebar__mobile-foot {
+    display: flex;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem calc(1rem + env(safe-area-inset-bottom, 0));
+    border-top: 1px solid #e5e7eb;
+    flex-shrink: 0;
+  }
+  @media (min-width: 1024px) {
+    #shopify-section-{{ section.id }} .col-plp-sidebar__mobile-foot {
+      display: none;
+    }
+  }
+  #shopify-section-{{ section.id }} .col-plp-sidebar__foot-secondary {
+    flex: 1;
+    min-height: 48px;
+    border: 1px solid #e5e7eb;
+    background: #fff;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  #shopify-section-{{ section.id }} .col-plp-sidebar__foot-primary {
+    flex: 2;
+    min-height: 48px;
+    border: none;
+    background: var(--col-plp-black);
+    color: #fff;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+  }
+  @media (max-width: 1023px) {
+    #shopify-section-{{ section.id }} .col-plp-apply--desktop {
+      display: none;
+    }
+  }
+  #shopify-section-{{ section.id }} .col-plp-filter-group {
+    border-bottom: 1px solid #e5e7eb;
+    margin-bottom: 0.5rem;
+  }
+  #shopify-section-{{ section.id }} .col-plp-filter-group__head {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 0;
+    background: none;
+    border: none;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    text-align: left;
+  }
+  #shopify-section-{{ section.id }} .col-plp-filter-group__chev::before {
+    content: '−';
+    font-size: 1rem;
+    line-height: 1;
+  }
+  #shopify-section-{{ section.id }} .col-plp-filter-group__head[aria-expanded='false'] .col-plp-filter-group__chev::before {
+    content: '+';
+  }
+  #shopify-section-{{ section.id }} .col-plp-filter-group__head[aria-expanded='false'] + .col-plp-filter-group__body {
+    display: none;
+  }
+  #shopify-section-{{ section.id }} .col-plp-filter-group__body {
+    padding-bottom: 0.75rem;
+  }
+  #shopify-section-{{ section.id }} .col-plp-filter-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  #shopify-section-{{ section.id }} .col-plp-filter-list li { margin-bottom: 0.35rem; }
+  #shopify-section-{{ section.id }} .col-plp-check {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    cursor: pointer;
+  }
+  #shopify-section-{{ section.id }} .col-plp-check--disabled { opacity: 0.4; pointer-events: none; }
+  #shopify-section-{{ section.id }} .col-plp-check__input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  #shopify-section-{{ section.id }} .col-plp-check__box {
+    width: 1rem;
+    height: 1rem;
+    border: 1px solid #111;
+    flex-shrink: 0;
+  }
+  #shopify-section-{{ section.id }} .col-plp-check__input:checked + .col-plp-check__box {
+    background: #111;
+    box-shadow: inset 0 0 0 2px #fff;
+  }
+  #shopify-section-{{ section.id }} .col-plp-check__count { color: var(--col-plp-muted); font-size: 0.8125rem; }
+  #shopify-section-{{ section.id }} .col-plp-price-range {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  #shopify-section-{{ section.id }} .col-plp-price-hint {
+    margin: 0.35rem 0 0;
+    font-size: 0.6875rem;
+    line-height: 1.4;
+    color: var(--col-plp-muted);
+  }
+  #shopify-section-{{ section.id }} .col-plp-input {
+    width: 100%;
+    min-height: 40px;
+    padding: 0 0.5rem;
+    border: 1px solid #e5e7eb;
+    font-size: 0.875rem;
+  }
+  #shopify-section-{{ section.id }} .col-plp-apply {
+    width: 100%;
+    margin-top: 1rem;
+    min-height: 48px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: var(--col-plp-black);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+  }
+  #shopify-section-{{ section.id }} .col-plp-filters__empty {
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: var(--col-plp-muted);
+  }
+  #shopify-section-{{ section.id }} .col-plp-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--col-plp-gap);
+  }
+  @media (min-width: 1024px) {
+    #shopify-section-{{ section.id }} .col-plp-grid {
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.25rem;
+    }
+  }
+  #shopify-section-{{ section.id }} .col-plp-pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 2.5rem;
+  }
+  #shopify-section-{{ section.id }} .col-plp-page-btn {
+    min-height: 44px;
+    padding: 0 1.25rem;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--col-plp-black);
+    border: 1px solid var(--col-plp-black);
+  }
+  #shopify-section-{{ section.id }} .col-plp-page-info {
+    font-size: 0.875rem;
+    color: var(--col-plp-muted);
+  }
+  #shopify-section-{{ section.id }} .col-plp-empty {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--col-plp-muted);
+  }
+  #shopify-section-{{ section.id }} .col-plp-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    border: 0;
+  }
+  /* Product cards */
+  #shopify-section-{{ section.id }} .col-plp-card__media {
+    position: relative;
+    overflow: hidden;
+    background: #f3f4f6;
+  }
+  #shopify-section-{{ section.id }} .col-plp-card__img-pair {
+    aspect-ratio: 4 / 5;
+    position: relative;
+  }
+  #shopify-section-{{ section.id }} .col-plp-card__img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: opacity 0.35s ease;
+  }
+  #shopify-section-{{ section.id }} .col-plp-card__img--alt {
+    opacity: 0;
+  }
+  @media (hover: hover) {
+    #shopify-section-{{ section.id }} .col-plp-card__img-pair:has(.col-plp-card__img--alt):hover .col-plp-card__img--primary {
+      opacity: 0;
+    }
+    #shopify-section-{{ section.id }} .col-plp-card__img-pair:has(.col-plp-card__img--alt):hover .col-plp-card__img--alt {
+      opacity: 1;
+    }
+  }
+  #shopify-section-{{ section.id }} .col-plp-card__quick-wrap {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 0.5rem;
+    pointer-events: none;
+  }
+  #shopify-section-{{ section.id }} .col-plp-card__quick-wrap > * { pointer-events: auto; }
+  #shopify-section-{{ section.id }} .col-plp-card__quick-toggle {
+    width: 100%;
+    min-height: 44px;
+    font-size: 0.6875rem;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    background: #fff;
+    color: var(--col-plp-black);
+    border: 1px solid var(--col-plp-black);
+    cursor: pointer;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+  }
+  @media (hover: hover) {
+    #shopify-section-{{ section.id }} .col-plp-card:hover .col-plp-card__quick-toggle {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @media (hover: none) {
+    #shopify-section-{{ section.id }} .col-plp-card__quick-toggle { opacity: 1; transform: none; }
+  }
+  #shopify-section-{{ section.id }} .col-plp-card__quick-toggle--link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+  }
+  #shopify-section-{{ section.id }} .col-plp-card__quick-panel {
+    margin-top: 0.35rem;
+    padding: 0.65rem;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  #shopify-section-{{ section.id }} .col-plp-card__quick-panel[hidden] { display: none !important; }
+  #shopify-section-{{ section.id }} .col-plp-card__quick-title {
+    margin: 0 0 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  #shopify-section-{{ section.id }} .col-plp-card__variants {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+  #shopify-section-{{ section.id }} .col-plp-card__variant-btn {
+    min-height: 40px;
+    min-width: 44px;
+    padding: 0 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid #e5e7eb;
+    background: #fff;
+    cursor: pointer;
+  }
+  #shopify-section-{{ section.id }} .col-plp-card__variant-btn:hover:not(:disabled) {
+    border-color: #111;
+  }
+  #shopify-section-{{ section.id }} .col-plp-card__variant-btn:disabled { opacity: 0.5; }
+  #shopify-section-{{ section.id }} .col-plp-card__quick-msg {
+    margin: 0.5rem 0 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    min-height: 1.25em;
+  }
+  #shopify-section-{{ section.id }} .col-plp-card__quick-detail {
+    display: block;
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-align: center;
+    color: var(--col-plp-black);
+  }
+  #shopify-section-{{ section.id }} .col-plp-card__info {
+    padding: 0.65rem 0 0;
+  }
+  #shopify-section-{{ section.id }} .col-plp-card__title {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    line-height: 1.35;
+    text-decoration: none;
+    color: var(--col-plp-black);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  #shopify-section-{{ section.id }} .col-plp-card__price-row {
+    margin-top: 0.35rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+  #shopify-section-{{ section.id }} .col-plp-card__price {
+    font-size: 0.875rem;
+    font-weight: 700;
+  }
+  #shopify-section-{{ section.id }} .col-plp-card__compare {
+    font-size: 0.75rem;
+    color: var(--col-plp-muted);
+    text-decoration: line-through;
+  }
+  #shopify-section-{{ section.id }} .col-plp-card__swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.4rem;
+  }
+  #shopify-section-{{ section.id }} .col-plp-card__swatch {
+    width: 0.65rem;
+    height: 0.65rem;
+    border-radius: 999px;
+    border: 1px solid #d1d5db;
+    background: linear-gradient(135deg, #e5e7eb, #9ca3af);
+  }
+  #shopify-section-{{ section.id }} .col-plp-card__swatch-more {
+    font-size: 0.65rem;
+    color: var(--col-plp-muted);
+    align-self: center;
+  }
+</style>
+
+<script>
+(function() {
+  var root = document.querySelector('[data-section-id="{{ section.id }}"]');
+  if (!root) return;
+
+  var form = document.getElementById('CollectionFiltersForm');
+  var sort = document.getElementById('ColSortBy');
+  if (sort && form) {
+    sort.addEventListener('change', function() { form.submit(); });
+  }
+
+  var drawer = document.getElementById('ColFilterDrawer');
+  var overlay = document.getElementById('ColFilterOverlay');
+  var openBtn = document.getElementById('ColFilterDrawerOpen');
+  function isMobileFilters() {
+    return window.matchMedia('(max-width: 1023px)').matches;
+  }
+  function openDrawer() {
+    if (!drawer || !overlay || !isMobileFilters()) return;
+    drawer.classList.add('col-plp-sidebar--open');
+    overlay.removeAttribute('hidden');
+    if (openBtn) openBtn.setAttribute('aria-expanded', 'true');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeDrawer() {
+    if (!drawer || !overlay) return;
+    drawer.classList.remove('col-plp-sidebar--open');
+    overlay.setAttribute('hidden', '');
+    if (openBtn) openBtn.setAttribute('aria-expanded', 'false');
+    document.body.style.overflow = '';
+  }
+  if (openBtn) openBtn.addEventListener('click', openDrawer);
+  overlay && overlay.addEventListener('click', closeDrawer);
+  drawer && drawer.querySelectorAll('[data-drawer-close]').forEach(function(el) {
+    el.addEventListener('click', closeDrawer);
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && drawer && drawer.classList.contains('col-plp-sidebar--open')) closeDrawer();
+  });
+  window.addEventListener('resize', function() {
+    if (!isMobileFilters()) closeDrawer();
+  });
+
+  root.querySelectorAll('[data-filter-accordion]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var ex = btn.getAttribute('aria-expanded') === 'true';
+      btn.setAttribute('aria-expanded', ex ? 'false' : 'true');
+    });
+  });
+
+  var cartAddBase = (window.routes && window.routes.cart_add_url) || '/cart/add';
+  var addUrl = cartAddBase.replace(/\/add\/?(\?.*)?$/i, '') + '/add.js';
+
+  root.querySelectorAll('.col-plp-card').forEach(function(card) {
+    var toggle = card.querySelector('[data-quick-add-toggle]');
+    var panel = card.querySelector('[data-quick-add-panel]');
+    var msg = card.querySelector('[data-quick-msg]');
+    if (toggle && panel) {
+      toggle.addEventListener('click', function(e) {
+        e.preventDefault();
+        var open = !panel.hidden;
+        panel.hidden = open;
+        toggle.setAttribute('aria-expanded', open ? 'false' : 'true');
+      });
+    }
+    card.querySelectorAll('[data-variant-id]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var id = btn.getAttribute('data-variant-id');
+        if (!id || btn.disabled) return;
+        btn.disabled = true;
+        if (msg) msg.textContent = '…';
+        var fd = new FormData();
+        fd.append('id', id);
+        fd.append('quantity', '1');
+        fetch(addUrl, { method: 'POST', body: fd, credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+          .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
+          .then(function(res) {
+            if (res.ok && typeof window.updateCartCount === 'function') window.updateCartCount();
+            if (msg) msg.textContent = res.ok ? 'Added to cart' : (res.d && res.d.description ? String(res.d.description) : 'Could not add');
+            if (res.ok) setTimeout(function() { if (msg) msg.textContent = ''; }, 2000);
+          })
+          .catch(function() { if (msg) msg.textContent = 'Error'; })
+          .finally(function() { btn.disabled = false; });
+      });
+    });
+  });
+})();
+</script>
+
+{% schema %}
+{
+  "name": "Collection",
+  "class": "section-main-collection",
+  "settings": [
+    {
+      "type": "range",
+      "id": "products_per_page",
+      "min": 8,
+      "max": 48,
+      "step": 4,
+      "default": 24,
+      "label": "Products per page"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_shortcuts",
+      "label": "Show category shortcuts row",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "shortcuts_heading",
+      "label": "Shortcuts row label (accessibility)",
+      "default": "Shop by category"
+    },
+    {
+      "type": "textarea",
+      "id": "filters_empty_text",
+      "label": "Message when storefront filters are off",
+      "default": "Turn on filters in Shopify Admin → Search & Discovery to filter by size, color, price, and product type."
+    },
+    {
+      "type": "text",
+      "id": "filter_drawer_label",
+      "label": "Mobile filters button label",
+      "default": "Filters"
+    },
+    {
+      "type": "text",
+      "id": "apply_filters_label",
+      "label": "Apply filters button",
+      "default": "Apply filters"
+    },
+    {
+      "type": "text",
+      "id": "clear_all_label",
+      "label": "Clear all filters label",
+      "default": "Clear all"
+    },
+    {
+      "type": "textarea",
+      "id": "price_filter_hint",
+      "label": "Price filter helper text",
+      "default": "Enter amounts in your store’s smallest currency unit (e.g. cents), matching Shopify’s filter URLs."
+    },
+    {
+      "type": "header",
+      "content": "Sort labels"
+    },
+    {
+      "type": "text",
+      "id": "sort_featured",
+      "label": "Featured",
+      "default": "Featured"
+    },
+    {
+      "type": "text",
+      "id": "sort_best_selling",
+      "label": "Best selling",
+      "default": "Best selling"
+    },
+    {
+      "type": "text",
+      "id": "sort_newest",
+      "label": "Newest",
+      "default": "Newest"
+    },
+    {
+      "type": "text",
+      "id": "sort_price_low",
+      "label": "Price low to high",
+      "default": "Price: Low to high"
+    },
+    {
+      "type": "text",
+      "id": "sort_price_high",
+      "label": "Price high to low",
+      "default": "Price: High to low"
+    },
+    {
+      "type": "text",
+      "id": "sort_az",
+      "label": "Name A–Z",
+      "default": "Name A–Z"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "shortcut",
+      "name": "Category shortcut",
+      "settings": [
+        {
+          "type": "text",
+          "id": "label",
+          "label": "Label",
+          "default": "Hoodies"
+        },
+        {
+          "type": "url",
+          "id": "link",
+          "label": "Link",
+          "default": "/collections/all"
+        }
+      ]
+    }
+  ],
+  "max_blocks": 12,
+  "presets": [
+    {
+      "name": "Collection"
+    }
+  ]
+}
+{% endschema %}

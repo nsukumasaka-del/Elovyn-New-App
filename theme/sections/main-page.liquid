@@ -1,0 +1,199 @@
+{% comment %}
+  Page template section - for static pages (About, Contact, etc.)
+{% endcomment %}
+
+{%- assign handle_lower = page.handle | default: '' | downcase -%}
+{%- assign title_lower = page.title | default: '' | downcase -%}
+{%- assign is_cash_out = false -%}
+{%- if handle_lower contains 'cash' and handle_lower contains 'out' -%}
+  {%- assign is_cash_out = true -%}
+{%- elsif title_lower contains 'cash out' or title_lower contains 'cash-out' -%}
+  {%- assign is_cash_out = true -%}
+{%- endif -%}
+
+{%- if is_cash_out -%}
+  <section class="cashout-page py-16 md:py-24 bg-background">
+    <div class="container mx-auto px-6 max-w-6xl">
+      <div class="cashout-hero mb-10 md:mb-14">
+        <h1 class="text-4xl md:text-5xl font-bold text-foreground mb-4">{{ page.title }}</h1>
+        <p class="text-foreground/70 text-base md:text-lg max-w-3xl">
+          Fast, secure cash-out with clear instructions and trusted payments. If you need help, our support team is here.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-10">
+        <main class="lg:col-span-2 cashout-main">
+          <div class="cashout-trust-cards mb-8">
+            <div class="cashout-card">
+              <div class="cashout-card-title">Secure payments</div>
+              <div class="cashout-card-text">PayFast, PayPal, and Stripe-supported checkout (encrypted payment flow).</div>
+            </div>
+            <div class="cashout-card">
+              <div class="cashout-card-title">Processing time</div>
+              <div class="cashout-card-text">1–3 business days. Shipping/delivery is handled via courier with tracking once shipped.</div>
+            </div>
+            <div class="cashout-card">
+              <div class="cashout-card-title">Need assistance?</div>
+              <div class="cashout-card-text">
+                Email us at <a href="mailto:elovyn.shop@gmail.com" class="cashout-link">elovyn.shop@gmail.com</a> or call
+                <a href="tel:0661151202" class="cashout-link">066 1151 202</a>.
+              </div>
+            </div>
+          </div>
+
+          <div class="cashout-content prose max-w-none text-foreground/90">
+            {{ page.content }}
+          </div>
+        </main>
+
+        <aside class="cashout-sidebar lg:col-span-1">
+          <div class="cashout-side-card">
+            <div class="cashout-side-title">On this page</div>
+            <nav class="cashout-toc" aria-label="Page navigation">
+              <ul id="CashOutTocList" class="cashout-toc-list"></ul>
+            </nav>
+          </div>
+
+          <div class="cashout-side-card">
+            <div class="cashout-side-title">Support</div>
+            <div class="cashout-side-text">
+              <div><strong>Email:</strong> <a class="cashout-link" href="mailto:elovyn.shop@gmail.com">elovyn.shop@gmail.com</a></div>
+              <div><strong>Phone:</strong> <a class="cashout-link" href="tel:0661151202">066 1151 202</a></div>
+              <div><strong>Location:</strong> South Africa</div>
+              <div><strong>Hours:</strong> Monday – Friday</div>
+              <div><strong>Response time:</strong> 24–48 hours</div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <style>
+    .cashout-page .cashout-trust-cards {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.75rem;
+    }
+    @media (min-width: 768px) {
+      .cashout-page .cashout-trust-cards {
+        grid-template-columns: 1fr;
+      }
+    }
+    @media (min-width: 1024px) {
+      .cashout-page .cashout-trust-cards {
+        grid-template-columns: 1fr 1fr;
+      }
+      .cashout-page .cashout-trust-cards .cashout-card:last-child {
+        grid-column: 1 / -1;
+      }
+    }
+    .cashout-card {
+      background: rgba(0, 0, 0, 0.03);
+      border: 1px solid rgba(0, 0, 0, 0.06);
+      border-radius: 16px;
+      padding: 1rem;
+    }
+    .cashout-card-title {
+      font-weight: 700;
+      color: #111;
+      margin-bottom: 0.35rem;
+    }
+    .cashout-card-text {
+      font-size: 0.9rem;
+      line-height: 1.5;
+      color: rgba(0, 0, 0, 0.7);
+    }
+    .gradient .cashout-card-title,
+    .gradient .cashout-card-text {
+      color: hsl(var(--foreground));
+    }
+    .cashout-link {
+      color: inherit;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+    .cashout-sidebar .cashout-side-card {
+      background: rgba(0, 0, 0, 0.03);
+      border: 1px solid rgba(0, 0, 0, 0.06);
+      border-radius: 16px;
+      padding: 1rem;
+      position: relative;
+    }
+    .cashout-sidebar .cashout-side-title {
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      color: #111;
+    }
+    .cashout-sidebar .cashout-side-text {
+      font-size: 0.9rem;
+      line-height: 1.6;
+      color: rgba(0, 0, 0, 0.7);
+    }
+    .cashout-toc-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    .cashout-toc-list a {
+      color: inherit;
+      text-decoration: none;
+      font-size: 0.9rem;
+    }
+    .cashout-toc-list a:hover {
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+  </style>
+
+  <script>
+    (function() {
+      var tocList = document.getElementById('CashOutTocList');
+      var content = document.querySelector('.cashout-content');
+      if (!tocList || !content) return;
+
+      var headings = content.querySelectorAll('h2, h3');
+      if (!headings || headings.length === 0) return;
+
+      headings.forEach(function(h) {
+        var text = (h.textContent || '').trim();
+        if (!text) return;
+
+        var id = (h.id || '').trim();
+        if (!id) {
+          id = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+        }
+        if (!id) id = 'cashout-section';
+
+        // ensure unique id per page without relying on CSS.escape support
+        var existingIds = {};
+        content.querySelectorAll('[id]').forEach(function(el) {
+          existingIds[el.id] = true;
+        });
+        if (existingIds[id]) {
+          var i = 2;
+          while (existingIds[id + '-' + i]) i++;
+          id = id + '-' + i;
+        }
+
+        h.id = id;
+
+        var li = document.createElement('li');
+        li.innerHTML = '<a href="#' + id + '">' + text + '</a>';
+        tocList.appendChild(li);
+      });
+    })();
+  </script>
+{%- else -%}
+  <section class="py-16 md:py-24 bg-background">
+    <div class="container mx-auto px-6 max-w-3xl">
+      <h1 class="text-4xl md:text-5xl font-bold text-foreground mb-8">{{ page.title }}</h1>
+      <div class="prose prose-invert max-w-none text-foreground/90">
+        {{ page.content }}
+      </div>
+    </div>
+  </section>
+{%- endif -%}

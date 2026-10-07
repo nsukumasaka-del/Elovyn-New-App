@@ -1,0 +1,111 @@
+{% comment %}
+  Gymshark-style PLP card: dual image hover, title, price, optional color dots, quick add with sizes.
+  @param product {Object} required
+  @param affiliate_url {String} optional external URL (sponsored)
+  @param affiliate_label {String} optional CTA label
+{% endcomment %}
+{%- liquid
+  assign card_href = product.url
+  if affiliate_url != blank
+    assign card_href = affiliate_url
+  endif
+  assign second_img = product.images[1]
+-%}
+<article class="col-plp-card" data-product-id="{{ product.id }}">
+  <div class="col-plp-card__media">
+    <a href="{{ card_href }}" class="col-plp-card__img-link"{% if affiliate_url != blank %} target="_blank" rel="noopener noreferrer"{% endif %}>
+      <div class="col-plp-card__img-pair">
+        {%- if product.featured_image != blank -%}
+          <img
+            class="col-plp-card__img col-plp-card__img--primary"
+            src="{{ product.featured_image | image_url: width: 900 }}"
+            alt="{{ product.featured_image.alt | default: product.title | escape }}"
+            width="{{ product.featured_image.width }}"
+            height="{{ product.featured_image.height }}"
+            loading="lazy"
+          >
+        {%- else -%}
+          {{ 'product-1' | placeholder_svg_tag: 'col-plp-card__img col-plp-card__img--primary' }}
+        {%- endif -%}
+        {%- if second_img != blank -%}
+          <img
+            class="col-plp-card__img col-plp-card__img--alt"
+            src="{{ second_img | image_url: width: 900 }}"
+            alt="{{ second_img.alt | default: product.title | escape }}"
+            width="{{ second_img.width }}"
+            height="{{ second_img.height }}"
+            loading="lazy"
+          >
+        {%- endif -%}
+      </div>
+    </a>
+
+    {%- if affiliate_url == blank -%}
+      <div class="col-plp-card__quick-wrap">
+        <button type="button" class="col-plp-card__quick-toggle" data-quick-add-toggle aria-expanded="false">
+          {{ 'products.product.quick_add' | t | default: 'Quick add' }}
+        </button>
+        <div class="col-plp-card__quick-panel" data-quick-add-panel hidden>
+          <p class="col-plp-card__quick-title">{{ 'products.product.choose_options' | t | default: 'Select size' }}</p>
+          <div class="col-plp-card__variants" data-quick-variants>
+            {%- for variant in product.variants -%}
+              {%- if variant.available -%}
+                <button
+                  type="button"
+                  class="col-plp-card__variant-btn"
+                  data-variant-id="{{ variant.id }}"
+                  data-variant-price="{{ variant.price | money }}"
+                >
+                  {{- variant.title | replace: product.title, '' | strip | default: variant.title -}}
+                </button>
+              {%- endif -%}
+            {%- endfor -%}
+          </div>
+          <p class="col-plp-card__quick-msg" data-quick-msg role="status" aria-live="polite"></p>
+          <a href="{{ product.url }}" class="col-plp-card__quick-detail">{{ 'products.product.view_full_details' | t | default: 'View product' }}</a>
+        </div>
+      </div>
+    {%- elsif affiliate_url != blank -%}
+      <div class="col-plp-card__quick-wrap col-plp-card__quick-wrap--static">
+        <a href="{{ affiliate_url }}" class="col-plp-card__quick-toggle col-plp-card__quick-toggle--link" target="_blank" rel="noopener noreferrer">
+          {{ affiliate_label | default: 'Shop' }}
+        </a>
+      </div>
+    {%- endif -%}
+  </div>
+
+  <div class="col-plp-card__info">
+    <a href="{{ card_href }}" class="col-plp-card__title"{% if affiliate_url != blank %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ product.title }}</a>
+    <div class="col-plp-card__price-row">
+      {%- if product.price_varies -%}
+        <span class="col-plp-card__price" data-card-price>{{ product.price_min | money }}+</span>
+      {%- else -%}
+        <span class="col-plp-card__price" data-card-price>{{ product.price | money }}</span>
+        {%- if product.compare_at_price > product.price -%}
+          <span class="col-plp-card__compare">{{ product.compare_at_price | money }}</span>
+        {%- endif -%}
+      {%- endif -%}
+    </div>
+
+    {%- if product.options_with_values.size > 0 and product.has_only_default_variant == false -%}
+      {%- assign color_option = nil -%}
+      {%- for opt in product.options_with_values -%}
+        {%- assign on = opt.name | downcase -%}
+        {%- if on == 'color' or on == 'colour' -%}
+          {%- assign color_option = opt -%}
+          {%- break -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {%- if color_option -%}
+        <div class="col-plp-card__swatches" aria-label="{{ color_option.name }}">
+          {%- for value in color_option.values limit: 6 -%}
+            <span class="col-plp-card__swatch" title="{{ value | escape }}"></span>
+          {%- endfor -%}
+          {%- if color_option.values.size > 6 -%}
+            <span class="col-plp-card__swatch-more">+{{ color_option.values.size | minus: 6 }}</span>
+          {%- endif -%}
+        </div>
+      {%- endif -%}
+    {%- endif -%}
+  </div>
+</article>

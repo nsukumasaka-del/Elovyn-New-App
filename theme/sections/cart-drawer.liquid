@@ -1,0 +1,91 @@
+{% if section.settings.enable_cart_drawer %}
+  <div class="cart-drawer" id="GlobalCartDrawer" aria-hidden="true">
+    <div class="cart-drawer__overlay" data-cart-drawer-close></div>
+    <aside class="cart-drawer__panel" role="dialog" aria-modal="true" aria-label="Cart drawer">
+      <header class="cart-drawer__header">
+        <h2>YOUR CART ({{ cart.item_count }})</h2>
+        <button type="button" data-cart-drawer-close aria-label="Close cart">&times;</button>
+      </header>
+      <div class="cart-drawer__body">
+        {% if cart.item_count > 0 %}
+          <ul class="cart-drawer__items">
+            {% for item in cart.items %}
+              <li class="cart-drawer__item">
+                <div class="cart-drawer__item-media">
+                  {% if item.image != blank %}
+                    <img src="{{ item.image | image_url: width: 140 }}" alt="{{ item.image.alt | default: item.product.title | escape }}" loading="lazy">
+                  {% endif %}
+                </div>
+                <div class="cart-drawer__item-info">
+                  <a href="{{ item.url }}">{{ item.product.title }}</a>
+                  <p>{{ item.final_line_price | money }}</p>
+                </div>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="cart-drawer__empty">Your cart is empty.</p>
+        {% endif %}
+      </div>
+      <footer class="cart-drawer__footer">
+        <p class="cart-drawer__subtotal"><span>Subtotal</span><strong>{{ cart.total_price | money }}</strong></p>
+        <a href="{{ routes.cart_url }}" class="cart-drawer__btn cart-drawer__btn--secondary">View cart</a>
+        <a href="/checkout" class="cart-drawer__btn cart-drawer__btn--primary">Checkout</a>
+      </footer>
+    </aside>
+  </div>
+
+  <style>
+    .cart-drawer { position: fixed; inset: 0; z-index: 100003; visibility: hidden; opacity: 0; transition: opacity 0.25s ease; }
+    .cart-drawer[aria-hidden="false"] { visibility: visible; opacity: 1; }
+    .cart-drawer__overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.55); }
+    .cart-drawer__panel { position: absolute; right: 0; top: 0; bottom: 0; width: min(420px, 100%); background: #0a0a0a; color: #f5f5f0; display: flex; flex-direction: column; transform: translateX(100%); transition: transform 0.28s ease; }
+    .cart-drawer[aria-hidden="false"] .cart-drawer__panel { transform: translateX(0); }
+    .cart-drawer__header { display: flex; justify-content: space-between; align-items: center; padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.12); }
+    .cart-drawer__header h2 { margin: 0; font-size: 0.86rem; letter-spacing: 0.08em; }
+    .cart-drawer__header button { background: none; border: none; color: #f5f5f0; font-size: 1.4rem; cursor: pointer; }
+    .cart-drawer__body { flex: 1; overflow: auto; padding: 1rem; }
+    .cart-drawer__items { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.8rem; }
+    .cart-drawer__item { display: grid; grid-template-columns: 68px 1fr; gap: 0.7rem; }
+    .cart-drawer__item-media img { width: 68px; height: 68px; object-fit: cover; border-radius: 8px; }
+    .cart-drawer__item-info a { color: #f5f5f0; text-decoration: none; font-size: 0.85rem; }
+    .cart-drawer__item-info p { margin: 0.35rem 0 0 0; color: rgba(245,245,240,0.8); font-weight: 600; }
+    .cart-drawer__empty { color: rgba(245,245,240,0.75); }
+    .cart-drawer__footer { padding: 1rem; border-top: 1px solid rgba(255,255,255,0.12); display: grid; gap: 0.65rem; }
+    .cart-drawer__subtotal { display: flex; justify-content: space-between; margin: 0; }
+    .cart-drawer__btn { text-align: center; text-decoration: none; padding: 0.72rem; border-radius: 10px; font-weight: 700; }
+    .cart-drawer__btn--secondary { border: 1px solid rgba(255,255,255,0.2); color: #f5f5f0; }
+    .cart-drawer__btn--primary { background: var(--color-accent, #FF3333); color: #fff; }
+  </style>
+
+  <script>
+    (function() {
+      var drawer = document.getElementById('GlobalCartDrawer');
+      if (!drawer) return;
+      function openDrawer() { drawer.setAttribute('aria-hidden', 'false'); }
+      function closeDrawer() { drawer.setAttribute('aria-hidden', 'true'); }
+
+      document.querySelectorAll('[data-cart-drawer-close]').forEach(function(el) {
+        el.addEventListener('click', closeDrawer);
+      });
+      document.querySelectorAll('a[aria-label="Cart"]').forEach(function(link) {
+        link.addEventListener('click', function(e) {
+          e.preventDefault();
+          openDrawer();
+        });
+      });
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && drawer.getAttribute('aria-hidden') === 'false') closeDrawer();
+      });
+    })();
+  </script>
+{% endif %}
+
+{% schema %}
+{
+  "name": "Cart drawer",
+  "settings": [
+    { "type": "checkbox", "id": "enable_cart_drawer", "label": "Enable cart drawer", "default": true }
+  ]
+}
+{% endschema %}

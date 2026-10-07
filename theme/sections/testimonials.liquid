@@ -1,0 +1,56 @@
+<section class="testimonials-section section-spacing">
+  <div class="container mx-auto px-6">
+    <div class="text-center mb-10">
+      <h2 class="text-4xl md:text-5xl font-bold text-foreground mb-3">{{ section.settings.heading | default: 'What customers say' }}</h2>
+      {%- if section.settings.subheading != blank -%}<p class="text-foreground/70 max-w-2xl mx-auto">{{ section.settings.subheading }}</p>{%- endif -%}
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+      {%- for block in section.blocks -%}
+        <article class="testimonial-card" {{ block.shopify_attributes }}>
+          <p class="testimonial-quote">“{{ block.settings.quote }}”</p>
+          <p class="testimonial-name">{{ block.settings.name }}</p>
+          {%- if block.settings.meta != blank -%}<p class="testimonial-meta">{{ block.settings.meta }}</p>{%- endif -%}
+        </article>
+      {%- endfor -%}
+    </div>
+  </div>
+</section>
+
+<style>
+  .testimonial-card { background: hsl(var(--card)); border: 1px solid hsl(var(--border)/0.5); border-radius: 14px; padding: 1rem; }
+  .testimonial-quote { color: hsl(var(--foreground)); line-height: 1.55; margin: 0 0 0.8rem 0; }
+  .testimonial-name { margin: 0; font-weight: 700; color: hsl(var(--foreground)); }
+  .testimonial-meta { margin: 0.2rem 0 0 0; font-size: 0.82rem; color: hsl(var(--foreground)/0.65); }
+</style>
+
+{% schema %}
+{
+  "name": "Testimonials",
+  "settings": [
+    { "type": "text", "id": "heading", "label": "Heading", "default": "What customers say" },
+    { "type": "textarea", "id": "subheading", "label": "Subheading", "default": "Build trust with real customer experiences." }
+  ],
+  "blocks": [
+    {
+      "type": "testimonial",
+      "name": "Testimonial",
+      "settings": [
+        { "type": "textarea", "id": "quote", "label": "Quote", "default": "Amazing quality and fast shipping!" },
+        { "type": "text", "id": "name", "label": "Name", "default": "Verified Customer" },
+        { "type": "text", "id": "meta", "label": "Meta text", "default": "South Africa" }
+      ]
+    }
+  ],
+  "max_blocks": 12,
+  "presets": [
+    {
+      "name": "Testimonials",
+      "blocks": [
+        { "type": "testimonial" },
+        { "type": "testimonial" },
+        { "type": "testimonial" }
+      ]
+    }
+  ]
+}
+{% endschema %}

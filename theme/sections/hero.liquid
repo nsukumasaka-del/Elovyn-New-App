@@ -1,61 +1,231 @@
 {% comment %}
-  Hero section with background image and call-to-action
+  Full-width hero — minimal, bold sans, strong overlay (Gymshark-style retail).
 {% endcomment %}
+{%- assign hero_overlay = section.settings.overlay_darkness | default: 45 | times: 1.0 | divided_by: 100.0 -%}
+{%- assign hero_description_color = section.settings.description_text_color | default: '#ffffff' -%}
+{%- assign hero_heading_color = section.settings.heading_text_color | default: '#ffffff' -%}
 
-<section class="relative h-screen w-full overflow-hidden">
-  {%- comment -%} Background Image {%- endcomment -%}
-  <div class="absolute inset-0">
+<style>
+  .hero-cta-row {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .elovyn-hero-shop-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 52px;
+    padding: 0 2rem;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #0a0a0a;
+    background: #fff;
+    border: none;
+    border-radius: 0;
+    text-decoration: none;
+    transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .elovyn-hero-shop-btn:hover {
+    background: #f0f0f0;
+    transform: translateY(-1px);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+  }
+  .elovyn-hero-shop-btn--ghost {
+    background: transparent;
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    box-shadow: none;
+  }
+  .elovyn-hero-shop-btn--ghost:hover {
+    background: rgba(255, 255, 255, 0.1);
+    box-shadow: none;
+  }
+  @media (min-width: 768px) {
+    .elovyn-hero-shop-btn { min-height: 56px; padding: 0 2.25rem; font-size: 0.8125rem; }
+  }
+  .hero-section .hero-heading {
+    font-family: var(--font-heading-family, system-ui, sans-serif);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 0.95;
+    text-transform: uppercase;
+    font-style: normal;
+  }
+  /* Responsive full-bleed cover image (all viewports) */
+  .hero-section__media {
+    z-index: 0;
+    overflow: hidden;
+  }
+  .hero-section__cover-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: var(--hero-focal, center);
+    transform: scale(var(--hero-zoom, 1));
+    transform-origin: var(--hero-focal, center center);
+    pointer-events: none;
+  }
+</style>
+
+{%- liquid
+  assign hero_zoom = section.settings.hero_zoom | default: 100 | times: 1.0 | divided_by: 100.0
+  assign hero_zoom_m = section.settings.hero_zoom_mobile | default: 100 | times: 1.0 | divided_by: 100.0
+  assign hero_focal = section.settings.hero_focal_point | default: 'center'
+  assign hero_focal_m = section.settings.hero_focal_point_mobile | default: hero_focal
+  assign hero_alt = 'Hero'
+  if section.settings.hero_image != blank
+    assign hero_alt = section.settings.hero_image.alt | default: 'Hero'
+  endif
+-%}
+<section
+  class="relative w-full overflow-hidden hero-section"
+  style="height: {{ section.settings.hero_height | default: 80 }}vh; --hero-zoom: {{ hero_zoom }}; --hero-focal: {{ hero_focal }};"
+  data-section-id="{{ section.id }}"
+  data-hero-zoom-mobile="{{ hero_zoom_m }}"
+  data-hero-focal-mobile="{{ hero_focal_m }}"
+>
+  {%- comment -%} Responsive image: srcset for CDN; cover + focal + zoom for all breakpoints {%- endcomment -%}
+  <div
+    class="absolute inset-0 hero-bg hero-section__media"
+    role="presentation"
+  >
     {%- if section.settings.hero_image != blank -%}
+      {%- assign hi = section.settings.hero_image -%}
+      {%- capture hero_srcset -%}
+        {%- assign _w = '375,550,750,1100,1500,1920,2560,3840' | split: ',' -%}
+        {%- for s in _w -%}
+          {%- assign wi = s | strip | plus: 0 -%}
+          {{- hi | image_url: width: wi }} {{ wi }}w{% unless forloop.last %}, {% endunless %}
+        {%- endfor -%}
+      {%- endcapture -%}
       <img
-        src="{{ section.settings.hero_image | image_url: width: 1920 }}"
-        alt="{{ section.settings.hero_image.alt | escape }}"
-        class="w-full h-full object-cover object-top"
+        class="hero-section__cover-img"
+        src="{{ hi | image_url: width: 1920 }}"
+        srcset="{{ hero_srcset | strip }}"
+        sizes="100vw"
+        alt="{{ hero_alt | escape }}"
+        width="{{ hi.width }}"
+        height="{{ hi.height }}"
         loading="eager"
+        fetchpriority="high"
+        decoding="async"
+      >
+    {%- elsif section.settings.hero_image_url != blank -%}
+      {%- assign ext_url = section.settings.hero_image_url | strip -%}
+      {%- if ext_url contains 'images.unsplash.com' -%}
+        {%- assign u_photo = ext_url | split: '?' | first -%}
+        <img
+          class="hero-section__cover-img"
+          src="{{ u_photo }}?auto=format&fit=crop&w=1920&q=82"
+          srcset="{{ u_photo }}?auto=format&fit=crop&w=400&q=82 400w, {{ u_photo }}?auto=format&fit=crop&w=750&q=82 750w, {{ u_photo }}?auto=format&fit=crop&w=1100&q=82 1100w, {{ u_photo }}?auto=format&fit=crop&w=1600&q=82 1600w, {{ u_photo }}?auto=format&fit=crop&w=1920&q=82 1920w, {{ u_photo }}?auto=format&fit=crop&w=2560&q=82 2560w"
+          sizes="100vw"
+          alt="{{ hero_alt | escape }}"
+          loading="eager"
+          fetchpriority="high"
+          decoding="async"
+          width="1920"
+          height="1080"
+        >
+      {%- else -%}
+        {%- if ext_url contains '?' -%}
+          {%- assign sep = '&' -%}
+        {%- else -%}
+          {%- assign sep = '?' -%}
+        {%- endif -%}
+        <img
+          class="hero-section__cover-img"
+          src="{{ ext_url }}"
+          sizes="100vw"
+          alt="{{ hero_alt | escape }}"
+          loading="eager"
+          fetchpriority="high"
+          decoding="async"
+        >
+      {%- endif -%}
+    {%- else -%}
+      <img
+        class="hero-section__cover-img"
+        src="{{ 'hoodie.png' | asset_url }}"
+        alt="{{ hero_alt | escape }}"
+        loading="eager"
+        fetchpriority="high"
+        decoding="async"
+        width="1200"
+        height="800"
       >
     {%- endif -%}
-    <div class="absolute inset-0 bg-gradient-to-r from-background/80 via-background/40 to-transparent"></div>
-    <div class="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent"></div>
   </div>
+  <style>
+    @media (max-width: 768px) {
+      #shopify-section-{{ section.id }} .hero-section {
+        --hero-zoom: {{ hero_zoom_m }};
+        --hero-focal: {{ hero_focal_m }};
+      }
+    }
+  </style>
+  <div class="absolute inset-0 hero-section__scrim" style="background: rgb(0 0 0 / {{ hero_overlay }});" aria-hidden="true"></div>
+  <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/25 pointer-events-none" aria-hidden="true"></div>
 
   {%- comment -%} Content {%- endcomment -%}
   <div class="relative z-10 h-full flex flex-col justify-center container mx-auto px-6">
-    <div class="max-w-2xl">
-      <h3 class="text-4xl md:text-6xl lg:text-7xl font-bold leading-[0.95] tracking-tight text-foreground mb-6 font-playfair italic text-shadow">
-        {{ section.settings.heading | default: "Modern Looks." }}
-        <br>
-        {{ section.settings.subheading | default: "Timeless feel." }}
-      </h3>
-      <p class="text-lg md:text-xl text-foreground/70 mb-8">
-        {{ section.settings.description | default: "Find our latest products below." }}
-      </p>
-      <div>
+    <div class="max-w-3xl">
+      <h1 class="hero-heading text-4xl md:text-6xl lg:text-8xl mb-4 md:mb-6 text-shadow" style="color: {{ hero_heading_color }};">
+        {%- if section.settings.combine_headings -%}
+          {{ section.settings.heading | default: 'Train.' }} {{ section.settings.subheading | default: 'Live.' }}
+        {%- else -%}
+          <span class="block">{{ section.settings.heading | default: 'Train.' }}</span>
+          <span class="block">{{ section.settings.subheading | default: 'Live.' }}</span>
+        {%- endif -%}
+      </h1>
+      {%- if section.settings.description != blank -%}
+        <p class="text-base md:text-lg mb-8 max-w-md leading-relaxed font-medium" style="color: {{ hero_description_color }};">
+          {{ section.settings.description }}
+        </p>
+      {%- endif -%}
+      <div class="hero-cta-row">
         <a 
-          href="{% if section.settings.button_link != blank %}{{ section.settings.button_link }}{% else %}#clothing{% endif %}" 
-          class="inline-flex items-center justify-center px-8 py-4 text-sm font-medium bg-foreground text-background rounded-full transition-all duration-300 hover:bg-sand hover:text-background hover:scale-105"
+          href="{% if section.settings.button_link != blank %}{{ section.settings.button_link }}{% else %}/#apparel{% endif %}" 
+          class="elovyn-hero-shop-btn"
         >
           {{ section.settings.button_text | default: "Shop Now" }}
         </a>
+        {%- if section.settings.secondary_button_text != blank -%}
+          <a
+            href="{% if section.settings.secondary_button_link != blank %}{{ section.settings.secondary_button_link }}{% else %}/collections/all{% endif %}"
+            class="elovyn-hero-shop-btn elovyn-hero-shop-btn--ghost"
+          >
+            {{ section.settings.secondary_button_text }}
+          </a>
+        {%- endif -%}
       </div>
     </div>
 
-    {%- comment -%} Bottom Features Bar {%- endcomment -%}
-    <div class="absolute bottom-8 left-6 right-6">
-      <div class="container mx-auto">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 py-6 border-t border-foreground/10">
-          {%- for block in section.blocks -%}
-            <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center">
-                <span class="text-sm font-bold text-accent">{{ block.settings.icon }}</span>
-              </div>
-              <div>
-                <p class="text-sm font-medium text-foreground">{{ block.settings.title }}</p>
-                <p class="text-xs text-foreground/50">{{ block.settings.subtitle }}</p>
-              </div>
-            </div>
-          {%- endfor -%}
+    {%- if section.settings.show_feature_bar -%}
+      <div class="absolute bottom-8 left-6 right-6">
+        <div class="container mx-auto">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6 py-6 border-t border-white/15">
+            {%- for block in section.blocks -%}
+              {%- if block.type == 'feature' -%}
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
+                    <span class="text-sm font-bold text-white">{{ block.settings.icon }}</span>
+                  </div>
+                  <div>
+                    <p class="text-sm font-semibold text-white">{{ block.settings.title }}</p>
+                    <p class="text-xs text-white/55">{{ block.settings.subtitle }}</p>
+                  </div>
+                </div>
+              {%- endif -%}
+            {%- endfor -%}
+          </div>
         </div>
       </div>
-    </div>
+    {%- endif -%}
   </div>
 </section>
 
@@ -70,32 +240,157 @@
     },
     {
       "type": "text",
+      "id": "hero_image_url",
+      "label": "Hero image URL (optional)",
+      "info": "Used only if no Hero Image is set. Unsplash: paste the photo URL (with or without ?params). Other hosts: use a single full image URL. For sharpest results on all screens, upload via Hero Image."
+    },
+    {
+      "type": "range",
+      "id": "hero_height",
+      "label": "Hero height",
+      "min": 50,
+      "max": 100,
+      "step": 5,
+      "unit": "vh",
+      "default": 100
+    },
+    {
+      "type": "range",
+      "id": "hero_zoom",
+      "label": "Hero image zoom (%)",
+      "min": 50,
+      "max": 150,
+      "step": 5,
+      "default": 100,
+      "info": "Scale the image (50%–150%). Higher = more zoomed in."
+    },
+    {
+      "type": "select",
+      "id": "hero_focal_point",
+      "label": "Hero image focal point",
+      "options": [
+        { "value": "top left", "label": "Top Left" },
+        { "value": "top center", "label": "Top Center" },
+        { "value": "top right", "label": "Top Right" },
+        { "value": "center left", "label": "Center Left" },
+        { "value": "center", "label": "Center" },
+        { "value": "center right", "label": "Center Right" },
+        { "value": "bottom left", "label": "Bottom Left" },
+        { "value": "bottom center", "label": "Bottom Center" },
+        { "value": "bottom right", "label": "Bottom Right" }
+      ],
+      "default": "center",
+      "info": "Which part of the image is visible in the hero."
+    },
+    {
+      "type": "header",
+      "content": "Mobile (optional)"
+    },
+    {
+      "type": "range",
+      "id": "hero_zoom_mobile",
+      "label": "Hero image zoom on mobile (%)",
+      "min": 50,
+      "max": 150,
+      "step": 5,
+      "default": 100,
+      "info": "Leave at 100 to match desktop."
+    },
+    {
+      "type": "select",
+      "id": "hero_focal_point_mobile",
+      "label": "Hero focal point on mobile",
+      "options": [
+        { "value": "top left", "label": "Top Left" },
+        { "value": "top center", "label": "Top Center" },
+        { "value": "top right", "label": "Top Right" },
+        { "value": "center left", "label": "Center Left" },
+        { "value": "center", "label": "Center" },
+        { "value": "center right", "label": "Center Right" },
+        { "value": "bottom left", "label": "Bottom Left" },
+        { "value": "bottom center", "label": "Bottom Center" },
+        { "value": "bottom right", "label": "Bottom Right" }
+      ],
+      "default": "center",
+      "info": "Leave as Center to match desktop."
+    },
+    {
+      "type": "range",
+      "id": "overlay_darkness",
+      "label": "Dark overlay strength",
+      "min": 25,
+      "max": 75,
+      "step": 5,
+      "default": 45,
+      "unit": "%"
+    },
+    {
+      "type": "checkbox",
+      "id": "combine_headings",
+      "label": "Combine heading + subheading on one line",
+      "default": false
+    },
+    {
+      "type": "checkbox",
+      "id": "show_feature_bar",
+      "label": "Show bottom feature bar",
+      "default": false
+    },
+    {
+      "type": "header",
+      "content": "Content"
+    },
+    {
+      "type": "text",
       "id": "heading",
       "label": "Heading",
-      "default": "Modern Looks."
+      "default": "Hoodies."
     },
     {
       "type": "text",
       "id": "subheading",
       "label": "Subheading",
-      "default": "Timeless feel."
+      "default": "Sweatshirts. Graphic tees."
     },
     {
       "type": "textarea",
       "id": "description",
       "label": "Description",
-      "default": "Find our latest products below."
+      "default": "Premium comfort and style. Shop our curated collection of hoodies, sweatshirts, and custom graphic tees."
+    },
+    {
+      "type": "color",
+      "id": "heading_text_color",
+      "label": "Heading text color",
+      "default": "#ffffff"
+    },
+    {
+      "type": "color",
+      "id": "description_text_color",
+      "label": "Description text color",
+      "default": "#ffffff"
     },
     {
       "type": "text",
       "id": "button_text",
       "label": "Button Text",
-      "default": "Shop Now"
+      "default": "Shop All"
     },
     {
       "type": "url",
       "id": "button_link",
       "label": "Button Link"
+    },
+    {
+      "type": "text",
+      "id": "secondary_button_text",
+      "label": "Secondary button text",
+      "default": "Explore Collection"
+    },
+    {
+      "type": "url",
+      "id": "secondary_button_link",
+      "label": "Secondary button link"
     }
   ],
   "blocks": [
@@ -113,13 +408,13 @@
           "type": "text",
           "id": "title",
           "label": "Title",
-          "default": "Award-winning design"
+          "default": "Premium comfort"
         },
         {
           "type": "text",
           "id": "subtitle",
           "label": "Subtitle",
-          "default": "Assembled in Europe"
+          "default": "Hoodies, sweatshirts & tees"
         }
       ]
     }

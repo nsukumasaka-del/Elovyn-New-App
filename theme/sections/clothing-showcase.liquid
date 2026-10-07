@@ -1,93 +1,392 @@
 {% comment %}
-  Clothing Showcase Section - Displays products from a collection
+  Clothing Showcase Section - Displays products from the selected collection with price and Add to cart.
+  Standard Shopify add-to-cart: form POST to cart/add with return_to=cart. Clicking Add to cart adds the item and goes to the cart page.
 {% endcomment %}
 
-<section id="clothing" class="py-24 md:py-32 bg-background">
+<section id="{{ section.settings.section_id | default: 'apparel' }}" class="clothing-showcase-section py-24 md:py-32 bg-background">
   <div class="container mx-auto px-6">
     <div class="text-center mb-16">
       <h2 class="text-4xl md:text-5xl lg:text-6xl font-bold text-foreground mb-4">
         {{ section.settings.heading | default: "Premium Clothing Collection" }}
       </h2>
-      <p class="text-lg text-foreground/60 max-w-xl mx-auto">
-        {{ section.settings.description | default: "Discover our curated selection of premium clothing for every style." }}
-      </p>
+      {% if section.settings.description != blank %}
+        <p class="text-lg text-foreground/60 max-w-xl mx-auto">
+          {{ section.settings.description }}
+        </p>
+      {% endif %}
     </div>
 
+    {%- assign collection = nil -%}
     {%- if section.settings.collection != blank -%}
       {%- assign collection = collections[section.settings.collection] -%}
-      {%- if collection != blank and collection.products.size > 0 -%}
-        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          {%- for product in collection.products limit: section.settings.products_to_show -%}
-            <div class="group relative bg-card rounded-3xl overflow-hidden cursor-pointer">
-              <a href="{{ product.url }}">
-                <div class="aspect-[4/5] relative overflow-hidden">
-                  {%- if product.featured_image != blank -%}
-                    <img
-                      src="{{ product.featured_image | image_url: width: 600 }}"
-                      alt="{{ product.featured_image.alt | escape }}"
-                      class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                      loading="lazy"
-                    >
-                  {%- else -%}
-                    {{ 'product-1' | placeholder_svg_tag: 'w-full h-full object-cover' }}
-                  {%- endif -%}
-                  <div class="absolute inset-0 bg-gradient-to-t from-background/90 via-background/20 to-transparent"></div>
-                </div>
-                
-                <div class="absolute bottom-0 left-0 right-0 p-6">
-                  <div class="absolute inset-0 bg-background/40 backdrop-blur-sm rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                  <div class="relative z-10">
-                    {%- comment -%} Use vendor as tagline {%- endcomment -%}
-                    {%- if product.vendor != blank -%}
-                      <p class="text-xs font-medium text-accent uppercase tracking-wider mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                        {{ product.vendor }}
-                      </p>
-                    {%- elsif product.metafields.custom.tagline != blank -%}
-                      <p class="text-xs font-medium text-accent uppercase tracking-wider mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                        {{ product.metafields.custom.tagline }}
-                      </p>
-                    {%- endif -%}
-                    <h3 class="text-2xl md:text-3xl font-bold text-foreground mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                      {{ product.title }}
-                    </h3>
-                    {%- if product.description != blank -%}
-                      <p class="text-sm text-foreground/60 mb-4 max-w-xs opacity-0 group-hover:opacity-100 transition-opacity duration-300 line-clamp-2">
-                        {{ product.description | strip_html | truncate: 100 }}
-                      </p>
-                    {%- endif -%}
-                    <div class="flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                      <span class="text-sm font-medium text-foreground/80">
-                        {%- if product.compare_at_price > product.price -%}
-                          {{ product.price | money }} (Original: {{ product.compare_at_price | money }}, {{ product.compare_at_price | minus: product.price | times: 100.0 | divided_by: product.compare_at_price | round }}% off)
-                        {%- else -%}
-                          {{ product.price | money }}
-                        {%- endif -%}
-                      </span>
-                      <a href="{{ product.url }}" class="btn-hero text-xs">
-                        View
-                      </a>
-                    </div>
-                  </div>
-                </div>
-              </a>
-            </div>
-          {%- endfor -%}
-        </div>
-      {%- else -%}
-        <p class="text-center text-foreground/60">No products found in this collection.</p>
-      {%- endif -%}
-    {%- else -%}
-      <p class="text-center text-foreground/60">Please select a collection in the theme editor.</p>
     {%- endif -%}
+    {%- if collection == nil and collections['frontpage'] != blank -%}
+      {%- assign collection = collections['frontpage'] -%}
+    {%- endif -%}
+
+    {% if collection != blank and collection.products.size > 0 %}
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 product-grid gap-4 md:gap-6" data-clothing-showcase-products>
+        {% for product in collection.products limit: section.settings.products_to_show %}
+          {%- comment -%} Use first available variant so add-to-cart works; fallback to first variant for display. {%- endcomment -%}
+          {%- assign current_variant = product.selected_or_first_available_variant -%}
+          {%- if current_variant == nil -%}
+            {%- assign current_variant = product.variants.first -%}
+          {%- endif -%}
+          <div class="product-card-shop clothing-showcase-card" data-product-url="{{ product.url }}" data-variant-available="{% if current_variant.available %}true{% else %}false{% endif %}">
+            <a href="{{ product.url }}" class="clothing-showcase-card-image">
+              {% if product.featured_image != blank %}
+                <img
+                  src="{{ product.featured_image | image_url: width: 600 }}"
+                  alt="{{ product.featured_image.alt | escape }}"
+                  loading="lazy"
+                  width="300"
+                  height="375"
+                >
+              {% else %}
+                {{ 'product-1' | placeholder_svg_tag: 'clothing-showcase-placeholder' }}
+              {% endif %}
+            </a>
+            <div class="clothing-showcase-card-content">
+              <a href="{{ product.url }}" class="clothing-showcase-title">{{ product.title }}</a>
+              {% if product.description != blank %}
+                <p class="clothing-showcase-desc">{{ product.description | strip_html | truncate: 80 }}</p>
+              {% endif %}
+              <div class="clothing-showcase-price-row">
+                <span class="clothing-showcase-price">{{ current_variant.price | money }}</span>
+                {% if current_variant.compare_at_price > current_variant.price %}
+                  <span class="clothing-showcase-compare">{{ current_variant.compare_at_price | money }}</span>
+                  <span class="clothing-showcase-badge">{{ current_variant.compare_at_price | minus: current_variant.price | times: 100.0 | divided_by: current_variant.compare_at_price | round }}% off</span>
+                {% endif %}
+              </div>
+              <form action="{{ routes.cart_add_url }}" method="post" class="clothing-showcase-form" data-clothing-add-to-cart>
+                <input type="hidden" name="id" value="{{ current_variant.id }}">
+                <input type="hidden" name="quantity" value="1">
+                <button type="submit" name="add" class="clothing-showcase-btn clothing-showcase-btn-add{% unless current_variant.available %} clothing-showcase-btn-soldout{% endunless %}" data-add-to-cart-btn {% unless current_variant.available %}disabled{% endunless %}>
+                  {% if current_variant.available %}{{ 'products.product.add_to_cart' | t }}{% else %}{{ 'products.product.sold_out' | t }}{% endif %}
+                </button>
+              </form>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      {% if section.settings.show_view_all and collection.url != blank %}
+        <div class="text-center mt-10">
+          <a href="{{ collection.url }}" class="inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-border text-foreground font-semibold hover:bg-card transition-colors">
+            {{ section.settings.view_all_text | default: 'View all' }}
+          </a>
+        </div>
+      {% endif %}
+    {% else %}
+      <p class="text-center text-foreground/60">No products to show. In the sidebar under "Collection", select a collection that has products.</p>
+    {% endif %}
   </div>
 </section>
 
+<script>
+(function() {
+  var sections = document.querySelectorAll('.clothing-showcase-section');
+  if (!sections.length) return;
+  var cartUrl = (window.routes && window.routes.cart_url) || '/cart';
+  function showToast(msg, success) {
+    var id = 'clothing-showcase-toast';
+    var existing = document.getElementById(id);
+    if (existing) existing.remove();
+    var toast = document.createElement('div');
+    toast.id = id;
+    toast.className = success ? 'clothing-showcase-toast--success' : 'clothing-showcase-toast--error';
+    toast.innerHTML = success ? ('<span>Added to cart</span> <a href="' + cartUrl + '">View cart</a>') : ('<span>' + (msg || 'Unable to add. Try again.') + '</span>');
+    document.body.appendChild(toast);
+    setTimeout(function() { toast.classList.add('clothing-showcase-toast--show'); }, 10);
+    setTimeout(function() {
+      toast.classList.remove('clothing-showcase-toast--show');
+      setTimeout(function() { toast.remove(); }, 300);
+    }, success ? 3000 : 3500);
+  }
+  sections.forEach(function(section) {
+    section.querySelectorAll('form[data-clothing-add-to-cart]').forEach(function(form) {
+      if (form.dataset.clothingAddToCartBound === 'true') return;
+      form.dataset.clothingAddToCartBound = 'true';
+
+      form.addEventListener('click', function(e) { e.stopPropagation(); }, true);
+      form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (form.dataset.processing === 'true') return;
+        form.dataset.processing = 'true';
+
+        var btn = form.querySelector('button[type="submit"]');
+        var originalText = btn ? btn.textContent : 'Add to cart';
+        var idInput = form.querySelector('input[name="id"]');
+        var qtyInput = form.querySelector('input[name="quantity"]');
+        var variantId = idInput ? idInput.value.trim() : '';
+        var quantity = (qtyInput && parseInt(qtyInput.value, 10)) || 1;
+        var variantIdNum = parseInt(variantId, 10);
+        if (!variantId || isNaN(variantIdNum) || variantIdNum < 1) {
+          form.dataset.processing = 'false';
+          showToast('Unable to add. Try again.', false);
+          return;
+        }
+        if (btn) { btn.disabled = true; btn.textContent = 'Adding…'; }
+        var cartAddUrl = (window.routes && window.routes.cart_add_url) || form.getAttribute('action') || '/cart/add';
+        var addUrl = cartAddUrl.replace(/\/add\/?(\?.*)?$/i, '') + '/add.js';
+        var payload = { items: [{ id: variantIdNum, quantity: quantity }] };
+        fetch(addUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify(payload)
+        })
+        .then(function(res) { return res.json().then(function(data) { return { ok: res.ok, status: res.status, data: data }; }); })
+        .then(function(r) {
+          var isSuccess = r.ok && r.data && Array.isArray(r.data.items) && r.data.items.length > 0;
+          if (isSuccess) {
+            if (btn) btn.textContent = 'Added!';
+            showToast('Added to cart', true);
+            if (typeof window.updateCartCount === 'function') window.updateCartCount();
+            setTimeout(function() { if (btn) btn.textContent = originalText; }, 2000);
+            return;
+          }
+          var data = r.data || {};
+          var description = typeof data.description === 'string' ? data.description : '';
+          var message = typeof data.message === 'string' ? data.message : '';
+          var errors = data.errors;
+          var rawMsg = description || message || (typeof errors === 'string' ? errors : '') || '';
+          var lower = rawMsg.toLowerCase();
+          var userMsg;
+          if (lower.indexOf('sold out') !== -1) {
+            userMsg = 'Item is sold out.';
+          } else if (rawMsg.trim()) {
+            userMsg = rawMsg.trim();
+          } else {
+            userMsg = 'Unable to add to cart. Please try again or choose a different option.';
+          }
+          showToast(userMsg, false);
+        })
+        .catch(function() {
+          showToast('Unable to add. Try again.', false);
+        })
+        .finally(function() {
+          form.dataset.processing = 'false';
+          if (btn) { btn.disabled = false; btn.textContent = originalText; }
+        });
+      });
+    });
+    section.addEventListener('click', function(e) {
+      if (e.target.closest('form[data-clothing-add-to-cart]') || e.target.closest('[data-add-to-cart-btn]')) return;
+      var card = e.target.closest('.clothing-showcase-card');
+      if (!card) return;
+      var url = card.getAttribute('data-product-url');
+      if (!url) return;
+      if (e.target.tagName === 'A' && e.target.getAttribute('href')) return;
+      e.preventDefault();
+      window.location.href = url;
+    });
+  });
+})();
+</script>
+
 <style>
-  .line-clamp-2 {
+  /* Clothing Showcase – modern product cards & Add to cart */
+  .clothing-showcase-section .product-card-shop {
+    display: flex;
+    flex-direction: column;
+    background: hsl(var(--card));
+    border-radius: 1rem;
+    overflow: hidden;
+    border: 1px solid hsl(var(--border) / 0.5);
+    transition: box-shadow 0.25s ease, border-color 0.25s ease;
+    cursor: pointer;
+  }
+  .clothing-showcase-section .product-card-shop:hover {
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+    border-color: hsl(var(--border));
+  }
+  .clothing-showcase-section .clothing-showcase-form,
+  .clothing-showcase-section .clothing-showcase-btn {
+    cursor: pointer;
+  }
+  .clothing-showcase-section .clothing-showcase-btn {
+    cursor: pointer;
+  }
+  .clothing-showcase-section .clothing-showcase-btn-soldout {
+    cursor: not-allowed;
+  }
+
+  .clothing-showcase-card-image {
+    display: block;
+    position: relative;
+    aspect-ratio: 4 / 5;
+    overflow: hidden;
+    flex-shrink: 0;
+    text-decoration: none;
+    color: inherit;
+  }
+  .clothing-showcase-card-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.4s ease;
+  }
+  .clothing-showcase-section .product-card-shop:hover .clothing-showcase-card-image img {
+    transform: scale(1.05);
+  }
+  .clothing-showcase-placeholder {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    background: hsl(var(--secondary));
+  }
+
+  .clothing-showcase-card-content {
+    display: flex;
+    flex-direction: column;
+    padding: 1.25rem;
+    background: hsl(var(--card));
+    color: hsl(var(--foreground));
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .clothing-showcase-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: hsl(var(--foreground));
+    text-decoration: none;
+    margin-bottom: 0.5rem;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+    line-height: 1.35;
+    transition: color 0.2s ease;
+  }
+  .clothing-showcase-title:hover {
+    color: hsl(var(--accent));
+  }
+  .clothing-showcase-desc {
+    font-size: 0.8125rem;
+    color: hsl(var(--foreground) / 0.7);
+    margin-bottom: 0.75rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.4;
+  }
+  .clothing-showcase-price-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+  .clothing-showcase-price {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: hsl(var(--foreground));
+  }
+  .clothing-showcase-compare {
+    font-size: 0.875rem;
+    color: hsl(var(--foreground) / 0.5);
+    text-decoration: line-through;
+  }
+  .clothing-showcase-badge {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.25rem;
+    background: hsl(var(--accent) / 0.2);
+    color: hsl(var(--accent));
+  }
+
+  .clothing-showcase-form {
+    margin: 0;
+    display: block;
+  }
+  .clothing-showcase-btn {
+    display: block;
+    width: 100%;
+    text-align: center;
+    font-size: 0.875rem;
+    font-weight: 600;
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    transition: opacity 0.2s ease, transform 0.15s ease;
+    box-sizing: border-box;
+  }
+  .clothing-showcase-btn-add {
+    background: hsl(var(--accent));
+    color: hsl(var(--accent-foreground));
+  }
+  .clothing-showcase-btn-add:hover {
+    opacity: 0.92;
+    transform: translateY(-1px);
+  }
+  .clothing-showcase-btn-add:active {
+    transform: translateY(0);
+  }
+  .clothing-showcase-btn-add:disabled,
+  .clothing-showcase-btn-add.clothing-showcase-btn-soldout {
+    cursor: not-allowed;
+    opacity: 0.7;
+    transform: none;
+  }
+  .clothing-showcase-btn-add:disabled:hover,
+  .clothing-showcase-btn-add.clothing-showcase-btn-soldout:hover {
+    transform: none;
+  }
+  .clothing-showcase-btn--loading {
+    opacity: 0.85;
+    pointer-events: none;
+  }
+  .clothing-showcase-btn--added {
+    background: hsl(142 76% 36%);
+    color: #fff;
+  }
+  .clothing-showcase-btn-soldout {
+    background: hsl(var(--muted));
+    color: hsl(var(--muted-foreground));
+    cursor: not-allowed;
+  }
+
+  /* Toast: "Added to cart" + View cart (Takealot-style) */
+  #clothing-showcase-toast {
+    position: fixed;
+    bottom: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.875rem 1.25rem;
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: 0.5rem;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+    color: hsl(var(--foreground));
+    font-size: 0.9375rem;
+    opacity: 0;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+  }
+  #clothing-showcase-toast.clothing-showcase-toast--show {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+  }
+  #clothing-showcase-toast a {
+    color: hsl(var(--accent));
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  #clothing-showcase-toast a:hover {
+    text-decoration: underline;
+  }
+  #clothing-showcase-toast.clothing-showcase-toast--error {
+    border-color: hsl(var(--destructive) / 0.5);
+    background: hsl(var(--destructive) / 0.08);
   }
 </style>
 
@@ -95,6 +394,28 @@
 {
   "name": "Clothing Showcase",
   "settings": [
+    {
+      "type": "text",
+      "id": "section_id",
+      "label": "Section ID (for anchor links)",
+      "default": "apparel",
+      "info": "Optional. e.g. featured, hoodies. Leave as 'apparel' if not using anchor links."
+    },
+    {
+      "type": "collection",
+      "id": "collection",
+      "label": "Collection",
+      "info": "Products from this collection appear with price and Add to cart. If a product shows \"sold out\" when adding to cart, in Shopify Admin go to the product → Inventory and enable \"Allow customers to purchase this product when it's out of stock\" so it can still be ordered."
+    },
+    {
+      "type": "range",
+      "id": "products_to_show",
+      "label": "Products to show",
+      "min": 2,
+      "max": 24,
+      "step": 1,
+      "default": 8
+    },
     {
       "type": "text",
       "id": "heading",
@@ -108,18 +429,16 @@
       "default": "Discover our curated selection of premium clothing for every style."
     },
     {
-      "type": "collection",
-      "id": "collection",
-      "label": "Collection"
+      "type": "checkbox",
+      "id": "show_view_all",
+      "label": "Show View all link",
+      "default": true
     },
     {
-      "type": "range",
-      "id": "products_to_show",
-      "label": "Products to show",
-      "min": 4,
-      "max": 12,
-      "step": 1,
-      "default": 6
+      "type": "text",
+      "id": "view_all_text",
+      "label": "View all button text",
+      "default": "View all"
     }
   ],
   "presets": [

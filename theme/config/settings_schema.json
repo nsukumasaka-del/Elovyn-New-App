@@ -4,8 +4,95 @@
     "theme_name": "Elovyn",
     "theme_version": "1.0.0",
     "theme_author": "Elovyn",
-    "theme_documentation_url": "",
-    "theme_support_url": ""
+    "theme_documentation_url": "https://example.com/docs",
+    "theme_support_url": "https://example.com/support"
+  },
+  {
+    "name": "General",
+    "settings": [
+      {
+        "type": "paragraph",
+        "content": "Set your store logo and the icon that appears in the browser tab (favicon)."
+      },
+      {
+        "type": "header",
+        "content": "Store logo"
+      },
+      {
+        "type": "image_picker",
+        "id": "header_logo",
+        "label": "Logo image",
+        "info": "Used in the header and as the browser tab icon if no favicon is set below. Recommended: square or horizontal image, at least 200px wide."
+      },
+      {
+        "type": "header",
+        "content": "Browser tab icon (favicon)"
+      },
+      {
+        "type": "image_picker",
+        "id": "favicon",
+        "label": "Favicon image",
+        "info": "Icon shown in browser tabs and bookmarks. Recommended: square image, 32×32 px or larger. Leave blank to use your store logo above."
+      }
+    ]
+  },
+  {
+    "name": "Header",
+    "settings": [
+      {
+        "type": "paragraph",
+        "content": "Edit your logo and navigation links here. You can also click the header area at the top of the page in the preview to open Header in the sidebar."
+      },
+      {
+        "type": "header",
+        "content": "Logo"
+      },
+      {
+        "type": "text",
+        "id": "header_logo_alt",
+        "label": "Logo alt text",
+        "default": "Elovyn",
+        "info": "Leave blank to use store name."
+      },
+      {
+        "type": "url",
+        "id": "header_logo_link",
+        "label": "Logo link",
+        "info": "Where the logo goes when clicked. Leave blank for homepage."
+      },
+      {
+        "type": "header",
+        "content": "Navigation bar"
+      },
+      {
+        "type": "paragraph",
+        "content": "Set the URL for each link. Labels: Hoodies, Sweatshirts, Graphic Tees, Shop All."
+      },
+      {
+        "type": "url",
+        "id": "header_nav_hoodies_url",
+        "label": "Hoodies link",
+        "info": "e.g. /collections/hoodies"
+      },
+      {
+        "type": "url",
+        "id": "header_nav_sweatshirts_url",
+        "label": "Sweatshirts link",
+        "info": "e.g. /collections/sweatshirts"
+      },
+      {
+        "type": "url",
+        "id": "header_nav_tees_url",
+        "label": "Graphic Tees link",
+        "info": "e.g. /collections/graphic-tees"
+      },
+      {
+        "type": "url",
+        "id": "header_nav_shop_all_url",
+        "label": "Shop All link",
+        "info": "e.g. /collections/shirts"
+      }
+    ]
   },
   {
     "name": "Colors",
@@ -83,6 +170,78 @@
     ]
   },
   {
+    "name": "Theme style controls",
+    "settings": [
+      {
+        "type": "header",
+        "content": "Brand colors"
+      },
+      {
+        "type": "color",
+        "id": "brand_primary_color",
+        "label": "Primary color",
+        "default": "#0A0A0A"
+      },
+      {
+        "type": "color",
+        "id": "brand_secondary_color",
+        "label": "Secondary color",
+        "default": "#F5F5F0"
+      },
+      {
+        "type": "color",
+        "id": "brand_background_color",
+        "label": "Background color",
+        "default": "#0A0A0A"
+      },
+      {
+        "type": "color",
+        "id": "brand_text_color",
+        "label": "Text color",
+        "default": "#F5F5F0"
+      },
+      {
+        "type": "header",
+        "content": "Buttons"
+      },
+      {
+        "type": "select",
+        "id": "button_style",
+        "label": "Button style",
+        "default": "rounded",
+        "options": [
+          { "value": "rounded", "label": "Rounded" },
+          { "value": "pill", "label": "Pill" },
+          { "value": "square", "label": "Square" }
+        ]
+      },
+      {
+        "type": "range",
+        "id": "button_corner_radius",
+        "label": "Button corner radius",
+        "min": 0,
+        "max": 30,
+        "step": 1,
+        "default": 10,
+        "unit": "px"
+      },
+      {
+        "type": "header",
+        "content": "Spacing"
+      },
+      {
+        "type": "range",
+        "id": "section_vertical_spacing",
+        "label": "Section vertical spacing",
+        "min": 8,
+        "max": 64,
+        "step": 4,
+        "default": 24,
+        "unit": "px"
+      }
+    ]
+  },
+  {
     "name": "Social media",
     "settings": [
       {
@@ -108,22 +267,13 @@
     ]
   },
   {
-    "name": "Favicon",
-    "settings": [
-      {
-        "type": "image_picker",
-        "id": "favicon",
-        "label": "Favicon image"
-      }
-    ]
-  },
-  {
     "name": "Sharing",
     "settings": [
       {
         "type": "image_picker",
         "id": "share_image",
-        "label": "Default share image"
+        "label": "Default share image",
+        "info": "Used when sharing your store on social media when a page doesn't have its own image."
       }
     ]
   }

@@ -1,0 +1,523 @@
+{% comment %}
+  Sponsored picks – Each product card can have its own link. Add a block per product, select the product in the block, and set its Amazon link. Edit each product's link individually.
+{% endcomment %}
+
+<section id="{{ section.settings.section_id | default: 'shop' }}" class="sponsored-picks-section py-24 md:py-32 bg-background" data-sponsored-picks{% if request.design_mode %} data-theme-editor="true"{% endif %} {{ section.shopify_attributes }}>
+  <div class="container mx-auto px-6">
+    <div class="text-center mb-16">
+      <h2 class="sponsored-picks-heading text-4xl md:text-5xl lg:text-6xl font-bold text-foreground mb-4">
+        {{ section.settings.heading | default: "Sponsored picks" }}
+      </h2>
+      {% if section.settings.description != blank %}
+        <p class="sponsored-picks-desc text-lg text-foreground/60 max-w-xl mx-auto">
+          {{ section.settings.description }}
+        </p>
+      {% endif %}
+    </div>
+
+    {%- assign collection = nil -%}
+    {%- if section.settings.collection != blank -%}
+      {%- assign collection = collections[section.settings.collection] -%}
+    {%- endif -%}
+    {%- if collection == nil and collections['frontpage'] != blank -%}
+      {%- assign collection = collections['frontpage'] -%}
+    {%- endif -%}
+    {%- assign product_link_blocks = section.blocks | where: 'type', 'product_link' -%}
+
+    {% if product_link_blocks.size > 0 %}
+      <div class="sponsored-picks-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
+        {% for block in section.blocks %}
+          {%- if block.type != 'product_link' -%}
+            {%- continue -%}
+          {%- endif -%}
+          {%- assign product = block.settings.product -%}
+          {%- assign card_url = '#' -%}
+          {%- assign card_button_text = block.settings.button_text | default: section.settings.button_text | default: 'View on Amazon' -%}
+          {%- assign card_open_new_tab = false -%}
+          {%- if block.settings.url != blank -%}
+            {%- assign card_url = block.settings.url -%}
+            {%- assign card_open_new_tab = true -%}
+          {%- endif -%}
+          {%- if product != blank and card_url == '#' -%}
+            {%- assign title_lower = product.title | downcase -%}
+            {%- if title_lower contains 'athletic fit tee' -%}
+              {%- if section.settings.athletic_fit_tee_amazon_url != blank -%}
+                {%- assign card_url = section.settings.athletic_fit_tee_amazon_url -%}
+              {%- else -%}
+                {%- assign card_url = 'https://amzn.to/4r0vRjF' -%}
+              {%- endif -%}
+              {%- assign card_open_new_tab = true -%}
+            {%- elsif title_lower contains 'coofandy' and title_lower contains 'button' -%}
+              {%- if section.settings.coofandy_button_amazon_url != blank -%}
+                {%- assign card_url = section.settings.coofandy_button_amazon_url -%}
+              {%- else -%}
+                {%- assign card_url = 'https://amzn.to/4aEyV02' -%}
+              {%- endif -%}
+              {%- assign card_open_new_tab = true -%}
+            {%- else -%}
+              {%- assign e1 = section.settings.extra_link_1_contains | downcase -%}
+              {%- assign e2 = section.settings.extra_link_2_contains | downcase -%}
+              {%- assign e3 = section.settings.extra_link_3_contains | downcase -%}
+              {%- if section.settings.extra_link_1_contains != blank and title_lower contains e1 and section.settings.extra_link_1_url != blank -%}
+                {%- assign card_url = section.settings.extra_link_1_url -%}
+                {%- assign card_open_new_tab = true -%}
+              {%- elsif section.settings.extra_link_2_contains != blank and title_lower contains e2 and section.settings.extra_link_2_url != blank -%}
+                {%- assign card_url = section.settings.extra_link_2_url -%}
+                {%- assign card_open_new_tab = true -%}
+              {%- elsif section.settings.extra_link_3_contains != blank and title_lower contains e3 and section.settings.extra_link_3_url != blank -%}
+                {%- assign card_url = section.settings.extra_link_3_url -%}
+                {%- assign card_open_new_tab = true -%}
+              {%- endif -%}
+            {%- endif -%}
+          {%- endif -%}
+
+          {%- comment -%} Card wrapper; in editor a transparent overlay with block attributes receives clicks so clicking the product opens that block's settings in the sidebar. {%- endcomment -%}
+          <div class="sponsored-picks-card group relative bg-card rounded-2xl overflow-hidden border border-border/60 hover:border-accent/50 hover:shadow-lg hover:shadow-accent/10 transition-all duration-300 block">
+            <span class="sponsored-picks-badge" aria-hidden="true">{{ 'general.amazon.sponsored' | t | default: 'Sponsored' }}</span>
+            <span class="sponsored-picks-card-link block aspect-[4/5] relative overflow-hidden">
+              {% if product != blank and product.featured_image != blank %}
+                <img src="{{ product.featured_image | image_url: width: 600 }}" alt="{{ product.featured_image.alt | escape }}" class="sponsored-picks-img w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" width="300" height="375">
+              {% else %}
+                {{ 'product-1' | placeholder_svg_tag: 'sponsored-picks-img w-full h-full object-cover' }}
+              {% endif %}
+              <span class="sponsored-picks-card-gradient" aria-hidden="true"></span>
+            </span>
+            <div class="sponsored-picks-card-content">
+              {% if product != blank and product.vendor != blank %}
+                <p class="sponsored-picks-tagline">{{ product.vendor }}</p>
+              {% endif %}
+              <h3 class="sponsored-picks-title" title="{{ product.title | default: 'Product' | escape }}">
+                {{ product.title | default: 'Select a product' }}
+              </h3>
+              {% if product != blank and product.description != blank %}
+                <p class="sponsored-picks-desc-inner line-clamp-2">{{ product.description | strip_html | truncate: 80 }}</p>
+              {% endif %}
+              {% if request.design_mode %}
+                <span class="sponsored-picks-cta sponsored-picks-cta-link" aria-hidden="true">{{ card_button_text }}</span>
+              {% else %}
+                <a href="{{ card_url }}" class="sponsored-picks-cta sponsored-picks-cta-link"{% if card_open_new_tab %} target="_blank" rel="noopener noreferrer sponsored"{% endif %}>{{ card_button_text }}</a>
+              {% endif %}
+            </div>
+            <span class="sponsored-picks-edit-hint" aria-hidden="true">Edit link → sidebar: <strong>Product link (affiliate) {{ forloop.index }}</strong></span>
+            {% if request.design_mode %}
+              <span class="sponsored-picks-block-overlay" {{ block.shopify_attributes }} aria-hidden="true" title="Click to edit this product's link in the sidebar"></span>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% elsif collection != blank and collection.products.size > 0 %}
+      {%- comment -%} No blocks yet: show collection products so your products are visible. Add blocks to set each product's Amazon link. {%- endcomment -%}
+      <div class="sponsored-picks-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
+        {% for product in collection.products limit: section.settings.products_to_show %}
+          {%- assign card_url = '#' -%}
+          {%- assign card_button_text = section.settings.button_text | default: 'View on Amazon' -%}
+          {%- assign card_open_new_tab = false -%}
+          {%- assign title_lower = product.title | downcase -%}
+          {%- if title_lower contains 'athletic fit tee' -%}
+            {%- if section.settings.athletic_fit_tee_amazon_url != blank -%}
+              {%- assign card_url = section.settings.athletic_fit_tee_amazon_url -%}
+            {%- else -%}
+              {%- assign card_url = 'https://amzn.to/4r0vRjF' -%}
+            {%- endif -%}
+            {%- assign card_open_new_tab = true -%}
+          {%- elsif title_lower contains 'coofandy' and title_lower contains 'button' -%}
+            {%- if section.settings.coofandy_button_amazon_url != blank -%}
+              {%- assign card_url = section.settings.coofandy_button_amazon_url -%}
+            {%- else -%}
+              {%- assign card_url = 'https://amzn.to/4aEyV02' -%}
+            {%- endif -%}
+            {%- assign card_open_new_tab = true -%}
+          {%- else -%}
+            {%- assign e1 = section.settings.extra_link_1_contains | downcase -%}
+            {%- assign e2 = section.settings.extra_link_2_contains | downcase -%}
+            {%- assign e3 = section.settings.extra_link_3_contains | downcase -%}
+            {%- if section.settings.extra_link_1_contains != blank and title_lower contains e1 and section.settings.extra_link_1_url != blank -%}
+              {%- assign card_url = section.settings.extra_link_1_url -%}
+              {%- assign card_open_new_tab = true -%}
+            {%- elsif section.settings.extra_link_2_contains != blank and title_lower contains e2 and section.settings.extra_link_2_url != blank -%}
+              {%- assign card_url = section.settings.extra_link_2_url -%}
+              {%- assign card_open_new_tab = true -%}
+            {%- elsif section.settings.extra_link_3_contains != blank and title_lower contains e3 and section.settings.extra_link_3_url != blank -%}
+              {%- assign card_url = section.settings.extra_link_3_url -%}
+              {%- assign card_open_new_tab = true -%}
+            {%- endif -%}
+          {%- endif -%}
+          <div class="sponsored-picks-card group relative bg-card rounded-2xl overflow-hidden border border-border/60 hover:border-accent/50 hover:shadow-lg hover:shadow-accent/10 transition-all duration-300 block">
+            <span class="sponsored-picks-badge" aria-hidden="true">{{ 'general.amazon.sponsored' | t | default: 'Sponsored' }}</span>
+            <span class="sponsored-picks-card-link block aspect-[4/5] relative overflow-hidden">
+              {% if product.featured_image != blank %}
+                <img src="{{ product.featured_image | image_url: width: 600 }}" alt="{{ product.featured_image.alt | escape }}" class="sponsored-picks-img w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" width="300" height="375">
+              {% else %}
+                {{ 'product-1' | placeholder_svg_tag: 'sponsored-picks-img w-full h-full object-cover' }}
+              {% endif %}
+              <span class="sponsored-picks-card-gradient" aria-hidden="true"></span>
+            </span>
+            <div class="sponsored-picks-card-content">
+              {% if product.vendor != blank %}
+                <p class="sponsored-picks-tagline">{{ product.vendor }}</p>
+              {% endif %}
+              <h3 class="sponsored-picks-title" title="{{ product.title | escape }}">{{ product.title }}</h3>
+              {% if product.description != blank %}
+                <p class="sponsored-picks-desc-inner line-clamp-2">{{ product.description | strip_html | truncate: 80 }}</p>
+              {% endif %}
+              <a href="{{ card_url }}" class="sponsored-picks-cta sponsored-picks-cta-link"{% if card_open_new_tab %} target="_blank" rel="noopener noreferrer sponsored"{% endif %}>{{ card_button_text }}</a>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      {% if request.design_mode %}
+        <div class="text-center mt-6 py-4 px-4 rounded-xl bg-muted/40 text-foreground/70 text-sm">
+          <p class="font-medium mb-1">Add links for each product</p>
+          <p>Click <strong>Add block</strong> in the left sidebar, then <strong>Product link (affiliate)</strong>. In each block, select the <strong>Product</strong> and add the <strong>Amazon or affiliate link</strong>. Your products will stay visible and you can set each button link.</p>
+        </div>
+      {% endif %}
+    {% elsif collection == blank or collection.products.size == 0 %}
+      <div class="text-center py-12 px-6 rounded-2xl border-2 border-dashed border-border text-foreground/60">
+        <p class="mb-2">No products in this collection.</p>
+        <p class="text-sm">Select a collection in the section settings above, or add products to the selected collection in Shopify Admin.</p>
+      </div>
+    {% endif %}
+    {% if section.settings.show_view_all and collection != blank and collection.url != blank %}
+      <div class="text-center mt-10">
+        <a href="{{ collection.url }}" class="inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-border text-foreground font-semibold hover:bg-card transition-colors">
+          {{ section.settings.view_all_text | default: 'View all' }}
+        </a>
+      </div>
+    {% endif %}
+
+    {%- comment -%} In editor: show hint to add blocks if there are products but no link blocks yet {%- endcomment -%}
+    {% if request.design_mode and product_link_blocks.size > 0 %}
+      <div class="sponsored-picks-add-blocks-hint text-center mt-8 py-4 px-4 rounded-xl bg-muted/40 text-foreground/70 text-sm">
+        <p class="font-medium mb-1">Edit a product's link</p>
+        <p><strong>Click a product card</strong> above to open that product's block in the sidebar and edit its Product, Amazon link, and button text. You can also click a block name in the left sidebar.</p>
+’      </div>
+    {% endif %}
+  </div>
+</section>
+
+<style>
+  /* In theme editor: overlay with block attributes receives clicks so clicking the product opens that block's settings in the sidebar */
+  .sponsored-picks-section[data-theme-editor] .sponsored-picks-block-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    cursor: pointer;
+    pointer-events: auto;
+  }
+  .sponsored-picks-section[data-theme-editor] .sponsored-picks-card {
+    pointer-events: auto;
+  }
+  .sponsored-picks-section[data-theme-editor] .sponsored-picks-card * {
+    pointer-events: none;
+  }
+  .sponsored-picks-section[data-theme-editor] .sponsored-picks-card .sponsored-picks-block-overlay {
+    pointer-events: auto;
+  }
+  .sponsored-picks-section .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .sponsored-picks-badge {
+    position: absolute;
+    top: 0.75rem;
+    left: 0.75rem;
+    z-index: 2;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    background: rgba(0,0,0,0.75);
+    color: #fff;
+    border-radius: 0.25rem;
+  }
+  /* Edit hint: only visible in theme editor; always in DOM so section data-theme-editor can show it */
+  .sponsored-picks-edit-hint {
+    display: none;
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+    background: rgba(0,0,0,0.9);
+    color: #fff;
+    border-radius: 0 0 1rem 1rem;
+  }
+  .sponsored-picks-section[data-theme-editor] .sponsored-picks-edit-hint {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+  .sponsored-picks-edit-hint strong {
+    font-weight: 700;
+  }
+  .sponsored-picks-card {
+    display: flex;
+    flex-direction: column;
+  }
+  .sponsored-picks-card-link {
+    flex-shrink: 0;
+  }
+  .sponsored-picks-card-gradient {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 50%;
+    background: linear-gradient(to top, rgba(0,0,0,0.4), transparent);
+    pointer-events: none;
+  }
+  .sponsored-picks-card-content {
+    padding: 1rem 1rem 1.25rem;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .sponsored-picks-tagline {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: hsl(var(--accent));
+  }
+  .sponsored-picks-title {
+    font-size: 0.9375rem;
+    font-weight: 700;
+    line-height: 1.3;
+    color: hsl(var(--foreground));
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .sponsored-picks-desc-inner {
+    font-size: 0.8125rem;
+    color: hsl(var(--foreground) / 0.6);
+    margin: 0;
+    line-height: 1.4;
+  }
+  .sponsored-picks-cta,
+  .sponsored-picks-cta-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #fff;
+    background: hsl(var(--accent));
+    border-radius: 0.5rem;
+    transition: opacity 0.2s, transform 0.2s;
+    text-decoration: none;
+  }
+  .sponsored-picks-cta-link:hover {
+    color: #fff;
+    opacity: 0.95;
+    transform: translateY(-1px);
+  }
+  .sponsored-picks-card:hover .sponsored-picks-cta,
+  .sponsored-picks-card:hover .sponsored-picks-cta-link {
+    opacity: 0.95;
+    transform: translateY(-1px);
+  }
+  .product-card-overlay-inner .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  @media screen and (max-width: 749px) {
+    .sponsored-picks-add-blocks-hint { font-size: 0.8125rem; }
+  }
+</style>
+
+{% schema %}
+{
+  "name": "Sponsored picks",
+  "settings": [
+    {
+      "type": "header",
+      "content": "Product links (sponsor URL per product)"
+    },
+    {
+      "type": "paragraph",
+      "content": "Set Amazon/affiliate links below for products by name, or add **Product link (affiliate)** blocks to set a link per product in each block."
+    },
+    {
+      "type": "text",
+      "id": "section_id",
+      "label": "Section ID (for anchor links)",
+      "default": "shop"
+    },
+    {
+      "type": "collection",
+      "id": "collection",
+      "label": "Collection",
+      "info": "Products from this collection appear in the grid. Add a Product link block per product; in each block select the product and set its Amazon link individually."
+    },
+    {
+      "type": "range",
+      "id": "products_to_show",
+      "label": "Products to show",
+      "min": 2,
+      "max": 24,
+      "step": 1,
+      "default": 8
+    },
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Sponsored picks"
+    },
+    {
+      "type": "textarea",
+      "id": "description",
+      "label": "Description",
+      "default": "Handpicked favorites. Click through for the best deals.",
+      "info": "Clear to hide."
+    },
+    {
+      "type": "text",
+      "id": "button_text",
+      "label": "Default button text",
+      "default": "View on Amazon",
+      "info": "Used when a block's button text is left empty."
+    },
+    {
+      "type": "header",
+      "content": "Amazon links (edit here or in blocks)"
+    },
+    {
+      "type": "paragraph",
+      "content": "Set links below for specific products. You can also add **Product link (affiliate)** blocks and set a link per product in each block."
+    },
+    {
+      "type": "url",
+      "id": "athletic_fit_tee_amazon_url",
+      "label": "Amazon link for Athletic Fit Tee",
+      "info": "Product title contains \"athletic fit tee\". Default: https://amzn.to/4r0vRjF."
+    },
+    {
+      "type": "url",
+      "id": "coofandy_button_amazon_url",
+      "label": "Amazon link for COOFANDY Button-Down",
+      "info": "Product title contains \"coofandy\" and \"button\". Default: https://amzn.to/4aEyV02."
+    },
+    {
+      "type": "header",
+      "content": "More product links (match by title)"
+    },
+    {
+      "type": "text",
+      "id": "extra_link_1_contains",
+      "label": "Product 3 – title contains (e.g. shirt)",
+      "info": "If the product title contains this text, the link below is used."
+    },
+    {
+      "type": "url",
+      "id": "extra_link_1_url",
+      "label": "Product 3 – Amazon link"
+    },
+    {
+      "type": "text",
+      "id": "extra_link_2_contains",
+      "label": "Product 4 – title contains (e.g. pants)"
+    },
+    {
+      "type": "url",
+      "id": "extra_link_2_url",
+      "label": "Product 4 – Amazon link"
+    },
+    {
+      "type": "text",
+      "id": "extra_link_3_contains",
+      "label": "Product 5 – title contains (e.g. jacket)"
+    },
+    {
+      "type": "url",
+      "id": "extra_link_3_url",
+      "label": "Product 5 – Amazon link"
+    },
+    {
+      "type": "header",
+      "content": "View all link"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_view_all",
+      "label": "Show View all link",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "view_all_text",
+      "label": "View all button text",
+      "default": "View all"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "product_link",
+      "name": "Product link (affiliate)",
+      "limit": 24,
+      "settings": [
+        {
+          "type": "header",
+          "content": "Which product"
+        },
+        {
+          "type": "product",
+          "id": "product",
+          "label": "Product",
+          "info": "Select the product card this link applies to. Each block is for one product – add a block per product and choose the product in each."
+        },
+        {
+          "type": "header",
+          "content": "Link for this product"
+        },
+        {
+          "type": "url",
+          "id": "url",
+          "label": "Amazon or affiliate link",
+          "info": "Paste this product's Amazon affiliate URL. The \"View on Amazon\" button for the selected product will use this link."
+        },
+        {
+          "type": "text",
+          "id": "button_text",
+          "label": "Button text (optional)",
+          "placeholder": "View on Amazon",
+          "info": "Override the button label for this product."
+        }
+      ]
+    }
+  ],
+  "presets": [
+    {
+      "name": "Sponsored picks",
+      "settings": {
+        "heading": "Sponsored picks",
+        "description": "Handpicked favorites. Click through for the best deals.",
+        "products_to_show": 8
+      },
+      "blocks": [
+        { "type": "product_link" },
+        { "type": "product_link" },
+        { "type": "product_link" },
+        { "type": "product_link" },
+        { "type": "product_link" },
+        { "type": "product_link" },
+        { "type": "product_link" },
+        { "type": "product_link" }
+      ]
+    }
+  ]
+}
+{% endschema %}

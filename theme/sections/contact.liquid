@@ -1,0 +1,377 @@
+{% comment %}
+  Contact us section – sits above footer. Inspired by Nike, Zara, Uniqlo, H&M:
+  contact form, email/phone/address, hours, help links.
+  All labels and demo content are editable in the theme editor.
+{% endcomment %}
+
+<section id="{{ section.settings.section_id | default: 'contact' }}" class="contact-section bg-background border-t border-border/30 py-16 md:py-24">
+  <div class="container mx-auto px-6">
+    <div class="max-w-5xl mx-auto">
+      <header class="text-center mb-12 md:mb-16">
+        <h2 class="text-3xl md:text-4xl font-bold text-foreground tracking-tight mb-3">
+          {{ section.settings.heading | default: 'Contact us' }}
+        </h2>
+        {%- if section.settings.subheading != blank -%}
+          <p class="text-foreground/70 text-lg max-w-2xl mx-auto">
+            {{ section.settings.subheading }}
+          </p>
+        {%- endif -%}
+      </header>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16">
+        {%- comment -%} Left: Contact form (like Nike / Zara contact pages) {%- endcomment -%}
+        {%- if section.settings.show_form -%}
+          <div class="contact-form-col">
+            <h3 class="text-lg font-semibold text-foreground mb-6">
+              {{ section.settings.form_heading | default: 'Send us a message' }}
+            </h3>
+            {%- form 'contact', id: 'contact-section-form', class: 'contact-form space-y-4' -%}
+              {%- if form.errors -%}
+                <div class="contact-form-errors p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-500 text-sm" role="alert">
+                  {{ form.errors | default_errors }}
+                </div>
+              {%- endif -%}
+              {%- if form.posted_successfully? -%}
+                <div class="p-4 rounded-xl bg-green-500/10 border border-green-500/30 text-green-600 text-sm">
+                  {{ section.settings.success_message | default: "Thanks for your message. We'll get back to you soon." }}
+                </div>
+              {%- endif -%}
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label for="ContactFormName" class="block text-sm font-medium text-foreground mb-1">{{ section.settings.label_name | default: 'Name' }}</label>
+                  <input type="text" name="contact[name]" id="ContactFormName" value="{{ form.name }}" required
+                    class="contact-input w-full px-4 py-3 rounded-xl border border-border bg-card text-foreground placeholder-foreground/40 focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+                    placeholder="{{ section.settings.placeholder_name | default: 'Your name' }}">
+                </div>
+                <div>
+                  <label for="ContactFormEmail" class="block text-sm font-medium text-foreground mb-1">{{ section.settings.label_email | default: 'Email' }}</label>
+                  <input type="email" name="contact[email]" id="ContactFormEmail" value="{{ form.email }}" required
+                    class="contact-input w-full px-4 py-3 rounded-xl border border-border bg-card text-foreground placeholder-foreground/40 focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+                    placeholder="{{ section.settings.placeholder_email | default: 'you@example.com' }}">
+                </div>
+              </div>
+              <div>
+                <label for="ContactFormSubject" class="block text-sm font-medium text-foreground mb-1">{{ section.settings.label_subject | default: 'Subject' }}</label>
+                <input type="text" name="contact[subject]" id="ContactFormSubject" value="{{ form.subject }}"
+                  class="contact-input w-full px-4 py-3 rounded-xl border border-border bg-card text-foreground placeholder-foreground/40 focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+                  placeholder="{{ section.settings.placeholder_subject | default: 'Order, returns, or general question' }}">
+              </div>
+              <div>
+                <label for="ContactFormMessage" class="block text-sm font-medium text-foreground mb-1">{{ section.settings.label_message | default: 'Message' }}</label>
+                <textarea name="contact[body]" id="ContactFormMessage" rows="4" required
+                  class="contact-input w-full px-4 py-3 rounded-xl border border-border bg-card text-foreground placeholder-foreground/40 focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent resize-y min-h-[120px]"
+                  placeholder="{{ section.settings.placeholder_message | default: 'How can we help?' }}">{{ form.body }}</textarea>
+              </div>
+              <button type="submit" class="contact-submit w-full sm:w-auto px-8 py-3 rounded-xl bg-accent text-accent-foreground font-medium hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background transition-opacity">
+                {{ section.settings.button_text | default: 'Send message' }}
+              </button>
+            {%- endform -%}
+          </div>
+        {%- endif -%}
+
+        {%- comment -%} Right: Contact details (like Uniqlo / H&M – email, phone, address, hours) {%- endcomment -%}
+        <div class="contact-details-col space-y-8">
+          {%- if section.settings.contact_email != blank -%}
+            <div>
+              <h4 class="text-sm font-semibold text-foreground/70 uppercase tracking-wider mb-2">{{ section.settings.label_email_heading | default: 'Email' }}</h4>
+              <a href="mailto:{{ section.settings.contact_email | strip }}" class="text-foreground hover:text-accent transition-colors">
+                {{ section.settings.contact_email }}
+              </a>
+            </div>
+          {%- endif -%}
+          {%- if section.settings.contact_phone != blank -%}
+            <div>
+              <h4 class="text-sm font-semibold text-foreground/70 uppercase tracking-wider mb-2">{{ section.settings.label_phone_heading | default: 'Phone' }}</h4>
+              <a href="tel:{{ section.settings.contact_phone | replace: ' ', '' | replace: '(', '' | replace: ')', '' | replace: '-', '' }}" class="text-foreground hover:text-accent transition-colors">
+                {{ section.settings.contact_phone }}
+              </a>
+            </div>
+          {%- endif -%}
+          {%- if section.settings.address_line_1 != blank or section.settings.address_line_2 != blank -%}
+            <div>
+              <h4 class="text-sm font-semibold text-foreground/70 uppercase tracking-wider mb-2">{{ section.settings.label_address_heading | default: 'Address' }}</h4>
+              <p class="text-foreground">
+                {%- if section.settings.address_line_1 != blank -%}{{ section.settings.address_line_1 }}<br>{%- endif -%}
+                {%- if section.settings.address_line_2 != blank -%}{{ section.settings.address_line_2 }}<br>{%- endif -%}
+                {%- if section.settings.city_country != blank -%}{{ section.settings.city_country }}{%- endif -%}
+              </p>
+            </div>
+          {%- endif -%}
+          {%- if section.settings.hours_text != blank -%}
+            <div>
+              <h4 class="text-sm font-semibold text-foreground/70 uppercase tracking-wider mb-2">{{ section.settings.hours_heading | default: 'Business hours' }}</h4>
+              <p class="text-foreground whitespace-pre-line">{{ section.settings.hours_text }}</p>
+            </div>
+          {%- endif -%}
+          {%- if section.settings.show_social -%}
+            <div>
+              <h4 class="text-sm font-semibold text-foreground/70 uppercase tracking-wider mb-3">{{ section.settings.social_heading | default: 'Follow us' }}</h4>
+              <div class="flex flex-wrap gap-4">
+                {%- if settings.social_instagram_link != blank -%}<a href="{{ settings.social_instagram_link }}" class="text-foreground/70 hover:text-foreground transition-colors">Instagram</a>{%- endif -%}
+                {%- if settings.social_twitter_link != blank -%}<a href="{{ settings.social_twitter_link }}" class="text-foreground/70 hover:text-foreground transition-colors">Twitter</a>{%- endif -%}
+                {%- if settings.social_facebook_link != blank -%}<a href="{{ settings.social_facebook_link }}" class="text-foreground/70 hover:text-foreground transition-colors">Facebook</a>{%- endif -%}
+                {%- if settings.social_youtube_link != blank -%}<a href="{{ settings.social_youtube_link }}" class="text-foreground/70 hover:text-foreground transition-colors">YouTube</a>{%- endif -%}
+              </div>
+            </div>
+          {%- endif -%}
+          {%- comment -%} Helpful links (like “Help center”, “Returns”, “FAQ”) {%- endcomment -%}
+          {%- for block in section.blocks -%}
+            {%- if block.type == 'link' -%}
+              <div {{ block.shopify_attributes }}>
+                {%- if block.settings.label != blank -%}
+                  <h4 class="text-sm font-semibold text-foreground/70 uppercase tracking-wider mb-2">{{ block.settings.label }}</h4>
+                {%- endif -%}
+                <a href="{{ block.settings.url | default: '#' }}" class="text-foreground hover:text-accent transition-colors">{{ block.settings.text | default: 'Link' }}</a>
+              </div>
+            {%- endif -%}
+          {%- endfor -%}
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .contact-section .space-y-4 > * + * { margin-top: 1rem; }
+  .contact-section .space-y-8 > * + * { margin-top: 2rem; }
+</style>
+
+{% schema %}
+{
+  "name": "Contact us",
+  "tag": "section",
+  "class": "section-contact",
+  "settings": [
+    {
+      "type": "text",
+      "id": "section_id",
+      "label": "Section ID (for anchor links)",
+      "default": "contact"
+    },
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Contact us"
+    },
+    {
+      "type": "textarea",
+      "id": "subheading",
+      "label": "Subheading",
+      "default": "For questions about hoodies, graphic shirts, and sweatshirts, reach our Elovyn support team and we'll get back to you within 24–48 hours."
+    },
+    {
+      "type": "header",
+      "content": "Form"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_form",
+      "label": "Show contact form",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "form_heading",
+      "label": "Form heading",
+      "default": "Send us a message"
+    },
+    {
+      "type": "text",
+      "id": "label_name",
+      "label": "Name field label",
+      "default": "Name"
+    },
+    {
+      "type": "text",
+      "id": "placeholder_name",
+      "label": "Name placeholder",
+      "default": "Your name"
+    },
+    {
+      "type": "text",
+      "id": "label_email",
+      "label": "Email field label",
+      "default": "Email"
+    },
+    {
+      "type": "text",
+      "id": "placeholder_email",
+      "label": "Email placeholder",
+      "default": "you@example.com"
+    },
+    {
+      "type": "text",
+      "id": "label_subject",
+      "label": "Subject field label",
+      "default": "Subject"
+    },
+    {
+      "type": "text",
+      "id": "placeholder_subject",
+      "label": "Subject placeholder",
+      "default": "Order, returns, or general question"
+    },
+    {
+      "type": "text",
+      "id": "label_message",
+      "label": "Message field label",
+      "default": "Message"
+    },
+    {
+      "type": "text",
+      "id": "placeholder_message",
+      "label": "Message placeholder",
+      "default": "How can we help?"
+    },
+    {
+      "type": "text",
+      "id": "button_text",
+      "label": "Submit button text",
+      "default": "Send message"
+    },
+    {
+      "type": "text",
+      "id": "success_message",
+      "label": "Success message",
+      "default": "Thanks for your message. We'll get back to you soon."
+    },
+    {
+      "type": "header",
+      "content": "Contact details"
+    },
+    {
+      "type": "text",
+      "id": "label_email_heading",
+      "label": "Email block heading",
+      "default": "Email"
+    },
+    {
+      "type": "text",
+      "id": "contact_email",
+      "label": "Email address",
+      "default": "elovyn.shop@gmail.com",
+      "info": "Customer support email for Elovyn."
+    },
+    {
+      "type": "text",
+      "id": "label_phone_heading",
+      "label": "Phone block heading",
+      "default": "Phone"
+    },
+    {
+      "type": "text",
+      "id": "contact_phone",
+      "label": "Phone number",
+      "default": "066 1151 202",
+      "info": "Customer support phone number for Elovyn (South Africa)."
+    },
+    {
+      "type": "text",
+      "id": "label_address_heading",
+      "label": "Address block heading",
+      "default": "Address"
+    },
+    {
+      "type": "text",
+      "id": "address_line_1",
+      "label": "Address line 1",
+      "default": "South Africa",
+      "info": "Business location."
+    },
+    {
+      "type": "text",
+      "id": "address_line_2",
+      "label": "Address line 2",
+      "default": "South Africa"
+    },
+    {
+      "type": "text",
+      "id": "city_country",
+      "label": "City & country",
+      "default": "South Africa"
+    },
+    {
+      "type": "text",
+      "id": "hours_heading",
+      "label": "Hours block heading",
+      "default": "Business hours"
+    },
+    {
+      "type": "textarea",
+      "id": "hours_text",
+      "label": "Hours (one line or multiple)",
+      "default": "Monday – Friday: 9am – 5pm\nResponse time: 24–48 hours\nTimezone: South Africa (SAST)",
+      "info": "Support hours and response time."
+    },
+    {
+      "type": "header",
+      "content": "Social"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_social",
+      "label": "Show social links",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "social_heading",
+      "label": "Social block heading",
+      "default": "Follow us"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "link",
+      "name": "Extra link",
+      "settings": [
+        {
+          "type": "text",
+          "id": "label",
+          "label": "Label (e.g. Help center)",
+          "default": "Help center"
+        },
+        {
+          "type": "text",
+          "id": "text",
+          "label": "Link text",
+          "default": "FAQ & Returns"
+        },
+        {
+          "type": "url",
+          "id": "url",
+          "label": "URL"
+        }
+      ]
+    }
+  ],
+  "presets": [
+    {
+      "name": "Contact us",
+      "settings": {
+        "heading": "Contact us",
+        "subheading": "We'd love to hear from you. Send us a message or use the details below.",
+        "show_form": true,
+        "contact_email": "hello@yourstore.com",
+        "contact_phone": "+1 (555) 123-4567",
+        "address_line_1": "123 Main Street",
+        "address_line_2": "Suite 100",
+        "city_country": "New York, NY 10001",
+        "hours_text": "Mon – Fri: 9am – 6pm\nSat: 10am – 4pm\nSun: Closed",
+        "show_social": true
+      },
+      "blocks": [
+        {
+          "type": "link",
+          "settings": {
+            "label": "Help center",
+            "text": "FAQ & Returns",
+            "url": "/pages/contact"
+          }
+        }
+      ]
+    }
+  ]
+}
+{% endschema %}

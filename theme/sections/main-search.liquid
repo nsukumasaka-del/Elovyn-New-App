@@ -1,0 +1,208 @@
+{% comment %}
+  Search results section - modern layout matching store theme. Used on /search.
+{% endcomment %}
+
+<section class="search-page py-12 md:py-20 bg-background">
+  <div class="container mx-auto px-6">
+    {% comment %} Hero-style search header {% endcomment %}
+    <header class="search-page__header text-center mb-10 md:mb-14">
+      <h1 class="text-3xl md:text-4xl lg:text-5xl font-bold text-foreground mb-2">
+        {% if search.performed %}
+          {{ 'general.search.results_with_count' | t: count: search.results_count, terms: search.terms }}
+        {% else %}
+          {{ 'general.search.title' | t | default: 'Search' }}
+        {% endif %}
+      </h1>
+      {% if search.performed and search.terms != blank %}
+        <p class="text-foreground/60 text-sm md:text-base mt-1">{{ 'general.search.placeholder' | t | default: 'Search our store' }}: “{{ search.terms | escape }}”</p>
+      {% endif %}
+    </header>
+
+    {% comment %} Search form – modern pill style, type filter {% endcomment %}
+    <form action="{{ routes.search_url }}" method="get" class="search-page__form max-w-2xl mx-auto mb-12 md:mb-16">
+      <input type="hidden" name="options[prefix]" value="last">
+      <div class="flex flex-col sm:flex-row gap-3">
+        <label for="SearchQuery" class="visually-hidden">{{ 'general.search.placeholder' | t | default: 'Search our store' }}</label>
+        <input
+          id="SearchQuery"
+          type="search"
+          name="q"
+          value="{{ search.terms | escape }}"
+          placeholder="{% if section.settings.placeholder != blank %}{{ section.settings.placeholder }}{% else %}{{ 'general.search.placeholder' | t | default: 'Search our store' }}{% endif %}"
+          class="search-page__input flex-1 min-w-0 px-5 py-3.5 rounded-full bg-card border-2 border-border text-foreground placeholder:text-foreground/50 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20 transition-colors"
+          aria-label="{{ 'general.search.placeholder' | t | default: 'Search our store' }}"
+        >
+        <div class="flex gap-2 flex-shrink-0">
+          <select name="type" id="SearchTypeFilter" class="search-page__type rounded-full bg-card border-2 border-border text-foreground px-4 py-3 focus:border-accent focus:outline-none cursor-pointer" aria-label="{{ 'general.search.filter_by_type' | t | default: 'Filter by type' }}">
+            <option value="">{{ 'general.search.all_types' | t | default: 'All' }}</option>
+            <option value="product">{{ 'general.search.products' | t | default: 'Products' }}</option>
+            <option value="article">{{ 'general.search.articles' | t | default: 'Articles' }}</option>
+            <option value="page">{{ 'general.search.pages' | t | default: 'Pages' }}</option>
+          </select>
+          <button type="submit" class="search-page__submit btn-hero px-6 py-3 rounded-full font-medium whitespace-nowrap">
+            {% if section.settings.button_text != blank %}{{ section.settings.button_text }}{% else %}{{ 'general.search.submit' | t | default: 'Search' }}{% endif %}
+          </button>
+        </div>
+      </div>
+    </form>
+
+    {% if search.performed %}
+      {% if search.results_count > 0 %}
+        {% paginate search.results by section.settings.results_per_page %}
+          <div class="search-page__results">
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 product-grid product-grid--ads gap-4 md:gap-6">
+              {% for item in search.results %}
+                {% case item.object_type %}
+                  {% when 'product' %}
+                    {%- assign view_url = item.url -%}
+                    {%- assign title_lower = item.title | downcase -%}
+                    {%- if title_lower contains "athletic fit tee" or title_lower contains "athletic fit tees" -%}
+                      {%- assign view_url = "https://amzn.to/45I1l6l" -%}
+                    {%- elsif title_lower contains "coofandy" and title_lower contains "short" and title_lower contains "button" -%}
+                      {%- assign view_url = "https://amzn.to/4komatB" -%}
+                    {%- elsif title_lower contains "soly hux" and title_lower contains "textured" -%}
+                      {%- assign view_url = "https://amzn.to/47fRl4T" -%}
+                    {%- elsif title_lower contains "jbl tune flex" -%}
+                      {%- assign view_url = "https://amzn.to/4rRscFy" -%}
+                    {%- endif -%}
+                    <div class="product-card product-card--ad group relative bg-card rounded-3xl overflow-hidden border-2 border-border/50 hover:border-accent/40 transition-all duration-300">
+                      <span class="product-card__ad-badge" aria-hidden="true">{{ 'general.amazon.sponsored' | t | default: 'Sponsored' }}</span>
+                      <div class="aspect-[4/5] relative overflow-hidden">
+                        <a href="{{ view_url }}" class="block w-full h-full" target="_blank" rel="noopener noreferrer{% if view_url contains 'amzn.to' %} sponsored{% endif %}">
+                          {% if item.featured_image != blank %}
+                            <img src="{{ item.featured_image | image_url: width: 600 }}" alt="{{ item.featured_image.alt | escape }}" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" loading="lazy">
+                          {% else %}
+                            {{ 'product-1' | placeholder_svg_tag: 'w-full h-full object-cover' }}
+                          {% endif %}
+                        </a>
+                      </div>
+                      <div class="absolute bottom-0 left-0 right-0 product-card-overlay-inner">
+                        <div class="absolute inset-0 bg-background/30 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                        <div class="relative z-10">
+                          {% if item.vendor != blank %}
+                            <p class="product-card-tagline font-medium text-accent uppercase tracking-wider">{{ item.vendor }}</p>
+                          {% endif %}
+                          <h2 class="product-card-title font-bold text-foreground" title="{{ item.title | escape }}">
+                            <a href="{{ view_url }}" class="hover:text-accent transition-colors" target="_blank" rel="noopener noreferrer{% if view_url contains 'amzn.to' %} sponsored{% endif %}">{{ item.title }}</a>
+                          </h2>
+                          {% if item.description != blank %}
+                            <p class="product-card-desc text-foreground/60 line-clamp-2">{{ item.description | strip_html | truncate: 100 }}</p>
+                          {% endif %}
+                          <div class="flex items-center justify-end gap-2 mt-1">
+                            <a href="{{ view_url }}" class="btn-hero text-xs" target="_blank" rel="noopener noreferrer{% if view_url contains 'amzn.to' %} sponsored{% endif %}">{% if view_url contains 'amzn.to' %}{{ 'general.amazon.view_on_amazon' | t | default: 'View on Amazon' }}{% else %}{{ 'general.amazon.view_product' | t | default: 'View product' }}{% endif %}</a>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  {% when 'article' %}
+                    <article class="search-card search-card--article group relative bg-card rounded-2xl overflow-hidden border-2 border-border/50 hover:border-accent/40 transition-all duration-300">
+                      <a href="{{ item.url }}" class="block">
+                        <div class="aspect-[4/3] relative overflow-hidden">
+                          {% if item.image != blank %}
+                            <img src="{{ item.image | image_url: width: 600 }}" alt="{{ item.image.alt | escape }}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy">
+                          {% else %}
+                            {{ 'article' | placeholder_svg_tag: 'w-full h-full object-cover opacity-50' }}
+                          {% endif %}
+                          <span class="absolute top-3 right-3 text-[10px] font-semibold uppercase tracking-wider text-foreground/80 bg-background/70 px-2 py-1 rounded">Article</span>
+                        </div>
+                        <div class="p-4 md:p-5">
+                          <h3 class="font-bold text-foreground group-hover:text-accent transition-colors line-clamp-2">{{ item.title }}</h3>
+                          <p class="text-sm text-foreground/60 mt-1 line-clamp-2">{{ item.content | strip_html | truncate: 80 }}</p>
+                          <span class="inline-block mt-2 text-xs font-medium text-accent">Read more</span>
+                        </div>
+                      </a>
+                    </article>
+                  {% when 'page' %}
+                    <article class="search-card search-card--page group bg-card rounded-2xl p-5 border-2 border-border/50 hover:border-accent/40 transition-all duration-300">
+                      <span class="text-[10px] font-semibold uppercase tracking-wider text-foreground/60">Page</span>
+                      <a href="{{ item.url }}" class="block mt-2">
+                        <h3 class="font-bold text-foreground group-hover:text-accent transition-colors line-clamp-2">{{ item.title }}</h3>
+                        {% if item.content != blank %}
+                          <p class="text-sm text-foreground/60 mt-1 line-clamp-2">{{ item.content | strip_html | truncate: 80 }}</p>
+                        {% endif %}
+                        <span class="inline-block mt-2 text-xs font-medium text-accent">View page</span>
+                      </a>
+                    </article>
+                {% endcase %}
+              {% endfor %}
+            </div>
+          </div>
+
+          {% if paginate.pages > 1 %}
+            <nav class="search-page__pagination mt-12 flex justify-center gap-2 flex-wrap items-center" aria-label="{{ 'general.pagination.label' | t | default: 'Pagination' }}">
+              {% if paginate.previous %}
+                <a href="{{ paginate.previous.url }}" class="px-4 py-2.5 rounded-full border-2 border-border text-foreground hover:bg-card hover:border-accent/50 transition-colors text-sm font-medium">
+                  {{ 'general.pagination.previous' | t | default: 'Previous' }}
+                </a>
+              {% endif %}
+              <span class="px-4 py-2 text-foreground/70 text-sm">
+                {{ 'general.pagination.current_page' | t: current: paginate.current_page, total: paginate.pages | default: 'Page 1 of 1' }}
+              </span>
+              {% if paginate.next %}
+                <a href="{{ paginate.next.url }}" class="px-4 py-2.5 rounded-full border-2 border-border text-foreground hover:bg-card hover:border-accent/50 transition-colors text-sm font-medium">
+                  {{ 'general.pagination.next' | t | default: 'Next' }}
+                </a>
+              {% endif %}
+            </nav>
+          {% endif %}
+        {% endpaginate %}
+      {% else %}
+        <div class="search-page__empty text-center max-w-md mx-auto py-12">
+          <p class="text-lg text-foreground/80 mb-2">{{ 'general.search.no_results' | t: terms: search.terms | default: 'No results found for "terms".' }}</p>
+          <p class="text-sm text-foreground/60 mb-6">{{ 'general.search.no_results_hint' | t | default: 'Try different keywords or browse our collections.' }}</p>
+          <a href="/collections/shirts" class="btn-hero">{{ 'general.search.shop_all' | t | default: 'Shop all' }}</a>
+        </div>
+      {% endif %}
+    {% else %}
+      <div class="search-page__placeholder text-center py-12 text-foreground/60">
+        <p>{% if section.settings.placeholder_heading != blank %}{{ section.settings.placeholder_heading }}{% else %}Enter a search term above to find products, articles, and pages.{% endif %}</p>
+      </div>
+    {% endif %}
+  </div>
+</section>
+
+<script>
+  (function() {
+    var params = new URLSearchParams(window.location.search);
+    var type = params.get('type');
+    var sel = document.getElementById('SearchTypeFilter');
+    if (sel && type) { sel.value = type; }
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "Search",
+  "tag": "section",
+  "class": "section-search",
+  "settings": [
+    {
+      "type": "text",
+      "id": "placeholder",
+      "label": "Search input placeholder",
+      "default": "Search our store"
+    },
+    {
+      "type": "text",
+      "id": "button_text",
+      "label": "Search button text",
+      "default": "Search"
+    },
+    {
+      "type": "text",
+      "id": "placeholder_heading",
+      "label": "Text when no search yet",
+      "default": "Enter a search term above to find products, articles, and pages."
+    },
+    {
+      "type": "range",
+      "id": "results_per_page",
+      "min": 12,
+      "max": 48,
+      "step": 6,
+      "default": 24,
+      "label": "Results per page"
+    }
+  ]
+}
+{% endschema %}

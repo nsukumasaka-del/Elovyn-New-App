@@ -1,49 +1,99 @@
+/*
+ * ------------------------------------------------------------
+ * IMPORTANT: The contents of this file are auto-generated.
+ *
+ * This file may be updated by the Shopify admin theme editor
+ * or related systems. Please exercise caution as any changes
+ * made to this file may be overwritten.
+ * ------------------------------------------------------------
+ */
 {
   "type": "header",
   "name": "Header",
   "sections": {
+    "announcement": {
+      "type": "announcement-bar",
+      "settings": {
+        "collapse_on_scroll": true,
+        "message": "Free standard shipping on orders over $75",
+        "message_1": "12% Student Discount",
+        "link_1_url": "",
+        "message_2": "Free standard shipping on orders over $75",
+        "link_2_url": "",
+        "message_3": "Refer a friend — earn rewards on your next order",
+        "link_3_url": "",
+        "message_4": "Get 10% off your first order when you sign up",
+        "link_4_url": "",
+        "auto_rotate": true,
+        "rotation_ms": "5000",
+        "show_pause": true,
+        "show_close": true
+      }
+    },
     "header": {
-      "type": "header",
-      "settings": {},
+      "type": "site-header",
       "blocks": {
-        "nav_clothes": {
+        "nav_shop": {
           "type": "nav_link",
           "settings": {
-            "label": "Clothes",
-            "url": "#clothing"
+            "text": "Shop",
+            "url": "/collections/all"
           }
         },
-        "nav_hair": {
+        "nav_men": {
           "type": "nav_link",
           "settings": {
-            "label": "Hair Products",
-            "url": "#bikes"
+            "text": "Men",
+            "url": "shopify://collections/men"
           }
         },
-        "nav_accessories": {
+        "nav_women": {
           "type": "nav_link",
           "settings": {
-            "label": "Accessories",
-            "url": "#features"
+            "text": "Women",
+            "url": "shopify://collections/women"
           }
         },
-        "nav_connect": {
-          "type": "nav_link",
+        "nav_collections": {
+          "type": "nav_dropdown",
           "settings": {
-            "label": "Connect",
-            "url": "#community"
-          }
-        },
-        "nav_leasing": {
-          "type": "nav_link",
-          "settings": {
-            "label": "Leasing",
-            "url": "#"
+            "title": "Collections",
+            "link_1_text": "Hoodies",
+            "link_1_url": "/collections/hoodies",
+            "link_2_text": "Sweatshirts",
+            "link_2_url": "/collections/sweatshirts",
+            "link_3_text": "Graphic tees",
+            "link_3_url": "/collections/graphic-tees",
+            "link_4_text": "Shop all",
+            "link_4_url": "/collections/all",
+            "link_5_text": "",
+            "link_5_url": "",
+            "link_6_text": "",
+            "link_6_url": ""
           }
         }
       },
-      "block_order": ["nav_clothes", "nav_hair", "nav_accessories", "nav_connect", "nav_leasing"]
+      "block_order": [
+        "nav_shop",
+        "nav_men",
+        "nav_women",
+        "nav_collections"
+      ],
+      "settings": {
+        "logo_width": 120,
+        "logo_scale": 75,
+        "logo_alt": "Store",
+        "logo_link": "/",
+        "show_header_contact": true,
+        "header_contact_label": "Contact",
+        "header_contact_url": "/pages/contact",
+        "enable_sticky_header": true,
+        "shrink_on_scroll": true
+      }
     }
   },
-  "order": ["header"]
+  "order": [
+    "announcement",
+    "header"
+  ]
 }

@@ -1,0 +1,87 @@
+<section class="trust-bar-section" role="region" aria-label="Store trust highlights">
+  <div class="trust-bar__container">
+    {%- for block in section.blocks -%}
+      <div class="trust-bar__item" {{ block.shopify_attributes }}>
+        <span class="trust-bar__icon" aria-hidden="true">{{ block.settings.icon | default: '✓' }}</span>
+        <span>{{ block.settings.text | default: 'Trust highlight' }}</span>
+      </div>
+    {%- endfor -%}
+  </div>
+</section>
+
+<style>
+  .trust-bar-section {
+    background: var(--color-neutral-dark, #1A1A1A);
+    padding: 0.85rem 1.25rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .trust-bar__container {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    flex-wrap: wrap;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  .trust-bar__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--color-secondary, #F5F5F0);
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+  .trust-bar__icon {
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    font-size: 0.72rem;
+  }
+  @media (max-width: 768px) {
+    .trust-bar__container { gap: 0.75rem 1rem; }
+    .trust-bar__item { font-size: 0.74rem; }
+  }
+</style>
+
+{% schema %}
+{
+  "name": "Trust bar",
+  "blocks": [
+    {
+      "type": "item",
+      "name": "Trust item",
+      "settings": [
+        {
+          "type": "text",
+          "id": "icon",
+          "label": "Icon text",
+          "default": "✓"
+        },
+        {
+          "type": "text",
+          "id": "text",
+          "label": "Text",
+          "default": "Secure checkout"
+        }
+      ]
+    }
+  ],
+  "max_blocks": 6,
+  "presets": [
+    {
+      "name": "Trust bar",
+      "blocks": [
+        { "type": "item", "settings": { "icon": "🚚", "text": "Free Shipping Over R500" } },
+        { "type": "item", "settings": { "icon": "🔒", "text": "Secure Checkout" } },
+        { "type": "item", "settings": { "icon": "↩", "text": "Easy 14-Day Returns" } },
+        { "type": "item", "settings": { "icon": "★", "text": "Top Rated by Customers" } }
+      ]
+    }
+  ]
+}
+{% endschema %}

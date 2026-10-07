@@ -72,7 +72,7 @@ Use **Preview** first to confirm the header, logo, navigation, and all sections 
 
 ## Part 4: Ensure Header, Logo & Navigation Are Visible
 
-The **header** (logo + navigation bar) is rendered directly in the layout (`theme.liquid`) with `{% section 'header' %}`, so it does not depend on section groups and should always appear when you use this theme.
+The **header** (logo + navigation bar) is shown on every page. The navigation bar includes: **Clothes**, **Hair Products**, **Accessories**, **Connect**. Add your logo and set each link URL from **Theme settings → Header**.
 
 ### 1. Confirm you’re viewing the right theme
 
@@ -87,7 +87,7 @@ The **header** (logo + navigation bar) is rendered directly in the layout (`them
    - **Logo**: Upload an image, or leave blank to show your store name
    - **Logo alt text**: Optional; leave blank to use store name
    - **Logo link**: Leave blank to link to homepage
-   - **Navigation bar**: The 5 links (Clothes, Hair Products, Accessories, Connect, Leasing) are already set in the theme. You can edit labels and URLs in the “Navigation link” blocks
+   - **Navigation bar**: The 5 links (Clothes, Hair Products, Accessories, Connect) are already set in the theme. You can edit labels and URLs in the “Navigation link” blocks
    - **Book a test ride link**: Optional URL for the CTA button
 
 ### 3. If the header still doesn’t appear – diagnose first
@@ -160,7 +160,7 @@ If you don’t assign collections, the section will show a message like “Pleas
 Use this to confirm everything is visible:
 
 - [ ] **Header bar** visible at the top (logo or store name on the left)
-- [ ] **Navigation links** visible on desktop (Clothes, Hair Products, Accessories, Connect, Leasing)
+- [ ] **Navigation links** visible on desktop (Clothes, Hair Products, Accessories, Connect)
 - [ ] **Account and cart icons** visible in the header
 - [ ] **“Book a test ride”** button visible (desktop and/or mobile)
 - [ ] **Mobile menu** opens when you tap the hamburger and shows the same 5 links + CTA

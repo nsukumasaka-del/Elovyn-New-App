@@ -1,0 +1,254 @@
+{% comment %}
+  Visual grid (social / editorial) with optional product links — "shop the look" style.
+{% endcomment %}
+
+<section class="shop-the-look section-spacing">
+  <div class="shop-the-look__container container mx-auto px-6">
+    {%- if section.settings.heading != blank or section.settings.subheading != blank -%}
+      <div class="shop-the-look__header text-center mb-10 md:mb-14">
+        {%- if section.settings.heading != blank -%}
+          <h2 class="shop-the-look__title">{{ section.settings.heading }}</h2>
+        {%- endif -%}
+        {%- if section.settings.subheading != blank -%}
+          <p class="shop-the-look__sub">{{ section.settings.subheading }}</p>
+        {%- endif -%}
+      </div>
+    {%- endif -%}
+
+    <div class="shop-the-look__grid">
+      {%- for block in section.blocks -%}
+        {%- if block.type == 'tile' -%}
+          <article class="shop-the-look__tile" {{ block.shopify_attributes }}>
+            {%- if block.settings.product != blank -%}
+              <a href="{{ block.settings.product.url }}" class="shop-the-look__tile-link">
+            {%- elsif block.settings.link != blank -%}
+              <a href="{{ block.settings.link }}" class="shop-the-look__tile-link">
+            {%- else -%}
+              <div class="shop-the-look__tile-link shop-the-look__tile-link--static">
+            {%- endif -%}
+                <div class="shop-the-look__tile-media">
+                  {%- if block.settings.image != blank -%}
+                    <img
+                      src="{{ block.settings.image | image_url: width: 900 }}"
+                      alt="{{ block.settings.image.alt | default: block.settings.caption | escape }}"
+                      loading="lazy"
+                      width="{{ block.settings.image.width }}"
+                      height="{{ block.settings.image.height }}"
+                      class="shop-the-look__img"
+                    >
+                  {%- elsif block.settings.product != blank and block.settings.product.featured_image -%}
+                    <img
+                      src="{{ block.settings.product.featured_image | image_url: width: 900 }}"
+                      alt="{{ block.settings.product.featured_image.alt | escape }}"
+                      loading="lazy"
+                      class="shop-the-look__img"
+                    >
+                  {%- else -%}
+                    <div class="shop-the-look__ph" aria-hidden="true"></div>
+                  {%- endif -%}
+                  <div class="shop-the-look__tile-shade"></div>
+                </div>
+                <div class="shop-the-look__tile-caption">
+                  {%- if block.settings.caption != blank -%}
+                    <span class="shop-the-look__cap-text">{{ block.settings.caption }}</span>
+                  {%- endif -%}
+                  {%- if block.settings.product != blank or block.settings.link != blank -%}
+                    <span class="shop-the-look__cta">{{ section.settings.tile_cta_text | default: 'Shop now' }}</span>
+                  {%- endif -%}
+                </div>
+            {%- if block.settings.product != blank or block.settings.link != blank -%}
+              </a>
+            {%- else -%}
+              </div>
+            {%- endif -%}
+          </article>
+        {%- endif -%}
+      {%- endfor -%}
+    </div>
+  </div>
+</section>
+
+<style>
+  .shop-the-look__title {
+    font-family: var(--font-heading-family, system-ui, sans-serif);
+    font-size: clamp(1.75rem, 4vw, 2.75rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    text-transform: uppercase;
+    margin: 0 0 0.5rem;
+    color: hsl(var(--foreground));
+  }
+  .shop-the-look__sub {
+    margin: 0 auto;
+    max-width: 36rem;
+    font-size: 0.9375rem;
+    color: hsl(var(--foreground) / 0.65);
+    line-height: 1.6;
+  }
+  .shop-the-look__grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+  }
+  @media (min-width: 768px) {
+    .shop-the-look__grid {
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.65rem;
+    }
+  }
+  @media (min-width: 1024px) {
+    .shop-the-look__grid {
+      grid-template-columns: repeat(6, 1fr);
+      gap: 0.75rem;
+    }
+    .shop-the-look__tile:first-child {
+      grid-column: span 2;
+      grid-row: span 2;
+    }
+  }
+  .shop-the-look__tile-link {
+    display: block;
+    position: relative;
+    aspect-ratio: 1;
+    overflow: hidden;
+    color: inherit;
+    text-decoration: none;
+  }
+  .shop-the-look__tile:first-child .shop-the-look__tile-link {
+    aspect-ratio: auto;
+    min-height: 100%;
+  }
+  @media (min-width: 1024px) {
+    .shop-the-look__tile:first-child .shop-the-look__tile-link {
+      min-height: 0;
+      aspect-ratio: 1;
+    }
+  }
+  .shop-the-look__tile-media {
+    position: absolute;
+    inset: 0;
+  }
+  .shop-the-look__img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.55s ease;
+  }
+  .shop-the-look__tile-link:hover .shop-the-look__img {
+    transform: scale(1.05);
+  }
+  .shop-the-look__ph {
+    width: 100%;
+    height: 100%;
+    background: hsl(var(--muted) / 0.4);
+  }
+  .shop-the-look__tile-shade {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.55) 0%, transparent 55%);
+    opacity: 0.85;
+    transition: opacity 0.3s ease;
+  }
+  .shop-the-look__tile-link:hover .shop-the-look__tile-shade {
+    opacity: 1;
+  }
+  .shop-the-look__tile-caption {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 1rem 0.85rem;
+    z-index: 1;
+  }
+  .shop-the-look__cap-text {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #fff;
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);
+  }
+  .shop-the-look__cta {
+    display: inline-block;
+    margin-top: 0.35rem;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #fff;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.7);
+    padding-bottom: 2px;
+  }
+</style>
+
+{% schema %}
+{
+  "name": "Shop the look",
+  "tag": "section",
+  "class": "section-shop-the-look",
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Shop the look"
+    },
+    {
+      "type": "textarea",
+      "id": "subheading",
+      "label": "Subheading",
+      "default": "Styled by the community — tap to shop."
+    },
+    {
+      "type": "text",
+      "id": "tile_cta_text",
+      "label": "Link label on tiles",
+      "default": "Shop now"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "tile",
+      "name": "Image tile",
+      "settings": [
+        {
+          "type": "image_picker",
+          "id": "image",
+          "label": "Image",
+          "info": "Optional if you select a product (uses product image)."
+        },
+        {
+          "type": "product",
+          "id": "product",
+          "label": "Product (optional)"
+        },
+        {
+          "type": "url",
+          "id": "link",
+          "label": "Custom link",
+          "info": "Used when no product is set."
+        },
+        {
+          "type": "text",
+          "id": "caption",
+          "label": "Caption",
+          "default": "@yourbrand"
+        }
+      ]
+    }
+  ],
+  "max_blocks": 12,
+  "presets": [
+    {
+      "name": "Shop the look",
+      "blocks": [
+        { "type": "tile", "settings": { "caption": "Street layer" } },
+        { "type": "tile", "settings": { "caption": "Core tee" } },
+        { "type": "tile", "settings": { "caption": "Rest day" } },
+        { "type": "tile", "settings": { "caption": "City run" } },
+        { "type": "tile", "settings": { "caption": "Training" } },
+        { "type": "tile", "settings": { "caption": "Recovery" } }
+      ]
+    }
+  ]
+}
+{% endschema %}

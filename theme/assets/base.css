@@ -9,10 +9,19 @@ html {
   scroll-behavior: smooth;
 }
 
+/* Minimal design tokens (premium monochrome) */
+:root {
+  --color-page-bg: #ffffff;
+  --color-page-text: #000000;
+  --color-surface: #ffffff;
+  --color-surface-text: #111111;
+  --color-border-subtle: rgba(0, 0, 0, 0.12);
+}
+
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background-color: #000000;
-  color: #ffffff;
+  background-color: #ffffff;
+  color: #000000;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

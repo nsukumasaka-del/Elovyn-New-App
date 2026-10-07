@@ -13,75 +13,138 @@
       </p>
     </div>
 
+    {%- assign collection = nil -%}
     {%- if section.settings.collection != blank -%}
       {%- assign collection = collections[section.settings.collection] -%}
-      {%- if collection != blank and collection.products.size > 0 -%}
-        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+    {%- endif -%}
+    {%- if collection == nil and collections['frontpage'] != blank -%}
+      {%- assign collection = collections['frontpage'] -%}
+    {%- endif -%}
+    {%- if collection != blank and collection.products.size > 0 -%}
+        {% render 'amazon-disclosure' %}
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 product-grid product-grid--ads">
           {%- for product in collection.products limit: section.settings.products_to_show -%}
-            <div class="group relative bg-card rounded-3xl overflow-hidden cursor-pointer">
-              <a href="{{ product.url }}">
-                <div class="aspect-[4/5] relative overflow-hidden">
-                  {%- if product.featured_image != blank -%}
-                    <img
-                      src="{{ product.featured_image | image_url: width: 600 }}"
-                      alt="{{ product.featured_image.alt | escape }}"
-                      class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                      loading="lazy"
-                    >
-                  {%- else -%}
-                    {{ 'product-1' | placeholder_svg_tag: 'w-full h-full object-cover' }}
+            {%- assign product_index = forloop.index0 -%}
+            {%- assign link_block = nil -%}
+            {%- assign amazon_count = 0 -%}
+            {%- for block in section.blocks -%}
+              {%- if block.type == 'amazon_link' -%}
+                {%- if amazon_count == product_index -%}
+                  {%- assign link_block = block -%}
+                  {%- break -%}
+                {%- endif -%}
+                {%- assign amazon_count = amazon_count | plus: 1 -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- assign view_url = product.url -%}
+            {%- if link_block != nil and link_block.settings.url != blank -%}
+              {%- assign view_url = link_block.settings.url -%}
+            {%- else -%}
+              {%- assign title_lower = product.title | downcase -%}
+              {%- if title_lower contains "athletic fit tee" or title_lower contains "athletic fit tees" -%}
+                {%- assign view_url = "https://amzn.to/45I1l6l" -%}
+              {%- elsif title_lower contains "coofandy" and title_lower contains "short" and title_lower contains "button" -%}
+                {%- assign view_url = "https://amzn.to/4komatB" -%}
+              {%- elsif title_lower contains "soly hux" and title_lower contains "textured" -%}
+                {%- assign view_url = "https://amzn.to/47fRl4T" -%}
+              {%- elsif title_lower contains "jbl tune flex" -%}
+                {%- assign view_url = "https://amzn.to/4rRscFy" -%}
+              {%- endif -%}
+            {%- endif -%}
+            {%- comment -%} Each product slot uses the block at the same position; clicking the card opens that block's link settings. {%- endcomment -%}
+            <div class="product-card product-card--ad group relative bg-card rounded-3xl overflow-hidden border-2 border-border/50 hover:border-accent/40"{% if link_block %} {{ link_block.shopify_attributes }}{% endif %}>
+              <span class="product-card__ad-badge" aria-hidden="true">{{ 'general.amazon.sponsored' | t | default: 'Sponsored' }}</span>
+              <div class="aspect-[4/5] relative overflow-hidden">
+                {%- if product.featured_image != blank -%}
+                  <img
+                    src="{{ product.featured_image | image_url: width: 600 }}"
+                    alt="{{ product.featured_image.alt | escape }}"
+                    class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                    loading="lazy"
+                  >
+                {%- else -%}
+                  {{ 'product-1' | placeholder_svg_tag: 'w-full h-full object-cover' }}
+                {%- endif -%}
+              </div>
+              <div class="absolute bottom-0 left-0 right-0 product-card-overlay-inner">
+                <div class="absolute inset-0 bg-background/30 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                <div class="relative z-10">
+                  {%- comment -%} Use vendor as tagline {%- endcomment -%}
+                  {%- if product.vendor != blank -%}
+                    <p class="product-card-tagline font-medium text-accent uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                      {{ product.vendor }}
+                    </p>
+                  {%- elsif product.metafields.custom.tagline != blank -%}
+                    <p class="product-card-tagline font-medium text-accent uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                      {{ product.metafields.custom.tagline }}
+                    </p>
                   {%- endif -%}
-                  <div class="absolute inset-0 bg-gradient-to-t from-background/90 via-background/20 to-transparent"></div>
-                </div>
-                
-                <div class="absolute bottom-0 left-0 right-0 p-6">
-                  <div class="absolute inset-0 bg-background/40 backdrop-blur-sm rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                  <div class="relative z-10">
-                    {%- comment -%} Use vendor as tagline {%- endcomment -%}
-                    {%- if product.vendor != blank -%}
-                      <p class="text-xs font-medium text-accent uppercase tracking-wider mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                        {{ product.vendor }}
-                      </p>
-                    {%- elsif product.metafields.custom.tagline != blank -%}
-                      <p class="text-xs font-medium text-accent uppercase tracking-wider mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                        {{ product.metafields.custom.tagline }}
-                      </p>
-                    {%- endif -%}
-                    <h3 class="text-2xl md:text-3xl font-bold text-foreground mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                      {{ product.title }}
-                    </h3>
-                    {%- if product.description != blank -%}
-                      <p class="text-sm text-foreground/60 mb-4 max-w-xs opacity-0 group-hover:opacity-100 transition-opacity duration-300 line-clamp-2">
-                        {{ product.description | strip_html | truncate: 100 }}
-                      </p>
-                    {%- endif -%}
-                    <div class="flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                      <span class="text-sm font-medium text-foreground/80">
-                        {{ product.price | money }}
-                      </span>
-                      <a href="{{ product.url }}" class="btn-hero text-xs">
-                        View
-                      </a>
-                    </div>
+                  <h3 class="product-card-title font-bold text-foreground opacity-0 group-hover:opacity-100 transition-opacity duration-300" title="{{ product.title | escape }}">
+                    {{ product.title }}
+                  </h3>
+                  {%- if product.description != blank -%}
+                    <p class="product-card-desc text-foreground/60 max-w-xs opacity-0 group-hover:opacity-100 transition-opacity duration-300 line-clamp-2">
+                      {{ product.description | strip_html | truncate: 100 }}
+                    </p>
+                  {%- endif -%}
+                  <div class="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                    <a href="{{ view_url }}" class="btn-hero text-xs" target="_blank" rel="noopener noreferrer{% if view_url contains 'amzn.to' %} sponsored{% endif %}">{% if view_url contains 'amzn.to' %}{% if section.settings.button_text_amazon != blank %}{{ section.settings.button_text_amazon }}{% else %}{{ 'general.amazon.view_on_amazon' | t | default: 'View on Amazon' }}{% endif %}{% else %}{% if section.settings.button_text_product != blank %}{{ section.settings.button_text_product }}{% else %}{{ 'general.amazon.view_product' | t | default: 'View product' }}{% endif %}{% endif %}</a>
                   </div>
                 </div>
-              </a>
+              </div>
             </div>
           {%- endfor -%}
         </div>
-      {%- else -%}
-        <p class="text-center text-foreground/60">No products found in this collection.</p>
-      {%- endif -%}
     {%- else -%}
-      <p class="text-center text-foreground/60">Please select a collection in the theme editor.</p>
+      <p class="text-center text-foreground/60">No products to show. In the sidebar under "Products in grid", select a Collection that has products.</p>
     {%- endif -%}
   </div>
 </section>
+
+<style>
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+</style>
 
 {% schema %}
 {
   "name": "Accessories Showcase",
   "settings": [
+    {
+      "type": "header",
+      "content": "Product links"
+    },
+    {
+      "type": "paragraph",
+      "content": "Each product can have its own link. Add one 'Product link' block per product: choose the product and enter the Link URL. Click a product card in the preview to open that product's link settings (add a block for it first if needed)."
+    },
+    {
+      "type": "header",
+      "content": "Products in grid"
+    },
+    {
+      "type": "collection",
+      "id": "collection",
+      "label": "Collection",
+      "info": "Choose the collection. Products from this collection appear in the grid above. Defaults to Homepage collection if empty."
+    },
+    {
+      "type": "range",
+      "id": "products_to_show",
+      "label": "Products to show",
+      "min": 2,
+      "max": 12,
+      "step": 1,
+      "default": 4
+    },
+    {
+      "type": "header",
+      "content": "Section heading"
+    },
     {
       "type": "text",
       "id": "heading",
@@ -95,23 +158,67 @@
       "default": "Premium accessories to enhance your ride and experience."
     },
     {
-      "type": "collection",
-      "id": "collection",
-      "label": "Collection"
+      "type": "header",
+      "content": "Button labels"
     },
     {
-      "type": "range",
-      "id": "products_to_show",
-      "label": "Products to show",
-      "min": 4,
-      "max": 12,
-      "step": 1,
-      "default": 4
+      "type": "text",
+      "id": "button_text_amazon",
+      "label": "View on Amazon button text",
+      "default": "View on Amazon",
+      "info": "Shown when the product link goes to Amazon."
+    },
+    {
+      "type": "text",
+      "id": "button_text_product",
+      "label": "View product button text",
+      "default": "View product",
+      "info": "Shown when the product uses a non-Amazon link."
+    },
+  ],
+  "blocks": [
+    {
+      "type": "amazon_link",
+      "name": "Product link",
+      "limit": 50,
+      "settings": [
+        {
+          "type": "header",
+          "content": "Product and link"
+        },
+        {
+          "type": "product",
+          "id": "product",
+          "label": "Product",
+          "info": "Select the product. This block's link will be used for its button."
+        },
+        {
+          "type": "text",
+          "id": "url",
+          "label": "Link URL",
+          "placeholder": "https://amzn.to/xxxxx or any URL",
+          "info": "Paste the full URL for the View product button."
+        }
+      ]
     }
   ],
   "presets": [
     {
-      "name": "Accessories Showcase"
+      "name": "Accessories Showcase",
+      "blocks": [
+        { "type": "amazon_link", "settings": {} },
+        { "type": "amazon_link", "settings": {} },
+        { "type": "amazon_link", "settings": {} },
+        { "type": "amazon_link", "settings": {} },
+        { "type": "amazon_link", "settings": {} },
+        { "type": "amazon_link", "settings": {} },
+        { "type": "amazon_link", "settings": {} },
+        { "type": "amazon_link", "settings": {} },
+        { "type": "amazon_link", "settings": {} },
+        { "type": "amazon_link", "settings": {} },
+        { "type": "amazon_link", "settings": {} },
+        { "type": "amazon_link", "settings": {} }
+      ]
     }
   ]
 }

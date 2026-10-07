@@ -1,0 +1,469 @@
+{% comment %}
+  Header bar - Logo + Navigation. Rendered in layout via {% render 'header-bar' %} so no section type is needed.
+  Customize logo and CTA via Theme settings → Header.
+{% endcomment %}
+<style>
+  #elovyn-header-wrap {
+    display: block !important;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 9999;
+    background: transparent;
+    transition: background 0.5s, backdrop-filter 0.5s, border 0.5s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #elovyn-header-wrap.scrolled {
+    background: rgba(0, 0, 0, 0.9);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+  }
+  /* Cart page: nav bar always black so text and colours pop */
+  body.template-cart #elovyn-header-wrap {
+    background: #000000 !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  }
+  #elovyn-header-wrap .elovyn-header-inner {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 4rem;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+  }
+  @media (min-width: 768px) {
+    #elovyn-header-wrap .elovyn-header-inner { min-height: 5rem; padding: 0 1rem; gap: 0.5rem; flex-wrap: nowrap; }
+  }
+  @media (min-width: 1024px) {
+    #elovyn-header-wrap .elovyn-header-inner { height: 5rem; padding: 0 1.5rem; gap: 1rem; }
+  }
+  #elovyn-header-wrap .elovyn-logo-link {
+    display: flex;
+    align-items: center;
+    text-decoration: none;
+    color: #fff;
+    font-weight: 700;
+    font-size: 1rem;
+    flex-shrink: 0;
+    min-height: 44px;
+    min-width: 44px;
+  }
+  @media (min-width: 768px) {
+    #elovyn-header-wrap .elovyn-logo-link { font-size: 1.25rem; }
+  }
+  #elovyn-header-wrap .elovyn-logo-img {
+    height: 3rem;
+    max-height: 3rem;
+    width: auto;
+    display: block;
+    object-fit: contain;
+  }
+  @media (min-width: 768px) {
+    #elovyn-header-wrap .elovyn-logo-img { height: 5rem; max-height: 5rem; }
+  }
+  @media (min-width: 1024px) {
+    #elovyn-header-wrap .elovyn-logo-img { height: 8rem; max-height: 8rem; }
+  }
+  /* Nav bar – hidden on small screens (show only in dropdown); visible on desktop */
+  #elovyn-header-wrap .elovyn-nav {
+    display: none;
+    align-items: center;
+    gap: 1.5rem;
+    justify-content: center;
+    flex: 1;
+    min-width: 0;
+  }
+  @media (min-width: 1024px) {
+    #elovyn-header-wrap .elovyn-nav {
+      display: flex !important;
+      flex-wrap: nowrap;
+      max-width: 600px;
+    }
+  }
+  #elovyn-header-wrap .elovyn-nav a {
+    color: rgba(255, 255, 255, 0.9);
+    text-decoration: none;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: color 0.2s;
+    white-space: nowrap;
+  }
+  #elovyn-header-wrap .elovyn-nav a:hover { color: #fff; }
+  #elovyn-header-wrap .elovyn-header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex-shrink: 0;
+  }
+  @media (min-width: 768px) { #elovyn-header-wrap .elovyn-header-right { gap: 0.5rem; } }
+  @media (min-width: 1024px) { #elovyn-header-wrap .elovyn-header-right { gap: 1rem; } }
+  #elovyn-header-wrap .elovyn-header-right a,
+  #elovyn-header-wrap .elovyn-header-right button {
+    color: rgba(255, 255, 255, 0.9);
+    padding: 0.5rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  @media (min-width: 768px) {
+    #elovyn-header-wrap .elovyn-header-right a,
+    #elovyn-header-wrap .elovyn-header-right button { min-width: 40px; min-height: 40px; }
+  }
+  #elovyn-header-wrap .elovyn-header-right a:hover,
+  #elovyn-header-wrap .elovyn-header-right a:focus,
+  #elovyn-header-wrap .elovyn-header-right button:hover,
+  #elovyn-header-wrap .elovyn-header-right button:focus { color: #fff; }
+  #elovyn-header-wrap .elovyn-cta {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.7rem;
+    font-weight: 500;
+    background: transparent;
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 9999px;
+    text-decoration: none;
+    white-space: nowrap;
+    min-height: 40px;
+  }
+  @media (min-width: 768px) {
+    #elovyn-header-wrap .elovyn-cta { padding: 0.75rem 1.5rem; font-size: 0.75rem; }
+  }
+  #elovyn-header-wrap .elovyn-cta:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.6);
+    color: #fff;
+  }
+  /* Shop now: white modern button */
+  #elovyn-header-wrap .elovyn-cta-shop {
+    background: #fff;
+    color: #111;
+    border: none;
+    padding: 0.5rem 1.25rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+    transition: background 0.25s ease, box-shadow 0.25s ease, transform 0.2s ease;
+  }
+  @media (min-width: 768px) {
+    #elovyn-header-wrap .elovyn-cta-shop { padding: 0.65rem 1.5rem; font-size: 0.8125rem; }
+  }
+  #elovyn-header-wrap .elovyn-cta-shop:hover {
+    background: #f8f8f8;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    transform: translateY(-1px);
+  }
+  #elovyn-header-wrap .elovyn-mobile-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
+  }
+  @media (min-width: 1024px) {
+    #elovyn-header-wrap .elovyn-mobile-btn { display: none !important; }
+  }
+  #elovyn-header-wrap .elovyn-mobile-btn .icon-close { display: none; }
+  #elovyn-header-wrap .elovyn-mobile-btn.active .icon-open { display: none; }
+  #elovyn-header-wrap .elovyn-mobile-btn.active .icon-close { display: block !important; }
+  /* Standard dropdown: positioned below header, right-aligned (wrap stays position:fixed for transparency) */
+  #elovyn-mobile-menu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    right: 0.5rem;
+    margin-top: 0.25rem;
+    z-index: 9998;
+    min-width: 200px;
+    max-width: 280px;
+    background: rgba(0, 0, 0, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    padding: 0.5rem 0;
+    flex-direction: column;
+    align-items: stretch;
+    overflow: hidden;
+  }
+  @media (min-width: 1024px) { #elovyn-mobile-menu { display: none !important; } }
+  #elovyn-mobile-menu.open { display: flex !important; }
+  #elovyn-mobile-menu nav {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+  }
+  #elovyn-mobile-menu a {
+    color: rgba(255, 255, 255, 0.95);
+    text-decoration: none;
+    font-size: 0.875rem;
+    font-weight: 500;
+    padding: 0.6rem 1rem;
+    display: block;
+    text-align: left;
+    white-space: nowrap;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.15s, color 0.15s;
+  }
+  #elovyn-mobile-menu a:hover,
+  #elovyn-mobile-menu a:active {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+  }
+  #elovyn-mobile-menu .elovyn-mobile-cta {
+    margin: 0.5rem 0.75rem 0;
+    padding: 0.6rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 6px;
+    text-decoration: none;
+    text-align: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+  }
+  #elovyn-mobile-menu .elovyn-mobile-cta:hover {
+    background: rgba(255, 255, 255, 0.25);
+    color: #fff;
+  }
+  #elovyn-mobile-menu .elovyn-mobile-cta-shop {
+    background: #fff;
+    color: #111;
+    border: none;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+  }
+  #elovyn-mobile-menu .elovyn-mobile-cta-shop:hover {
+    background: #f0f0f0;
+    color: #111;
+  }
+  #elovyn-header-wrap .elovyn-cart-badge {
+    position: absolute;
+    top: -0.25rem;
+    right: -0.25rem;
+    background: #d4a574;
+    color: #fff;
+    font-size: 0.7rem;
+    border-radius: 9999px;
+    min-width: 1.25rem;
+    height: 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 0.25rem;
+  }
+  #elovyn-header-wrap .elovyn-cart-badge.elovyn-cart-badge--empty {
+    visibility: hidden;
+    pointer-events: none;
+  }
+  /* Search modal */
+  #elovyn-search-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10000;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(8px);
+    align-items: flex-start;
+    justify-content: center;
+    padding: 5rem 1rem 2rem;
+    overflow-y: auto;
+  }
+  #elovyn-search-modal.open {
+    display: flex;
+  }
+  #elovyn-search-modal .elovyn-search-inner {
+    width: 100%;
+    max-width: 560px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    padding: 1rem;
+  }
+  #elovyn-search-modal .elovyn-search-form {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  #elovyn-search-modal .elovyn-search-form input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+    color: #fff;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    outline: none;
+  }
+  #elovyn-search-modal .elovyn-search-form input::placeholder {
+    color: rgba(255, 255, 255, 0.5);
+  }
+  #elovyn-search-modal .elovyn-search-form button[type="submit"] {
+    padding: 0.75rem 1.25rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #111;
+    background: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  #elovyn-search-modal .elovyn-search-close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    padding: 0.5rem;
+    color: rgba(255, 255, 255, 0.8);
+    background: none;
+    border: none;
+    cursor: pointer;
+  }
+  #elovyn-search-results-dropdown {
+    margin-top: 0.75rem;
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+  #elovyn-search-results-dropdown a {
+    display: block;
+    padding: 0.6rem 0;
+    color: rgba(255, 255, 255, 0.9);
+    text-decoration: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: 0.9rem;
+  }
+  #elovyn-search-results-dropdown a:hover {
+    color: #fff;
+  }
+</style>
+
+<div id="elovyn-header-wrap">
+  <header class="elovyn-header" role="banner">
+    <div class="elovyn-header-inner">
+      <a href="{% if settings.header_logo_link != blank %}{{ settings.header_logo_link }}{% else %}{{ routes.root_url }}{% endif %}" class="elovyn-logo-link">
+        {% if settings.header_logo != blank %}
+          <img src="{{ settings.header_logo | image_url: width: 400 }}" alt="{{ settings.header_logo_alt | default: shop.name }}" class="elovyn-logo-img" loading="eager" width="400" height="128">
+        {% else %}
+          <img src="{{ 'elovyn-logo.png' | asset_url }}" alt="{{ settings.header_logo_alt | default: 'Elovyn' }}" class="elovyn-logo-img" loading="eager" width="400" height="128">
+        {% endif %}
+      </a>
+
+      <nav class="elovyn-nav" role="navigation" aria-label="Main navigation">
+        <a href="{% if settings.header_nav_hoodies_url != blank %}{{ settings.header_nav_hoodies_url }}{% else %}/collections/hoodies{% endif %}">Hoodies</a>
+        <a href="{% if settings.header_nav_sweatshirts_url != blank %}{{ settings.header_nav_sweatshirts_url }}{% else %}/collections/sweatshirts{% endif %}">Sweatshirts</a>
+        <a href="{% if settings.header_nav_tees_url != blank %}{{ settings.header_nav_tees_url }}{% else %}/collections/graphic-tees{% endif %}">Graphic Tees</a>
+        <a href="{% if settings.header_nav_shop_all_url != blank %}{{ settings.header_nav_shop_all_url }}{% else %}/collections/shirts{% endif %}">Shop All</a>
+      </nav>
+
+      <div class="elovyn-header-right">
+        <button type="button" id="elovyn-search-open" aria-label="{{ 'general.search.placeholder' | t | default: 'Search' }}">
+          {% render 'icon-search', width: 20, height: 20 %}
+        </button>
+        <a href="{{ routes.account_login_url }}" aria-label="Account">
+          {% render 'icon-user', width: 20, height: 20 %}
+        </a>
+        <a href="{{ routes.cart_url }}" aria-label="Cart" style="position: relative;">
+          {% render 'icon-shopping-bag', width: 20, height: 20 %}
+          <span class="elovyn-cart-badge{% if cart.item_count == 0 %} elovyn-cart-badge--empty{% endif %}" data-cart-count aria-hidden="{% if cart.item_count == 0 %}true{% else %}false{% endif %}">{{ cart.item_count }}</span>
+        </a>
+        <button type="button" class="elovyn-mobile-btn" aria-label="Toggle menu" aria-expanded="false">
+          <span class="icon-open">{% render 'icon-menu', width: 24, height: 24 %}</span>
+          <span class="icon-close">{% render 'icon-x', width: 24, height: 24 %}</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div id="elovyn-mobile-menu" aria-hidden="true">
+    <nav role="navigation" aria-label="Mobile menu">
+      <a href="{{ routes.search_url }}" class="elovyn-mobile-link" id="elovyn-mobile-search">{{ 'general.search.title' | t | default: 'Search' }}</a>
+      <a href="{% if settings.header_nav_hoodies_url != blank %}{{ settings.header_nav_hoodies_url }}{% else %}/collections/hoodies{% endif %}" class="elovyn-mobile-link">Hoodies</a>
+      <a href="{% if settings.header_nav_sweatshirts_url != blank %}{{ settings.header_nav_sweatshirts_url }}{% else %}/collections/sweatshirts{% endif %}" class="elovyn-mobile-link">Sweatshirts</a>
+      <a href="{% if settings.header_nav_tees_url != blank %}{{ settings.header_nav_tees_url }}{% else %}/collections/graphic-tees{% endif %}" class="elovyn-mobile-link">Graphic Tees</a>
+      <a href="{% if settings.header_nav_shop_all_url != blank %}{{ settings.header_nav_shop_all_url }}{% else %}/collections/shirts{% endif %}" class="elovyn-mobile-link">Shop All</a>
+    </nav>
+  </div>
+
+  {%- comment -%} Search modal {%- endcomment -%}
+  <div id="elovyn-search-modal" aria-hidden="true" role="dialog" aria-label="{{ 'general.search.placeholder' | t | default: 'Search' }}">
+    <div class="elovyn-search-inner" style="position: relative;">
+      <button type="button" class="elovyn-search-close" id="elovyn-search-close" aria-label="{{ 'general.search.close' | t | default: 'Close search' }}">{% render 'icon-x', width: 24, height: 24 %}</button>
+      <form action="{{ routes.search_url }}" method="get" class="elovyn-search-form" role="search">
+        <input type="search" name="q" value="{{ search.terms | escape }}" placeholder="{{ 'general.search.placeholder' | t | default: 'Search our store' }}" aria-label="{{ 'general.search.placeholder' | t | default: 'Search' }}" autocomplete="off" id="elovyn-search-input">
+        <input type="hidden" name="options[prefix]" value="last">
+        <button type="submit">{{ 'general.search.submit' | t | default: 'Search' }}</button>
+      </form>
+      <div id="elovyn-search-results-dropdown" class="elovyn-search-results-dropdown" style="display: none;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function() {
+    var wrap = document.getElementById('elovyn-header-wrap');
+    var mobileMenu = document.getElementById('elovyn-mobile-menu');
+    var mobileBtn = wrap && wrap.querySelector('.elovyn-mobile-btn');
+    if (!wrap || !mobileMenu || !mobileBtn) return;
+    function toggleMenu() {
+      mobileMenu.classList.toggle('open');
+      mobileBtn.classList.toggle('active');
+      mobileBtn.setAttribute('aria-expanded', mobileMenu.classList.contains('open'));
+      mobileMenu.setAttribute('aria-hidden', !mobileMenu.classList.contains('open'));
+    }
+    mobileBtn.addEventListener('click', toggleMenu);
+    mobileMenu.querySelectorAll('a').forEach(function(a) {
+      a.addEventListener('click', function() { toggleMenu(); });
+    });
+    window.addEventListener('scroll', function() {
+      wrap.classList.toggle('scrolled', window.pageYOffset > 50);
+    });
+
+    var searchOpen = document.getElementById('elovyn-search-open');
+    var searchModal = document.getElementById('elovyn-search-modal');
+    var searchClose = document.getElementById('elovyn-search-close');
+    var searchInput = document.getElementById('elovyn-search-input');
+    if (searchOpen && searchModal && searchClose) {
+      searchOpen.addEventListener('click', function() {
+        searchModal.classList.add('open');
+        searchModal.setAttribute('aria-hidden', 'false');
+        if (searchInput) { searchInput.focus(); searchInput.value = ''; }
+      });
+      searchClose.addEventListener('click', function() {
+        searchModal.classList.remove('open');
+        searchModal.setAttribute('aria-hidden', 'true');
+      });
+      searchModal.addEventListener('click', function(e) {
+        if (e.target === searchModal) {
+          searchModal.classList.remove('open');
+          searchModal.setAttribute('aria-hidden', 'true');
+        }
+      });
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && searchModal.classList.contains('open')) {
+          searchModal.classList.remove('open');
+          searchModal.setAttribute('aria-hidden', 'true');
+        }
+      });
+    }
+  })();
+</script>

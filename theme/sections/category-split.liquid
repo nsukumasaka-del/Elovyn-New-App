@@ -1,0 +1,221 @@
+{% comment %}
+  Two-column category split (e.g. Men / Women) — full-width, image + overlay CTA.
+  Gymshark-style visual blocks; all content editable in Theme Editor.
+{% endcomment %}
+
+<section class="category-split section-spacing" data-section-id="{{ section.id }}">
+  <div class="category-split__grid">
+    {%- for block in section.blocks -%}
+      {%- if block.type == 'category_panel' -%}
+        <a
+          href="{{ block.settings.link | default: routes.all_products_collection_url }}"
+          class="category-split__panel"
+          {{ block.shopify_attributes }}
+        >
+          <div class="category-split__media">
+            {%- if block.settings.image != blank -%}
+              <img
+                src="{{ block.settings.image | image_url: width: 1200 }}"
+                alt="{{ block.settings.image.alt | default: block.settings.heading | escape }}"
+                width="{{ block.settings.image.width }}"
+                height="{{ block.settings.image.height }}"
+                loading="{% if forloop.first %}eager{% else %}lazy{% endif %}"
+                class="category-split__img"
+              >
+            {%- else -%}
+              <div class="category-split__placeholder" aria-hidden="true"></div>
+            {%- endif -%}
+            {%- assign ov = section.settings.overlay_strength | times: 1.0 | divided_by: 100.0 -%}
+            <div class="category-split__overlay" style="background-color: rgba(0,0,0,{{ ov }});"></div>
+          </div>
+          <div class="category-split__content">
+            {%- if block.settings.kicker != blank -%}
+              <span class="category-split__kicker">{{ block.settings.kicker }}</span>
+            {%- endif -%}
+            <h2 class="category-split__heading">{{ block.settings.heading | default: 'Shop' }}</h2>
+            <span class="category-split__btn">{{ block.settings.button_text | default: 'Shop now' }}</span>
+          </div>
+        </a>
+      {%- endif -%}
+    {%- endfor -%}
+  </div>
+</section>
+
+<style>
+  .category-split {
+    padding: 0;
+    margin: 0;
+    max-width: none;
+  }
+  .category-split__grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    min-height: clamp(320px, 70vh, 720px);
+  }
+  @media (min-width: 768px) {
+    .category-split__grid {
+      grid-template-columns: 1fr 1fr;
+      min-height: clamp(400px, 75vh, 820px);
+    }
+  }
+  .category-split__panel {
+    position: relative;
+    display: block;
+    overflow: hidden;
+    color: #fff;
+    text-decoration: none;
+    min-height: 280px;
+  }
+  .category-split__media {
+    position: absolute;
+    inset: 0;
+  }
+  .category-split__img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scale(1.001);
+    transition: transform 0.7s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  .category-split__panel:hover .category-split__img {
+    transform: scale(1.06);
+  }
+  .category-split__placeholder {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, #1a1a1a 0%, #333 100%);
+  }
+  .category-split__overlay {
+    position: absolute;
+    inset: 0;
+  }
+  .category-split__content {
+    position: relative;
+    z-index: 2;
+    height: 100%;
+    min-height: inherit;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1.5rem;
+    text-align: center;
+  }
+  .category-split__kicker {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    opacity: 0.9;
+    margin-bottom: 0.75rem;
+  }
+  .category-split__heading {
+    font-family: var(--font-heading-family, system-ui, sans-serif);
+    font-size: clamp(2rem, 5vw, 3.5rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+    margin: 0 0 1.25rem;
+    text-transform: uppercase;
+  }
+  .category-split__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 48px;
+    padding: 0 1.75rem;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: #fff;
+    color: #0a0a0a;
+    border: none;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .category-split__panel:hover .category-split__btn {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+  }
+</style>
+
+{% schema %}
+{
+  "name": "Category split",
+  "tag": "section",
+  "class": "section-category-split",
+  "settings": [
+    {
+      "type": "range",
+      "id": "overlay_strength",
+      "label": "Image overlay darkness",
+      "min": 15,
+      "max": 65,
+      "step": 5,
+      "default": 35,
+      "unit": "%"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "category_panel",
+      "name": "Category panel",
+      "limit": 2,
+      "settings": [
+        {
+          "type": "image_picker",
+          "id": "image",
+          "label": "Image"
+        },
+        {
+          "type": "text",
+          "id": "kicker",
+          "label": "Eyebrow text",
+          "default": "Shop"
+        },
+        {
+          "type": "text",
+          "id": "heading",
+          "label": "Heading",
+          "default": "Hoodies"
+        },
+        {
+          "type": "text",
+          "id": "button_text",
+          "label": "Button text",
+          "default": "Shop now"
+        },
+        {
+          "type": "url",
+          "id": "link",
+          "label": "Link"
+        }
+      ]
+    }
+  ],
+  "max_blocks": 2,
+  "presets": [
+    {
+      "name": "Category split",
+      "blocks": [
+        {
+          "type": "category_panel",
+          "settings": {
+            "kicker": "Men",
+            "heading": "Street essentials",
+            "button_text": "Shop men"
+          }
+        },
+        {
+          "type": "category_panel",
+          "settings": {
+            "kicker": "Women",
+            "heading": "Everyday layers",
+            "button_text": "Shop women"
+          }
+        }
+      ]
+    }
+  ]
+}
+{% endschema %}

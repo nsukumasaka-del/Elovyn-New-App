@@ -1,113 +1,213 @@
 {% comment %}
-  Footer section - replica of original React app
-  Default: Hair Products, Accessories, Company, Support columns; socials; © Cowboy; Privacy/Terms/Cookies
+  Modern footer – Takealot-inspired: clean dark layout, link columns, newsletter, Contact us links to a separate page.
 {% endcomment %}
 
-<footer class="bg-background border-t border-border/30 pt-16 pb-8">
-  <div class="container mx-auto px-6">
-    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8 mb-12">
-      {%- comment -%} Logo & Socials - matches React {%- endcomment -%}
-      <div class="col-span-2 md:col-span-4 lg:col-span-1 mb-8 lg:mb-0">
-        <a href="{{ routes.root_url }}" class="inline-block">
+<footer class="footer-modern site-footer" style="background-color: {{ section.settings.footer_bg_color | default: '#000000' }};">
+  <div class="footer-modern__inner">
+    {%- comment -%} Top: logo, description, link columns {%- endcomment -%}
+    <div class="footer-modern__top">
+      <div class="footer-modern__brand">
+        <a href="{{ routes.root_url }}" class="footer-modern__logo">
           {%- if section.settings.logo != blank -%}
-            <img src="{{ section.settings.logo | image_url: width: 200 }}" alt="{{ shop.name }}" style="height: 12rem; width: auto;">
+            {%- assign logo_width = section.settings.logo_width | default: 160 -%}
+            <img src="{{ section.settings.logo | image_url: width: logo_width }}" alt="{{ shop.name }}" loading="lazy" style="max-width: {{ logo_width }}px; height: auto; display: block;">
           {%- else -%}
-            <span class="text-2xl font-bold">{{ shop.name }}</span>
+            <span class="footer-modern__logo-text">{{ shop.name }}</span>
           {%- endif -%}
         </a>
-        <p class="text-sm text-foreground/50 mt-4 mb-6 max-w-xs">
-          {{ section.settings.description | default: "The ultimate connected e-bikes designed in Belgium, assembled in Europe." }}
+        <p class="footer-modern__tagline">
+          {{ section.settings.description | default: "Hoodies, sweatshirts & graphic tees. Premium comfort and style." }}
         </p>
         {%- if section.settings.show_social_icons -%}
-          <div class="flex gap-4">
-            <a href="{% if settings.social_instagram_link != blank %}{{ settings.social_instagram_link }}{% else %}#{% endif %}" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Instagram</a>
-            <a href="{% if settings.social_twitter_link != blank %}{{ settings.social_twitter_link }}{% else %}#{% endif %}" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Twitter</a>
-            <a href="{% if settings.social_facebook_link != blank %}{{ settings.social_facebook_link }}{% else %}#{% endif %}" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Facebook</a>
-            <a href="{% if settings.social_youtube_link != blank %}{{ settings.social_youtube_link }}{% else %}#{% endif %}" class="text-sm text-foreground/50 hover:text-foreground transition-colors">YouTube</a>
+          <div class="footer-modern__social">
+            {%- if settings.social_instagram_link != blank -%}<a href="{{ settings.social_instagram_link }}" class="footer-modern__social-link" aria-label="Instagram">Instagram</a>{%- endif -%}
+            {%- if settings.social_twitter_link != blank -%}<a href="{{ settings.social_twitter_link }}" class="footer-modern__social-link" aria-label="Twitter">Twitter</a>{%- endif -%}
+            {%- if settings.social_facebook_link != blank -%}<a href="{{ settings.social_facebook_link }}" class="footer-modern__social-link" aria-label="Facebook">Facebook</a>{%- endif -%}
+            {%- if settings.social_youtube_link != blank -%}<a href="{{ settings.social_youtube_link }}" class="footer-modern__social-link" aria-label="YouTube">YouTube</a>{%- endif -%}
           </div>
         {%- endif -%}
+        <div class="footer-social">
+          {%- for block in section.blocks -%}
+            {%- if block.type == 'social_link' and block.settings.link != blank -%}
+              <a href="{{ block.settings.link }}" target="_blank" rel="noopener noreferrer" {{ block.shopify_attributes }}>
+                {%- if block.settings.platform == 'twitter' -%}X{%- else -%}{{ block.settings.platform | capitalize }}{%- endif -%}
+              </a>
+            {%- endif -%}
+          {%- endfor -%}
+        </div>
       </div>
 
-      {%- comment -%} Link columns - default static content matches React; override with menus when set {%- endcomment -%}
-      {%- assign has_menus = false -%}
-      {%- for block in section.blocks -%}
-        {%- if block.type == 'link_list' and block.settings.menu != blank -%}
-          {%- assign has_menus = true -%}
-          {%- break -%}
-        {%- endif -%}
-      {%- endfor -%}
-
-      {%- if has_menus -%}
+      <div class="footer-modern__links">
+        {%- assign current_col_open = false -%}
         {%- for block in section.blocks -%}
-          {%- if block.type == 'link_list' and block.settings.menu != blank and linklists[block.settings.menu] != blank -%}
-            <div>
-              <h4 class="text-sm font-semibold text-foreground mb-4">{{ block.settings.heading }}</h4>
-              <ul class="space-y-3">
-                {%- for link in linklists[block.settings.menu].links -%}
-                  <li><a href="{{ link.url }}" class="text-sm text-foreground/50 hover:text-foreground transition-colors">{{ link.title }}</a></li>
-                {%- endfor -%}
-              </ul>
-            </div>
+          {%- if block.type == 'link_column' -%}
+            {%- if current_col_open -%}</ul></div>{%- endif -%}
+            <div class="footer-modern__col" {{ block.shopify_attributes }}>
+              <h4 class="footer-modern__col-heading">{{ block.settings.heading | default: 'Links' }}</h4>
+              <ul class="footer-modern__list">
+            {%- assign current_col_open = true -%}
+          {%- elsif block.type == 'footer_link' and block.settings.url != blank -%}
+            <li {{ block.shopify_attributes }}><a href="{{ block.settings.url }}" class="footer-modern__link">{{ block.settings.label | default: 'Link' }}</a></li>
           {%- endif -%}
         {%- endfor -%}
-      {%- else -%}
-        {%- comment -%} Static default replica of React footer {%- endcomment -%}
-        <div>
-          <h4 class="text-sm font-semibold text-foreground mb-4">Hair Products</h4>
-          <ul class="space-y-3">
-            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Cruiser</a></li>
-            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Cruiser ST</a></li>
-            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Cross</a></li>
-            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Cross ST</a></li>
-            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Compare bikes</a></li>
-          </ul>
-        </div>
-        <div>
-          <h4 class="text-sm font-semibold text-foreground mb-4">Accessories</h4>
-          <ul class="space-y-3">
-            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">All accessories</a></li>
-            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Bags</a></li>
-            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Locks</a></li>
-            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Lights</a></li>
-          </ul>
-        </div>
-        <div>
-          <h4 class="text-sm font-semibold text-foreground mb-4">Company</h4>
-          <ul class="space-y-3">
-            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">About us</a></li>
-            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Careers</a></li>
-            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Press</a></li>
-            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Stories</a></li>
-          </ul>
-        </div>
-        <div>
-          <h4 class="text-sm font-semibold text-foreground mb-4">Support</h4>
-          <ul class="space-y-3">
-            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Help center</a></li>
-            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Contact us</a></li>
-            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Stores</a></li>
-            <li><a href="#" class="text-sm text-foreground/50 hover:text-foreground transition-colors">Test rides</a></li>
-          </ul>
-        </div>
-      {%- endif -%}
+        {%- if current_col_open -%}</ul></div>{%- endif -%}
+      </div>
     </div>
 
-    {%- comment -%} Bottom - matches React: © Cowboy. All rights reserved. | Privacy | Terms | Cookies {%- endcomment -%}
-    <div class="border-t border-border/30 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
-      <p class="text-xs text-foreground/40">
-        © {{ 'now' | date: '%Y' }} {{ section.settings.copyright_name | default: "Cowboy" }}. All rights reserved.
-      </p>
-      <div class="flex gap-6">
-        <a href="#" class="text-xs text-foreground/40 hover:text-foreground/60 transition-colors">Privacy Policy</a>
-        <a href="#" class="text-xs text-foreground/40 hover:text-foreground/60 transition-colors">Terms of Service</a>
-        <a href="#" class="text-xs text-foreground/40 hover:text-foreground/60 transition-colors">Cookie Settings</a>
+    {%- comment -%} Newsletter strip {%- endcomment -%}
+    {%- if section.settings.show_newsletter -%}
+      <div class="footer-modern__newsletter">
+        <div class="footer-modern__newsletter-inner">
+          <div class="footer-modern__newsletter-text">
+            <span class="footer-modern__newsletter-heading">{{ section.settings.newsletter_heading | default: 'Stay in the loop' }}</span>
+            <span class="footer-modern__newsletter-sub">{{ section.settings.newsletter_subtext | default: 'Get updates and offers.' }}</span>
+        </div>
+          {%- form 'contact', id: 'footer-newsletter-form', class: 'footer-modern__newsletter-form' -%}
+            <input type="hidden" name="contact[tags]" value="newsletter">
+            {%- if form.errors -%}
+              <div class="footer-modern__newsletter-error" role="alert">{{ form.errors | default_errors }}</div>
+            {%- endif -%}
+            <input type="email" name="contact[email]" id="FooterNewsletterEmail" value="{{ form.email }}" required
+              placeholder="{{ section.settings.newsletter_placeholder | default: 'Your email' }}"
+              aria-label="Email" class="footer-modern__newsletter-input">
+            <button type="submit" class="footer-modern__newsletter-btn">{{ section.settings.newsletter_button | default: 'Sign up' }}</button>
+          {%- endform -%}
+          {%- if form.posted_successfully? -%}
+            <p class="footer-modern__newsletter-success">{{ section.settings.newsletter_success | default: "Thanks for signing up." }}</p>
+          {%- endif -%}
+        </div>
+        </div>
+      {%- endif -%}
+
+    {%- comment -%} Disclosure (e.g. Amazon) {%- endcomment -%}
+    {%- if section.settings.show_disclosure and section.settings.disclosure_text != blank -%}
+      <div class="footer-modern__disclosure">
+        <p class="footer-modern__disclosure-text">{{ section.settings.disclosure_text }}</p>
       </div>
+    {%- endif -%}
+
+    {%- comment -%} Bottom bar: copyright + legal {%- endcomment -%}
+    <div class="footer-modern__bottom">
+      {%- assign copy_year = 'now' | date: '%Y' -%}
+      {%- assign copy_name = section.settings.copyright_name | default: shop.name -%}
+      {%- assign copy_template = section.settings.copyright_text | default: "© __year__ __name__. All rights reserved." -%}
+      <p class="footer-modern__copy">{{ copy_template | replace: '__year__', copy_year | replace: '__name__', copy_name }}</p>
+      <nav class="footer-modern__legal" aria-label="Legal">
+        <a href="{{ section.settings.privacy_url | default: '#' }}" class="footer-modern__legal-link">Privacy</a>
+        <a href="{{ section.settings.terms_url | default: '#' }}" class="footer-modern__legal-link">Terms</a>
+        <a href="{{ section.settings.contact_page_url | default: '/pages/contact' }}" class="footer-modern__legal-link">Contact us</a>
+      </nav>
     </div>
   </div>
 </footer>
 
 <style>
-  .space-y-3 > * + * { margin-top: 0.75rem; }
+  .footer-modern {
+    background: #0d0d0d;
+    color: rgba(255, 255, 255, 0.85);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .footer-modern__inner { max-width: 1280px; margin: 0 auto; padding: 0 1.5rem; }
+  .footer-modern__top {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+    padding: 2.5rem 0 2rem;
+  }
+  @media (min-width: 768px) {
+    .footer-modern__top { grid-template-columns: 280px 1fr; gap: 3rem; padding: 3rem 0 2.5rem; }
+  }
+  @media (min-width: 1024px) {
+    .footer-modern__top { grid-template-columns: 300px 1fr; }
+  }
+  .footer-modern__brand { min-width: 0; }
+  .footer-modern__logo { display: inline-block; }
+  .footer-modern__logo img { width: auto; display: block; }
+  .footer-modern__logo-text { font-size: 1.25rem; font-weight: 700; color: #fff; text-decoration: none; }
+  .footer-modern__tagline { font-size: 0.8125rem; color: rgba(255, 255, 255, 0.55); margin-top: 0.5rem; max-width: 260px; line-height: 1.45; }
+  .footer-modern__social { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; margin-top: 1rem; }
+  .footer-modern__social-link { font-size: 0.8125rem; color: rgba(255, 255, 255, 0.6); text-decoration: none; transition: color 0.2s; }
+  .footer-modern__social-link:hover { color: #fff; }
+  .footer-modern__links {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem 2rem;
+  }
+  @media (min-width: 640px) {
+    .footer-modern__links { grid-template-columns: repeat(3, 1fr); }
+  }
+  .footer-modern__col-heading {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: rgba(255, 255, 255, 0.5);
+    margin-bottom: 0.75rem;
+  }
+  .footer-modern__list { list-style: none; padding: 0; margin: 0; }
+  .footer-modern__list li { margin-bottom: 0.5rem; }
+  .footer-modern__link {
+    font-size: 0.875rem;
+    color: rgba(255, 255, 255, 0.75);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+  .footer-modern__link:hover { color: #fff; }
+  .footer-modern__newsletter {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 1.25rem 0;
+  }
+  .footer-modern__newsletter-inner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+  }
+  .footer-modern__newsletter-text { display: flex; flex-direction: column; gap: 0.15rem; }
+  .footer-modern__newsletter-heading { font-size: 0.875rem; font-weight: 600; color: #fff; }
+  .footer-modern__newsletter-sub { font-size: 0.75rem; color: rgba(255, 255, 255, 0.5); }
+  .footer-modern__newsletter-form { display: flex; gap: 0.5rem; flex: 1; min-width: 0; max-width: 360px; }
+  .footer-modern__newsletter-input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+  }
+  .footer-modern__newsletter-input::placeholder { color: rgba(255, 255, 255, 0.4); }
+  .footer-modern__newsletter-input:focus { outline: none; border-color: hsl(var(--accent)); }
+  .footer-modern__newsletter-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    border: none;
+    border-radius: 6px;
+    background: #fff;
+    color: #0d0d0d;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .footer-modern__newsletter-btn:hover { opacity: 0.9; }
+  .footer-modern__newsletter-error { font-size: 0.75rem; color: #f87171; width: 100%; }
+  .footer-modern__newsletter-success { font-size: 0.8125rem; color: #86efac; }
+  .footer-modern__disclosure { border-top: 1px solid rgba(255, 255, 255, 0.06); padding: 0.75rem 0; }
+  .footer-modern__disclosure-text { font-size: 0.6875rem; color: rgba(255, 255, 255, 0.4); margin: 0; }
+  .footer-modern__bottom {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem 0 1.5rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .footer-modern__copy { font-size: 0.75rem; color: rgba(255, 255, 255, 0.45); margin: 0; }
+  .footer-modern__legal { display: flex; gap: 1.25rem; }
+  .footer-modern__legal-link { font-size: 0.75rem; color: rgba(255, 255, 255, 0.5); text-decoration: none; transition: color 0.2s; }
+  .footer-modern__legal-link:hover { color: rgba(255, 255, 255, 0.85); }
 </style>
 
 {% schema %}
@@ -115,15 +215,31 @@
   "name": "Footer",
   "settings": [
     {
+      "type": "color",
+      "id": "footer_bg_color",
+      "label": "Footer Background Color",
+      "default": "#000000"
+    },
+    {
       "type": "image_picker",
       "id": "logo",
       "label": "Logo"
     },
     {
+      "type": "range",
+      "id": "logo_width",
+      "label": "Logo width",
+      "min": 60,
+      "max": 320,
+      "step": 10,
+      "default": 160,
+      "unit": "px"
+    },
+    {
       "type": "textarea",
       "id": "description",
       "label": "Description",
-      "default": "The ultimate connected e-bikes designed in Belgium, assembled in Europe."
+      "default": "Hoodies, sweatshirts & graphic tees. Premium comfort and style."
     },
     {
       "type": "checkbox",
@@ -132,37 +248,159 @@
       "default": true
     },
     {
+      "type": "url",
+      "id": "contact_page_url",
+      "label": "Contact us page",
+      "info": "Used in the bottom bar. For link columns, add a Footer link block. Leave blank to use /pages/contact."
+    },
+    {
+      "type": "url",
+      "id": "privacy_url",
+      "label": "Privacy policy link"
+    },
+    {
+      "type": "url",
+      "id": "terms_url",
+      "label": "Terms of service link"
+    },
+    {
       "type": "text",
       "id": "copyright_name",
       "label": "Copyright name",
-      "default": "Cowboy"
+      "default": "My Store",
+      "info": "Used in the copyright line if you use __name__ in the template. Leave blank in the editor to use your shop name."
+    },
+    {
+      "type": "textarea",
+      "id": "copyright_text",
+      "label": "Copyright line",
+      "default": "© __year__ __name__. All rights reserved.",
+      "info": "Use __year__ for current year, __name__ for copyright name."
+    },
+    {
+      "type": "header",
+      "content": "Newsletter"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_newsletter",
+      "label": "Show newsletter signup",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "newsletter_heading",
+      "label": "Heading",
+      "default": "Stay in the loop"
+    },
+    {
+      "type": "text",
+      "id": "newsletter_subtext",
+      "label": "Subtext",
+      "default": "Get updates and offers."
+    },
+    {
+      "type": "text",
+      "id": "newsletter_placeholder",
+      "label": "Email placeholder",
+      "default": "Your email"
+    },
+    {
+      "type": "text",
+      "id": "newsletter_button",
+      "label": "Button text",
+      "default": "Sign up"
+    },
+    {
+      "type": "text",
+      "id": "newsletter_success",
+      "label": "Success message",
+      "default": "Thanks for signing up."
+    },
+    {
+      "type": "checkbox",
+      "id": "show_disclosure",
+      "label": "Show disclosure (e.g. Amazon)",
+      "default": true
+    },
+    {
+      "type": "textarea",
+      "id": "disclosure_text",
+      "label": "Disclosure text",
+      "default": "As an Amazon Associate I earn from qualifying purchases."
     }
   ],
   "blocks": [
     {
-      "type": "link_list",
-      "name": "Link List",
+      "type": "social_link",
+      "name": "Social Media Link",
+      "settings": [
+        {
+          "type": "select",
+          "id": "platform",
+          "label": "Platform",
+          "options": [
+            { "value": "facebook", "label": "Facebook" },
+            { "value": "instagram", "label": "Instagram" },
+            { "value": "twitter", "label": "X (Twitter)" },
+            { "value": "tiktok", "label": "TikTok" },
+            { "value": "youtube", "label": "YouTube" },
+            { "value": "linkedin", "label": "LinkedIn" }
+          ]
+        },
+        {
+          "type": "url",
+          "id": "link",
+          "label": "Social Media URL"
+        }
+      ]
+    },
+    {
+      "type": "link_column",
+      "name": "Link column",
       "settings": [
         {
           "type": "text",
           "id": "heading",
-          "label": "Heading"
+          "label": "Column heading",
+          "default": "Links"
+        }
+      ]
+    },
+    {
+      "type": "footer_link",
+      "name": "Footer link",
+      "settings": [
+        {
+          "type": "text",
+          "id": "label",
+          "label": "Link label"
         },
         {
-          "type": "link_list",
-          "id": "menu",
-          "label": "Menu",
-          "info": "When set, replaces the default static links with this menu."
+          "type": "url",
+          "id": "url",
+          "label": "Link URL"
         }
       ]
     }
   ],
+  "max_blocks": 30,
   "default": {
     "blocks": [
-      { "type": "link_list", "settings": { "heading": "Hair Products" } },
-      { "type": "link_list", "settings": { "heading": "Accessories" } },
-      { "type": "link_list", "settings": { "heading": "Company" } },
-      { "type": "link_list", "settings": { "heading": "Support" } }
+      { "type": "link_column", "settings": { "heading": "Shop" } },
+      { "type": "footer_link", "settings": { "label": "Hoodies", "url": "/collections/hoodies" } },
+      { "type": "footer_link", "settings": { "label": "Sweatshirts", "url": "/collections/sweatshirts" } },
+      { "type": "footer_link", "settings": { "label": "Graphic Tees", "url": "/collections/graphic-tees" } },
+      { "type": "footer_link", "settings": { "label": "Shop All", "url": "/#apparel" } },
+      { "type": "link_column", "settings": { "heading": "Help" } },
+      { "type": "footer_link", "settings": { "label": "Contact us", "url": "/pages/contact" } },
+      { "type": "footer_link", "settings": { "label": "FAQ", "url": "#" } },
+      { "type": "footer_link", "settings": { "label": "Returns", "url": "#" } },
+      { "type": "footer_link", "settings": { "label": "Shipping", "url": "#" } },
+      { "type": "link_column", "settings": { "heading": "Company" } },
+      { "type": "footer_link", "settings": { "label": "About us", "url": "#" } },
+      { "type": "footer_link", "settings": { "label": "Careers", "url": "#" } },
+      { "type": "footer_link", "settings": { "label": "Press", "url": "#" } }
     ]
   }
 }

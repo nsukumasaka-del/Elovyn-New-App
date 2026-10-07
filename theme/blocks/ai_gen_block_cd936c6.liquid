@@ -1,0 +1,351 @@
+{% doc %}
+  @prompt
+    Create a search bar section with a search icon that can be added to the header or any page. The search bar should have a clean, modern design with a search icon button. When customers type in the search field, it should search products, collections, and pages on the store. Include a placeholder text like "Search our store..." and make it mobile-responsive., Please reduce width of the bar make it fit in the centre in a modern format
+{% enddoc %}
+{% assign ai_gen_id = block.id | replace: '_', '' | downcase %}
+
+{% style %}
+  .ai-search-bar-{{ ai_gen_id }} {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    padding: {{ block.settings.section_padding }}px 20px;
+  }
+
+  .ai-search-bar-container-{{ ai_gen_id }} {
+    position: relative;
+    width: 100%;
+    max-width: {{ block.settings.max_width }}px;
+    margin: 0 auto;
+  }
+
+  .ai-search-bar-form-{{ ai_gen_id }} {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+  }
+
+  .ai-search-bar-input-{{ ai_gen_id }} {
+    width: 100%;
+    padding: {{ block.settings.input_padding }}px {{ block.settings.input_padding | plus: 50 }}px {{ block.settings.input_padding }}px {{ block.settings.input_padding }}px;
+    font-size: {{ block.settings.font_size }}px;
+    border: {{ block.settings.border_width }}px solid {{ block.settings.border_color }};
+    border-radius: {{ block.settings.border_radius }}px;
+    background-color: {{ block.settings.background_color }};
+    color: {{ block.settings.text_color }};
+    transition: all 0.3s ease;
+  }
+
+  .ai-search-bar-input-{{ ai_gen_id }}::placeholder {
+    color: {{ block.settings.placeholder_color }};
+    opacity: 1;
+  }
+
+  .ai-search-bar-input-{{ ai_gen_id }}:focus {
+    outline: none;
+    border-color: {{ block.settings.focus_border_color }};
+    box-shadow: 0 0 0 3px {{ block.settings.focus_border_color }}33;
+  }
+
+  .ai-search-bar-button-{{ ai_gen_id }} {
+    position: absolute;
+    right: {{ block.settings.input_padding | divided_by: 2 }}px;
+    top: 50%;
+    transform: translateY(-50%);
+    background-color: {{ block.settings.button_color }};
+    border: none;
+    border-radius: {{ block.settings.button_border_radius }}px;
+    width: {{ block.settings.button_size }}px;
+    height: {{ block.settings.button_size }}px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    padding: 0;
+  }
+
+  .ai-search-bar-button-{{ ai_gen_id }}:hover {
+    background-color: {{ block.settings.button_hover_color }};
+  }
+
+  .ai-search-bar-button-{{ ai_gen_id }} svg {
+    width: {{ block.settings.icon_size }}px;
+    height: {{ block.settings.icon_size }}px;
+    stroke: {{ block.settings.icon_color }};
+  }
+
+  @media screen and (max-width: 749px) {
+    .ai-search-bar-{{ ai_gen_id }} {
+      padding: {{ block.settings.section_padding | times: 0.7 }}px 16px;
+    }
+
+    .ai-search-bar-input-{{ ai_gen_id }} {
+      font-size: {{ block.settings.font_size | times: 0.9 }}px;
+      padding: {{ block.settings.input_padding | times: 0.8 }}px {{ block.settings.input_padding | times: 0.8 | plus: 45 }}px {{ block.settings.input_padding | times: 0.8 }}px {{ block.settings.input_padding | times: 0.8 }}px;
+    }
+
+    .ai-search-bar-button-{{ ai_gen_id }} {
+      width: {{ block.settings.button_size | times: 0.9 }}px;
+      height: {{ block.settings.button_size | times: 0.9 }}px;
+    }
+
+    .ai-search-bar-button-{{ ai_gen_id }} svg {
+      width: {{ block.settings.icon_size | times: 0.9 }}px;
+      height: {{ block.settings.icon_size | times: 0.9 }}px;
+    }
+  }
+{% endstyle %}
+
+<search-bar-{{ ai_gen_id }} class="ai-search-bar-{{ ai_gen_id }}" {{ block.shopify_attributes }}>
+  <div class="ai-search-bar-container-{{ ai_gen_id }}">
+    <form action="{{ routes.search_url }}" method="get" role="search" class="ai-search-bar-form-{{ ai_gen_id }}">
+      <input
+        type="search"
+        name="q"
+        class="ai-search-bar-input-{{ ai_gen_id }}"
+        placeholder="{{ block.settings.placeholder_text }}"
+        aria-label="Search"
+        autocomplete="off"
+      >
+      <input type="hidden" name="type" value="{{ block.settings.search_type }}">
+      <button
+        type="submit"
+        class="ai-search-bar-button-{{ ai_gen_id }}"
+        aria-label="Search"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <path d="m21 21-4.35-4.35"></path>
+        </svg>
+      </button>
+    </form>
+  </div>
+</search-bar-{{ ai_gen_id }}>
+
+<script>
+  (function() {
+    class SearchBar{{ ai_gen_id }} extends HTMLElement {
+      constructor() {
+        super();
+      }
+
+      connectedCallback() {
+        this.form = this.querySelector('.ai-search-bar-form-{{ ai_gen_id }}');
+        this.input = this.querySelector('.ai-search-bar-input-{{ ai_gen_id }}');
+        
+        if (this.form && this.input) {
+          this.form.addEventListener('submit', this.handleSubmit.bind(this));
+        }
+      }
+
+      handleSubmit(event) {
+        if (this.input.value.trim() === '') {
+          event.preventDefault();
+          this.input.focus();
+        }
+      }
+    }
+
+    customElements.define('search-bar-{{ ai_gen_id }}', SearchBar{{ ai_gen_id }});
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "Search bar",
+  "tag": null,
+  "settings": [
+    {
+      "type": "header",
+      "content": "Search settings"
+    },
+    {
+      "type": "text",
+      "id": "placeholder_text",
+      "label": "Placeholder text",
+      "default": "Search our store..."
+    },
+    {
+      "type": "select",
+      "id": "search_type",
+      "label": "Search type",
+      "options": [
+        {
+          "value": "product,page,article",
+          "label": "Products, pages, and blog posts"
+        },
+        {
+          "value": "product",
+          "label": "Products only"
+        },
+        {
+          "value": "article",
+          "label": "Blog posts only"
+        },
+        {
+          "value": "page",
+          "label": "Pages only"
+        }
+      ],
+      "default": "product,page,article"
+    },
+    {
+      "type": "header",
+      "content": "Layout"
+    },
+    {
+      "type": "range",
+      "id": "max_width",
+      "label": "Maximum width",
+      "min": 300,
+      "max": 800,
+      "step": 50,
+      "unit": "px",
+      "default": 500
+    },
+    {
+      "type": "range",
+      "id": "section_padding",
+      "label": "Section padding",
+      "min": 0,
+      "max": 50,
+      "step": 5,
+      "unit": "px",
+      "default": 20
+    },
+    {
+      "type": "header",
+      "content": "Input field"
+    },
+    {
+      "type": "range",
+      "id": "input_padding",
+      "label": "Input padding",
+      "min": 8,
+      "max": 24,
+      "step": 2,
+      "unit": "px",
+      "default": 14
+    },
+    {
+      "type": "range",
+      "id": "font_size",
+      "label": "Font size",
+      "min": 12,
+      "max": 20,
+      "step": 1,
+      "unit": "px",
+      "default": 16
+    },
+    {
+      "type": "range",
+      "id": "border_width",
+      "label": "Border width",
+      "min": 0,
+      "max": 4,
+      "step": 1,
+      "unit": "px",
+      "default": 1
+    },
+    {
+      "type": "range",
+      "id": "border_radius",
+      "label": "Border radius",
+      "min": 0,
+      "max": 50,
+      "step": 2,
+      "unit": "px",
+      "default": 8
+    },
+    {
+      "type": "color",
+      "id": "background_color",
+      "label": "Background",
+      "default": "#ffffff"
+    },
+    {
+      "type": "color",
+      "id": "text_color",
+      "label": "Text",
+      "default": "#000000"
+    },
+    {
+      "type": "color",
+      "id": "placeholder_color",
+      "label": "Placeholder",
+      "default": "#999999"
+    },
+    {
+      "type": "color",
+      "id": "border_color",
+      "label": "Border",
+      "default": "#e0e0e0"
+    },
+    {
+      "type": "color",
+      "id": "focus_border_color",
+      "label": "Focus border",
+      "default": "#000000"
+    },
+    {
+      "type": "header",
+      "content": "Search button"
+    },
+    {
+      "type": "range",
+      "id": "button_size",
+      "label": "Button size",
+      "min": 30,
+      "max": 50,
+      "step": 2,
+      "unit": "px",
+      "default": 40
+    },
+    {
+      "type": "range",
+      "id": "icon_size",
+      "label": "Icon size",
+      "min": 16,
+      "max": 28,
+      "step": 2,
+      "unit": "px",
+      "default": 20
+    },
+    {
+      "type": "range",
+      "id": "button_border_radius",
+      "label": "Button border radius",
+      "min": 0,
+      "max": 25,
+      "step": 1,
+      "unit": "px",
+      "default": 6
+    },
+    {
+      "type": "color",
+      "id": "button_color",
+      "label": "Button background",
+      "default": "#000000"
+    },
+    {
+      "type": "color",
+      "id": "button_hover_color",
+      "label": "Button hover background",
+      "default": "#333333"
+    },
+    {
+      "type": "color",
+      "id": "icon_color",
+      "label": "Icon",
+      "default": "#ffffff"
+    }
+  ],
+  "presets": [
+    {
+      "name": "Search bar"
+    }
+  ]
+}
+{% endschema %}

@@ -1,0 +1,290 @@
+{% doc %}
+  @prompt
+    Please add a search feature on my store. Place it on the top right of the store., Please change the style of the search and make it modern. Make only the search icon ro appear and vissible. The search bar to appear after clicking the icon, 
+    
+    I keep getting the error "Block generarion failed. Please fix it and Please move the search icon to the header right next to the dign up icon., Please make the search icon ippear only and the search bar appear after clicking on the icon.
+{% enddoc %}
+{% assign ai_gen_id = block.id | replace: '_', '' | downcase %}
+
+{% style %}
+  .ai-search-wrapper-{{ ai_gen_id }} {
+    position: relative;
+    display: inline-block;
+  }
+
+  .ai-search-icon-button-{{ ai_gen_id }} {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.2s ease;
+  }
+
+  .ai-search-icon-button-{{ ai_gen_id }}:hover {
+    opacity: 0.7;
+  }
+
+  .ai-search-icon-button-{{ ai_gen_id }} svg {
+    width: {{ block.settings.icon_size }}px;
+    height: {{ block.settings.icon_size }}px;
+    stroke: {{ block.settings.icon_color }};
+  }
+
+  .ai-search-dropdown-{{ ai_gen_id }} {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    background-color: {{ block.settings.dropdown_bg_color }};
+    border-radius: {{ block.settings.border_radius }}px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    padding: 16px;
+    min-width: 300px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease;
+    z-index: 1000;
+  }
+
+  .ai-search-dropdown-{{ ai_gen_id }}.active {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+  }
+
+  .ai-search-form-{{ ai_gen_id }} {
+    display: flex;
+    gap: 8px;
+  }
+
+  .ai-search-input-{{ ai_gen_id }} {
+    flex: 1;
+    padding: 10px 14px;
+    border: 1px solid {{ block.settings.input_border_color }};
+    border-radius: {{ block.settings.input_border_radius }}px;
+    font-size: 14px;
+    outline: none;
+  }
+
+  .ai-search-input-{{ ai_gen_id }}:focus {
+    border-color: {{ block.settings.input_focus_color }};
+  }
+
+  .ai-search-submit-{{ ai_gen_id }} {
+    padding: 10px 20px;
+    background-color: {{ block.settings.button_bg_color }};
+    color: {{ block.settings.button_text_color }};
+    border: none;
+    border-radius: {{ block.settings.button_border_radius }}px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s ease;
+  }
+
+  .ai-search-submit-{{ ai_gen_id }}:hover {
+    background-color: {{ block.settings.button_hover_color }};
+  }
+
+  @media screen and (max-width: 749px) {
+    .ai-search-dropdown-{{ ai_gen_id }} {
+      right: -20px;
+      min-width: 280px;
+    }
+  }
+{% endstyle %}
+
+<search-icon-{{ ai_gen_id }} class="ai-search-wrapper-{{ ai_gen_id }}" {{ block.shopify_attributes }}>
+  <button 
+    class="ai-search-icon-button-{{ ai_gen_id }}"
+    aria-label="Open search"
+    aria-expanded="false"
+  >
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+    </svg>
+  </button>
+
+  <div class="ai-search-dropdown-{{ ai_gen_id }}">
+    <form action="/search" method="get" class="ai-search-form-{{ ai_gen_id }}" role="search">
+      <input
+        type="search"
+        name="q"
+        class="ai-search-input-{{ ai_gen_id }}"
+        placeholder="{{ block.settings.placeholder_text }}"
+        aria-label="Search"
+        autocomplete="off"
+      >
+      <button type="submit" class="ai-search-submit-{{ ai_gen_id }}">
+        {{ block.settings.button_text }}
+      </button>
+    </form>
+  </div>
+</search-icon-{{ ai_gen_id }}>
+
+<script>
+  (function() {
+    class SearchIcon{{ ai_gen_id }} extends HTMLElement {
+      constructor() {
+        super();
+        this.button = this.querySelector('.ai-search-icon-button-{{ ai_gen_id }}');
+        this.dropdown = this.querySelector('.ai-search-dropdown-{{ ai_gen_id }}');
+        this.input = this.querySelector('.ai-search-input-{{ ai_gen_id }}');
+      }
+
+      connectedCallback() {
+        this.button.addEventListener('click', this.toggleDropdown.bind(this));
+        document.addEventListener('click', this.handleOutsideClick.bind(this));
+      }
+
+      toggleDropdown(event) {
+        event.stopPropagation();
+        const isActive = this.dropdown.classList.contains('active');
+        
+        this.dropdown.classList.toggle('active');
+        this.button.setAttribute('aria-expanded', !isActive);
+        
+        if (!isActive) {
+          setTimeout(() => {
+            this.input.focus();
+          }, 100);
+        }
+      }
+
+      handleOutsideClick(event) {
+        if (!this.contains(event.target)) {
+          this.dropdown.classList.remove('active');
+          this.button.setAttribute('aria-expanded', 'false');
+        }
+      }
+
+      disconnectedCallback() {
+        document.removeEventListener('click', this.handleOutsideClick.bind(this));
+      }
+    }
+
+    customElements.define('search-icon-{{ ai_gen_id }}', SearchIcon{{ ai_gen_id }});
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "Search icon",
+  "tag": null,
+  "settings": [
+    {
+      "type": "header",
+      "content": "Icon"
+    },
+    {
+      "type": "range",
+      "id": "icon_size",
+      "label": "Icon size",
+      "min": 16,
+      "max": 32,
+      "step": 2,
+      "unit": "px",
+      "default": 24
+    },
+    {
+      "type": "color",
+      "id": "icon_color",
+      "label": "Icon color",
+      "default": "#000000"
+    },
+    {
+      "type": "header",
+      "content": "Search dropdown"
+    },
+    {
+      "type": "text",
+      "id": "placeholder_text",
+      "label": "Placeholder text",
+      "default": "Search products..."
+    },
+    {
+      "type": "text",
+      "id": "button_text",
+      "label": "Button text",
+      "default": "Search"
+    },
+    {
+      "type": "color",
+      "id": "dropdown_bg_color",
+      "label": "Background color",
+      "default": "#ffffff"
+    },
+    {
+      "type": "color",
+      "id": "input_border_color",
+      "label": "Input border color",
+      "default": "#e0e0e0"
+    },
+    {
+      "type": "color",
+      "id": "input_focus_color",
+      "label": "Input focus color",
+      "default": "#000000"
+    },
+    {
+      "type": "color",
+      "id": "button_bg_color",
+      "label": "Button background",
+      "default": "#000000"
+    },
+    {
+      "type": "color",
+      "id": "button_text_color",
+      "label": "Button text color",
+      "default": "#ffffff"
+    },
+    {
+      "type": "color",
+      "id": "button_hover_color",
+      "label": "Button hover color",
+      "default": "#333333"
+    },
+    {
+      "type": "header",
+      "content": "Style"
+    },
+    {
+      "type": "range",
+      "id": "border_radius",
+      "label": "Dropdown border radius",
+      "min": 0,
+      "max": 20,
+      "step": 2,
+      "unit": "px",
+      "default": 8
+    },
+    {
+      "type": "range",
+      "id": "input_border_radius",
+      "label": "Input border radius",
+      "min": 0,
+      "max": 20,
+      "step": 2,
+      "unit": "px",
+      "default": 4
+    },
+    {
+      "type": "range",
+      "id": "button_border_radius",
+      "label": "Button border radius",
+      "min": 0,
+      "max": 20,
+      "step": 2,
+      "unit": "px",
+      "default": 4
+    }
+  ],
+  "presets": [
+    {
+      "name": "Search icon"
+    }
+  ]
+}
+{% endschema %}

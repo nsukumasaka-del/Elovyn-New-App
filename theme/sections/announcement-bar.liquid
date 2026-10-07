@@ -1,0 +1,583 @@
+{%- comment -%}
+  Notification bar — colors from #layout-header-wrapper (--header-stack-*) set in site-header. Hides when scrolling down; returns at top of page (or new navigation to top).
+{%- endcomment -%}
+{%- if section.settings.show_close -%}
+  <script>
+    try {
+      if (sessionStorage.getItem('announcement_bar_dismissed') === '1') {
+        document.documentElement.classList.add('announcement-bar--dismissed');
+      }
+    } catch (e) {}
+  </script>
+{%- endif -%}
+{%- liquid
+  assign m1 = section.settings.message_1 | strip
+  assign m2 = section.settings.message_2 | strip
+  assign m3 = section.settings.message_3 | strip
+  assign m4 = section.settings.message_4 | strip
+  assign link1 = section.settings.link_1_url
+  assign link2 = section.settings.link_2_url
+  assign link3 = section.settings.link_3_url
+  assign link4 = section.settings.link_4_url
+  assign count = 0
+  if m1 != blank
+    assign count = count | plus: 1
+  endif
+  if m2 != blank
+    assign count = count | plus: 1
+  endif
+  if m3 != blank
+    assign count = count | plus: 1
+  endif
+  if m4 != blank
+    assign count = count | plus: 1
+  endif
+  if count == 0
+    assign m1 = section.settings.message | default: 'Free standard shipping on orders over $75'
+    assign count = 1
+  endif
+-%}
+<section
+  class="announcement-bar-section store-notification-bar"
+  role="region"
+  aria-label="Store announcements"
+  data-announcement-rotate="{% if section.settings.auto_rotate %}true{% else %}false{% endif %}"
+  data-announcement-interval="{{ section.settings.rotation_ms }}"
+  data-announcement-count="{{ count }}"
+  data-scroll-collapse="{% if section.settings.collapse_on_scroll %}true{% else %}false{% endif %}"
+  {{ section.shopify_attributes }}
+>
+  <div class="announcement-bar__inner">
+    {%- if section.settings.show_close -%}
+      <button
+        type="button"
+        class="announcement-bar__close"
+        aria-label="Close announcement"
+        data-announcement-close
+      >
+        <span aria-hidden="true">&times;</span>
+      </button>
+    {%- endif -%}
+    {%- if section.settings.show_pause and count > 1 -%}
+      <button
+        type="button"
+        class="announcement-bar__pause"
+        aria-pressed="false"
+        aria-label="Pause announcements"
+        data-announcement-pause
+      >
+        <span class="announcement-bar__pause-icon" aria-hidden="true">‖</span>
+      </button>
+    {%- endif -%}
+
+    <div class="announcement-bar__viewport" {% if count > 1 %}data-announcement-viewport{% endif %}>
+      <div class="announcement-bar__track" data-announcement-track>
+        {%- if m1 != blank -%}
+          <div class="announcement-bar__slide" data-announcement-slide>
+            {%- if link1 != blank -%}
+              <a href="{{ link1 }}" class="announcement-bar__message announcement-bar__message--link">{{ m1 }}</a>
+            {%- else -%}
+              <p class="announcement-bar__message">{{ m1 }}</p>
+            {%- endif -%}
+          </div>
+        {%- endif -%}
+        {%- if m2 != blank -%}
+          <div class="announcement-bar__slide" data-announcement-slide hidden>
+            {%- if link2 != blank -%}
+              <a href="{{ link2 }}" class="announcement-bar__message announcement-bar__message--link">{{ m2 }}</a>
+            {%- else -%}
+              <p class="announcement-bar__message">{{ m2 }}</p>
+            {%- endif -%}
+          </div>
+        {%- endif -%}
+        {%- if m3 != blank -%}
+          <div class="announcement-bar__slide" data-announcement-slide hidden>
+            {%- if link3 != blank -%}
+              <a href="{{ link3 }}" class="announcement-bar__message announcement-bar__message--link">{{ m3 }}</a>
+            {%- else -%}
+              <p class="announcement-bar__message">{{ m3 }}</p>
+            {%- endif -%}
+          </div>
+        {%- endif -%}
+        {%- if m4 != blank -%}
+          <div class="announcement-bar__slide" data-announcement-slide hidden>
+            {%- if link4 != blank -%}
+              <a href="{{ link4 }}" class="announcement-bar__message announcement-bar__message--link">{{ m4 }}</a>
+            {%- else -%}
+              <p class="announcement-bar__message">{{ m4 }}</p>
+            {%- endif -%}
+          </div>
+        {%- endif -%}
+      </div>
+    </div>
+
+    {%- if count > 1 -%}
+      <div class="announcement-bar__dots" role="tablist" aria-label="Promo slides" data-announcement-dots></div>
+    {%- endif -%}
+  </div>
+</section>
+
+<style>
+  html.announcement-bar--dismissed .announcement-bar-section {
+    display: none !important;
+  }
+  .announcement-bar-section.store-notification-bar {
+    --announcement-h: 2.25rem;
+    /* Inherit palette from parent #layout-header-wrapper (defined in site-header) */
+    background: var(--header-stack-bg, #ffffff);
+    color: var(--header-stack-fg, #0a0a0a);
+    text-align: center;
+    position: relative;
+    z-index: 1;
+    flex: 0 0 auto;
+    width: 100%;
+    min-height: var(--announcement-h);
+    max-height: 5rem;
+    border-bottom: 1px solid var(--header-stack-border, #e8e8e8);
+    transition: max-height 0.38s cubic-bezier(0.4, 0, 0.2, 1), min-height 0.38s cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 0.3s ease, border-color 0.25s ease, box-shadow 0.25s ease, margin 0.3s ease;
+  }
+  .announcement-bar-section.store-notification-bar.is-scroll-retracted {
+    max-height: 0 !important;
+    min-height: 0 !important;
+    opacity: 0;
+    overflow: hidden;
+    border-bottom-width: 0;
+    margin: 0;
+    pointer-events: none;
+  }
+  .announcement-bar-section.store-notification-bar.is-paused-hint:not(.is-scroll-retracted) {
+    box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.06);
+  }
+  .announcement-bar__inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: var(--announcement-h);
+    padding: 0.35rem 2.75rem;
+    max-width: 1600px;
+    margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
+    position: relative;
+  }
+  .announcement-bar__close {
+    position: absolute;
+    right: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--header-stack-fg, #0a0a0a);
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.55;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.2s ease, background 0.2s ease;
+  }
+  .announcement-bar__close:hover,
+  .announcement-bar__close:focus-visible {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.06);
+    outline: none;
+  }
+  @supports (background: color-mix(in srgb, black, white)) {
+    .announcement-bar__close:hover,
+    .announcement-bar__close:focus-visible {
+      background: color-mix(in srgb, var(--header-stack-fg, #0a0a0a) 8%, transparent);
+    }
+  }
+  .announcement-bar__close:focus-visible {
+    outline: 2px solid var(--header-stack-fg, #0a0a0a);
+    outline-offset: 2px;
+  }
+  .announcement-bar__pause {
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--header-stack-fg, #0a0a0a);
+    cursor: pointer;
+    opacity: 0.55;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6rem;
+    letter-spacing: -0.05em;
+    transition: opacity 0.2s ease, background 0.2s ease;
+  }
+  .announcement-bar__pause:hover,
+  .announcement-bar__pause:focus-visible {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.06);
+  }
+  @supports (background: color-mix(in srgb, black, white)) {
+    .announcement-bar__pause:hover,
+    .announcement-bar__pause:focus-visible {
+      background: color-mix(in srgb, var(--header-stack-fg, #0a0a0a) 8%, transparent);
+    }
+  }
+  .announcement-bar__pause:focus-visible {
+    outline: 2px solid var(--header-stack-fg, #0a0a0a);
+    outline-offset: 2px;
+  }
+  .announcement-bar__viewport {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .announcement-bar__track {
+    position: relative;
+    min-height: 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .announcement-bar__slide {
+    width: 100%;
+    text-align: center;
+    animation: announcement-fade-in 0.35s ease;
+  }
+  .announcement-bar__slide[hidden] {
+    display: none !important;
+  }
+  @keyframes announcement-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  .announcement-bar__message {
+    margin: 0;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    line-height: 1.4;
+    color: inherit;
+  }
+  @media (min-width: 768px) {
+    .announcement-bar__message {
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+    }
+  }
+  .announcement-bar__message--link {
+    text-decoration: none;
+    color: inherit;
+    display: inline-block;
+    transition: opacity 0.2s ease;
+  }
+  .announcement-bar__message--link:hover {
+    opacity: 0.55;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .announcement-bar__dots {
+    display: flex;
+    gap: 0.4rem;
+    flex-shrink: 0;
+    align-items: center;
+  }
+  .announcement-bar__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    padding: 0;
+    border: none;
+    background: var(--header-stack-fg, #0a0a0a);
+    opacity: 0.22;
+    cursor: pointer;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  .announcement-bar__dot:hover {
+    opacity: 0.45;
+  }
+  .announcement-bar__dot[aria-selected='true'] {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  @media (max-width: 640px) {
+    .announcement-bar__message {
+      font-size: 0.625rem;
+      letter-spacing: 0.07em;
+    }
+    .announcement-bar__inner {
+      padding-left: 0.75rem;
+      padding-right: 2.5rem;
+    }
+  }
+</style>
+
+<script>
+  (function () {
+    var closeBtn = document.querySelector('[data-announcement-close]');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function () {
+        try {
+          sessionStorage.setItem('announcement_bar_dismissed', '1');
+        } catch (e) {}
+        document.documentElement.classList.add('announcement-bar--dismissed');
+        try {
+          document.documentElement.style.removeProperty('--announcement-bar-height');
+        } catch (e2) {}
+      });
+    }
+  })();
+  (function () {
+    var bar = document.querySelector('.store-notification-bar[data-scroll-collapse]');
+    if (!bar || bar.dataset.scrollCollapse !== 'true') return;
+
+    var TOP_THRESHOLD = 32;
+    var lastY = window.pageYOffset || document.documentElement.scrollTop || 0;
+
+    function setRetracted(on) {
+      bar.classList.toggle('is-scroll-retracted', on);
+      try {
+        if (on) {
+          document.documentElement.style.setProperty('--announcement-bar-height', '0px');
+        } else {
+          document.documentElement.style.removeProperty('--announcement-bar-height');
+        }
+      } catch (e) {}
+    }
+
+    function onScroll() {
+      if (document.documentElement.classList.contains('announcement-bar--dismissed')) return;
+      var y = window.pageYOffset || document.documentElement.scrollTop || 0;
+      if (y <= TOP_THRESHOLD) {
+        setRetracted(false);
+      } else if (y > lastY && y > TOP_THRESHOLD + 24) {
+        setRetracted(true);
+      }
+      lastY = y;
+    }
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('pageshow', function () {
+      lastY = window.pageYOffset || document.documentElement.scrollTop || 0;
+      onScroll();
+    });
+    onScroll();
+  })();
+  (function () {
+    var root = document.querySelector('.announcement-bar-section[data-announcement-count]');
+    if (!root || root.dataset.announcementCount === '1') return;
+    var rotate = root.dataset.announcementRotate === 'true';
+    var interval = parseInt(root.dataset.announcementInterval, 10) || 5000;
+    var slides = root.querySelectorAll('[data-announcement-slide]');
+    var dotsWrap = root.querySelector('[data-announcement-dots]');
+    var pauseBtn = root.querySelector('[data-announcement-pause]');
+    if (slides.length < 2) return;
+
+    var i = 0;
+    var timer = null;
+    var paused = false;
+
+    function show(idx) {
+      slides.forEach(function (s, j) {
+        if (j === idx) {
+          s.removeAttribute('hidden');
+        } else {
+          s.setAttribute('hidden', '');
+        }
+      });
+      if (dotsWrap) {
+        var dots = dotsWrap.querySelectorAll('.announcement-bar__dot');
+        dots.forEach(function (d, j) {
+          d.setAttribute('aria-selected', j === idx ? 'true' : 'false');
+        });
+      }
+      i = idx;
+    }
+
+    function next() {
+      show((i + 1) % slides.length);
+    }
+
+    function start() {
+      if (!rotate || paused) return;
+      stop();
+      timer = setInterval(next, interval);
+    }
+    function stop() {
+      if (timer) clearInterval(timer);
+      timer = null;
+    }
+
+    if (dotsWrap) {
+      slides.forEach(function (_, j) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'announcement-bar__dot';
+        b.setAttribute('role', 'tab');
+        b.setAttribute('aria-label', 'Slide ' + (j + 1));
+        b.addEventListener('click', function () {
+          show(j);
+          start();
+        });
+        dotsWrap.appendChild(b);
+      });
+      show(0);
+    }
+
+    if (pauseBtn) {
+      pauseBtn.addEventListener('click', function () {
+        paused = !paused;
+        pauseBtn.setAttribute('aria-pressed', paused ? 'true' : 'false');
+        pauseBtn.setAttribute(
+          'aria-label',
+          paused ? 'Play announcements' : 'Pause announcements'
+        );
+        if (root) root.classList.toggle('is-paused-hint', paused);
+        if (paused) stop();
+        else start();
+      });
+    }
+
+    root.addEventListener('mouseenter', stop);
+    root.addEventListener('mouseleave', function () {
+      if (!paused) start();
+    });
+
+    start();
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "Announcement bar",
+  "class": "announcement-bar-group",
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Colors match the main header (set in the header section). Sticky with the header group. Add multiple promos to rotate."
+    },
+    {
+      "type": "checkbox",
+      "id": "collapse_on_scroll",
+      "label": "Hide when scrolling down; show again at top of page",
+      "default": true,
+      "info": "When you scroll back to the top (e.g. after returning home), the bar shows again. Session close (X) still hides it for the visit."
+    },
+    {
+      "type": "text",
+      "id": "message",
+      "label": "Fallback single message",
+      "default": "Free standard shipping on orders over $75",
+      "info": "Used if all promo lines below are empty."
+    },
+    {
+      "type": "header",
+      "content": "Promo lines (rotate when more than one is filled)"
+    },
+    {
+      "type": "text",
+      "id": "message_1",
+      "label": "Promo 1",
+      "default": "12% Student Discount"
+    },
+    {
+      "type": "text",
+      "id": "link_1_url",
+      "label": "Promo 1 link (optional)",
+      "info": "Relative or full URL"
+    },
+    {
+      "type": "text",
+      "id": "message_2",
+      "label": "Promo 2",
+      "default": "Free standard shipping on orders over $75"
+    },
+    {
+      "type": "text",
+      "id": "link_2_url",
+      "label": "Promo 2 link (optional)",
+      "info": "Relative or full URL"
+    },
+    {
+      "type": "text",
+      "id": "message_3",
+      "label": "Promo 3",
+      "default": "Refer a friend — earn rewards"
+    },
+    {
+      "type": "text",
+      "id": "link_3_url",
+      "label": "Promo 3 link (optional)",
+      "info": "Relative or full URL"
+    },
+    {
+      "type": "text",
+      "id": "message_4",
+      "label": "Promo 4",
+      "default": "10% off your first order when you sign up"
+    },
+    {
+      "type": "text",
+      "id": "link_4_url",
+      "label": "Promo 4 link (optional)",
+      "info": "Relative or full URL"
+    },
+    {
+      "type": "header",
+      "content": "Rotation"
+    },
+    {
+      "type": "checkbox",
+      "id": "auto_rotate",
+      "label": "Auto-rotate promos",
+      "default": true
+    },
+    {
+      "type": "select",
+      "id": "rotation_ms",
+      "label": "Time per slide",
+      "default": "5000",
+      "options": [
+        { "value": "3000", "label": "3 seconds" },
+        { "value": "3500", "label": "3.5 seconds" },
+        { "value": "4000", "label": "4 seconds" },
+        { "value": "4500", "label": "4.5 seconds" },
+        { "value": "5000", "label": "5 seconds" },
+        { "value": "5500", "label": "5.5 seconds" },
+        { "value": "6000", "label": "6 seconds" },
+        { "value": "7000", "label": "7 seconds" },
+        { "value": "8000", "label": "8 seconds" },
+        { "value": "9000", "label": "9 seconds" }
+      ]
+    },
+    {
+      "type": "checkbox",
+      "id": "show_pause",
+      "label": "Show pause button",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_close",
+      "label": "Show close (X) button",
+      "default": true,
+      "info": "Hides the bar for this browser session when closed."
+    },
+  ],
+  "presets": [
+    {
+      "name": "Announcement bar"
+    }
+  ]
+}
+{% endschema %}

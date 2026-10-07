@@ -1,0 +1,72 @@
+/*
+ * ------------------------------------------------------------
+ * IMPORTANT: The contents of this file are auto-generated.
+ *
+ * This file may be updated by the Shopify admin theme editor
+ * or related systems. Please exercise caution as any changes
+ * made to this file may be overwritten.
+ * ------------------------------------------------------------
+ */
+{
+  "layout": "theme",
+  "sections": {
+    "main": {
+      "type": "main-collection",
+      "blocks": {
+        "sc1": {
+          "type": "shortcut",
+          "settings": {
+            "label": "Hoodies",
+            "link": "/collections/hoodies"
+          }
+        },
+        "sc2": {
+          "type": "shortcut",
+          "settings": {
+            "label": "Sweatshirts",
+            "link": "/collections/sweatshirts"
+          }
+        },
+        "sc3": {
+          "type": "shortcut",
+          "settings": {
+            "label": "Graphic tees",
+            "link": "shopify://collections/frontpage"
+          }
+        },
+        "sc4": {
+          "type": "shortcut",
+          "settings": {
+            "label": "Shop all",
+            "link": "/collections/all"
+          }
+        }
+      },
+      "block_order": [
+        "sc1",
+        "sc2",
+        "sc3",
+        "sc4"
+      ],
+      "settings": {
+        "products_per_page": 24,
+        "show_shortcuts": true,
+        "shortcuts_heading": "Shop by category",
+        "filters_empty_text": "Turn on filters in Shopify Admin → Search & Discovery to filter by size, color, price, and product type.",
+        "filter_drawer_label": "Filters",
+        "apply_filters_label": "Apply filters",
+        "clear_all_label": "Clear all",
+        "price_filter_hint": "Enter amounts in your store’s smallest currency unit (e.g. cents), matching Shopify’s filter URLs.",
+        "sort_featured": "Featured",
+        "sort_best_selling": "Best selling",
+        "sort_newest": "Newest",
+        "sort_price_low": "Price: Low to high",
+        "sort_price_high": "Price: High to low",
+        "sort_az": "Name A–Z"
+      }
+    }
+  },
+  "order": [
+    "main"
+  ]
+}

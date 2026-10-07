@@ -1,0 +1,1166 @@
+{% comment %}
+  Product page – CRO-focused layout: gallery left, sticky buy column right.
+  Changes: configurable trust lines, urgency strip, optional star row, review-app mount point, extra accordions.
+{% endcomment %}
+
+<div class="amazon-product-wrapper">
+  <div class="amazon-product-inner">
+    <div class="amazon-product-gallery product-gallery">
+      {% if product.featured_image != blank %}
+        {%- assign main_src = product.featured_image | image_url: width: 1200 -%}
+        {%- assign zoom_src = product.featured_image | image_url: width: 2400 -%}
+        {% if section.settings.enable_image_zoom %}
+          <button type="button" class="amazon-product-zoom-trigger" id="ProductZoomOpen" aria-label="{{ 'products.product.zoom' | t | default: 'Enlarge image' }}">
+            <img
+              src="{{ main_src }}"
+              alt="{{ product.featured_image.alt | escape }}"
+              class="amazon-product-main-img"
+              id="ProductPhotoImg"
+              loading="eager"
+              width="{{ product.featured_image.width }}"
+              height="{{ product.featured_image.height }}"
+              data-zoom-src="{{ zoom_src }}"
+            >
+          </button>
+        {% else %}
+          <img
+            src="{{ main_src }}"
+            alt="{{ product.featured_image.alt | escape }}"
+            class="amazon-product-main-img"
+            id="ProductPhotoImg"
+            loading="eager"
+            width="{{ product.featured_image.width }}"
+            height="{{ product.featured_image.height }}"
+            data-zoom-src="{{ zoom_src }}"
+          >
+        {% endif %}
+      {% else %}
+        {{ 'product-1' | placeholder_svg_tag: 'amazon-product-main-img' }}
+      {% endif %}
+      {% if product.images.size > 1 %}
+        <div class="amazon-product-thumbs thumbnail-list">
+          {% for image in product.images %}
+            <button type="button" class="amazon-product-thumb flex-shrink-0 w-20 h-20 rounded overflow-hidden border border-gray-200 {% if forloop.first %}thumbnail-active{% endif %}" data-index="{{ forloop.index0 }}" data-src="{{ image | image_url: width: 1200 }}" data-zoom-src="{{ image | image_url: width: 2400 }}" aria-label="View image {{ forloop.index }}">
+              <img src="{{ image | image_url: width: 120 }}" alt="{{ image.alt | escape }}" class="w-full h-full object-cover" loading="lazy">
+            </button>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="amazon-product-details product-detail{% if section.settings.sticky_buy_column %} amazon-product-details--sticky{% endif %}">
+      {% if product.vendor != blank %}
+        <p class="amazon-product-vendor">{{ product.vendor }}</p>
+      {% endif %}
+      <h1 class="amazon-product-title">{{ product.title }}</h1>
+
+      {%- comment -%} CRO: optional decorative stars — off by default to reduce clutter / fake social proof {%- endcomment -%}
+      {% if section.settings.show_star_rating %}
+        <div class="amazon-product-rating" aria-hidden="true">
+          <span class="amazon-product-stars">★★★★★</span>
+          <span class="amazon-product-rating-label">Rating</span>
+        </div>
+      {% endif %}
+
+      {%- assign has_bullets = false -%}
+      {%- for block in section.blocks -%}
+        {%- if block.type == 'feature_bullet' and block.settings.text != blank -%}
+          {%- assign has_bullets = true -%}
+          {%- break -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {% if has_bullets %}
+        <ul class="amazon-product-bullets amazon-product-bullets--above-fold" role="list">
+          {%- for block in section.blocks -%}
+            {%- if block.type == 'feature_bullet' and block.settings.text != blank -%}
+              <li {{ block.shopify_attributes }}>{{ block.settings.text }}</li>
+            {%- endif -%}
+          {%- endfor -%}
+        </ul>
+      {% endif %}
+
+      <div class="amazon-product-price" data-product-price>
+        {{ product.selected_or_first_available_variant.price | money }}
+      </div>
+      {% if product.selected_or_first_available_variant.compare_at_price > product.selected_or_first_available_variant.price %}
+        <div class="amazon-product-compare">
+          <span class="line-through text-gray-500">{{ product.selected_or_first_available_variant.compare_at_price | money }}</span>
+          <span class="amazon-product-save">Save {{ product.selected_or_first_available_variant.compare_at_price | minus: product.selected_or_first_available_variant.price | money }}</span>
+        </div>
+      {% endif %}
+
+      {%- comment -%} CRO: always-on urgency line (editable); complements inventory-based low-stock below {%- endcomment -%}
+      {% if section.settings.show_urgency_message and section.settings.urgency_message != blank %}
+        <p class="amazon-product-urgency">{{ section.settings.urgency_message }}</p>
+      {% endif %}
+
+      {%- if product.description != blank -%}
+        <p class="amazon-product-short-desc">
+          {{ product.description | strip_html | truncate: 140 }}
+        </p>
+      {%- endif -%}
+
+      {%- assign first_v = product.selected_or_first_available_variant -%}
+      <p class="amazon-product-low-stock" id="ProductLowStock" {% unless section.settings.show_low_stock and first_v.inventory_management == 'shopify' and first_v.inventory_quantity > 0 and first_v.inventory_quantity <= section.settings.low_stock_threshold %}hidden{% endunless %}>
+        {{ section.settings.low_stock_message | default: 'Limited stock — order soon.' | replace: '[qty]', first_v.inventory_quantity }}
+      </p>
+
+      <form action="{{ routes.cart_add_url }}" method="post" id="product-form" class="product-form amazon-product-form" data-option-names='{{ product.options_with_values | map: "name" | json }}'>
+        <input type="hidden" name="id" value="{{ product.selected_or_first_available_variant.id }}" data-variant-id>
+
+        {% unless product.has_only_default_variant %}
+          <div class="amazon-product-options space-y-4 mb-6">
+            {% for option in product.options_with_values %}
+              <div>
+                <div class="amazon-product-option-row">
+                  <label for="Option-{{ section.id }}-{{ forloop.index0 }}" class="amazon-product-option-label">{{ option.name }}</label>
+                  {%- assign _opt_name = option.name | downcase -%}
+                  {% if section.settings.show_size_guide and _opt_name == 'size' %}
+                    <button type="button" class="amazon-product-size-guide-btn" id="SizeGuideOpen" aria-haspopup="dialog">
+                      {{ section.settings.size_guide_button_label | default: 'Size guide' }}
+                    </button>
+                  {% endif %}
+                </div>
+                <div class="flex flex-wrap gap-2 option-values" data-option-index="{{ forloop.index0 }}">
+                  {% for value in option.values %}
+                    <label class="relative cursor-pointer option-value-label">
+                      <input type="radio" name="options[{{ option.name | escape }}]" value="{{ value | escape }}" class="sr-only option-radio" data-option-index="{{ forloop.parentloop.index0 }}" {% if option.selected_value == value %}checked{% endif %}>
+                      <span class="block px-4 py-2 rounded border border-gray-300 bg-white text-gray-900 hover:border-gray-900 transition-colors option-value-span">{{ value }}</span>
+                    </label>
+                  {% endfor %}
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% endunless %}
+
+        <div class="amazon-product-actions flex flex-wrap items-center gap-4 mb-6">
+          <div class="flex items-center border border-gray-300 rounded overflow-hidden bg-white">
+            <label for="Quantity-{{ section.id }}" class="visually-hidden">{{ 'products.product.quantity' | t | default: 'Quantity' }}</label>
+            <button type="button" class="quantity-btn px-4 py-3 text-gray-700 hover:bg-gray-100 transition-colors" aria-label="Decrease quantity" data-quantity-minus>-</button>
+            <input type="number" id="Quantity-{{ section.id }}" name="quantity" value="1" min="1" max="99" class="w-14 text-center py-3 bg-transparent text-gray-900 border-x border-gray-300 focus:outline-none focus:ring-0" data-quantity-input>
+            <button type="button" class="quantity-btn px-4 py-3 text-gray-700 hover:bg-gray-100 transition-colors" aria-label="Increase quantity" data-quantity-plus>+</button>
+          </div>
+          <button type="submit" name="add" class="product-form__submit flex-1 min-w-[200px] py-3 px-6 rounded font-semibold transition-opacity disabled:opacity-50 disabled:cursor-not-allowed" {% unless product.selected_or_first_available_variant.available %}disabled{% endunless %} data-add-to-cart>
+            {% if product.selected_or_first_available_variant.available %}
+              {{ 'products.product.add_to_cart' | t | default: 'Add to bag' }}
+            {% else %}
+              {{ 'products.product.sold_out' | t }}
+            {% endif %}
+          </button>
+          <button type="button" class="amazon-product-wishlist-btn" data-wishlist-toggle data-product-handle="{{ product.handle }}">
+            Add to wishlist
+          </button>
+        </div>
+        <div class="amazon-product-payment-trust mb-6" aria-label="Secure payment methods">
+          <span class="trust-pill">Secure checkout</span>
+          <span class="trust-pill">PayFast</span>
+          <span class="trust-pill">PayPal</span>
+          <span class="trust-pill">Stripe</span>
+        </div>
+        {%- comment -%} CRO: trust + guarantee — editable in Theme Editor → Product section {%- endcomment -%}
+        <ul class="amazon-product-trust-list" role="list">
+          {%- if section.settings.trust_line_1 != blank or section.settings.trust_line_2 != blank or section.settings.trust_line_3 != blank -%}
+            {% if section.settings.trust_line_1 != blank %}<li>{{ section.settings.trust_line_1 }}</li>{% endif %}
+            {% if section.settings.trust_line_2 != blank %}<li>{{ section.settings.trust_line_2 }}</li>{% endif %}
+            {% if section.settings.trust_line_3 != blank %}<li>{{ section.settings.trust_line_3 }}</li>{% endif %}
+          {%- else -%}
+            <li>Ships in 2–5 business days</li>
+            <li>Easy 14-day returns</li>
+            <li>Encrypted secure checkout</li>
+          {%- endif -%}
+        </ul>
+        {% if section.settings.guarantee_text != blank %}
+          <p class="amazon-product-guarantee">{{ section.settings.guarantee_text }}</p>
+        {% endif %}
+      </form>
+    </div>
+  </div>
+</div>
+
+{% render 'product-recommendations', product: product, heading: 'You may also like', intent: 'related' %}
+{% render 'product-recommendations', product: product, heading: 'Complete the look', intent: 'complementary' %}
+
+<section class="amazon-product-info-accordion section-spacing">
+  <div class="container">
+    <details class="amazon-acc-item" open>
+      <summary>Product details</summary>
+      <div class="amazon-acc-body rte">
+        {{ product.description }}
+      </div>
+    </details>
+    <details class="amazon-acc-item">
+      <summary>Materials</summary>
+      <div class="amazon-acc-body">
+        {% if product.metafields.custom.materials != blank %}
+          {{ product.metafields.custom.materials }}
+        {% else %}
+          Premium cotton blend designed for softness, durability, and everyday comfort.
+        {% endif %}
+      </div>
+    </details>
+    <details class="amazon-acc-item">
+      <summary>Fit info</summary>
+      <div class="amazon-acc-body">
+        {% if product.metafields.custom.size_guide != blank %}
+          {{ product.metafields.custom.size_guide }}
+        {% else %}
+          Regular fit. If you prefer an oversized look, we recommend sizing up.
+        {% endif %}
+      </div>
+    </details>
+    <details class="amazon-acc-item">
+      <summary>Care instructions</summary>
+      <div class="amazon-acc-body">
+        {% if product.metafields.custom.care_instructions != blank %}
+          {{ product.metafields.custom.care_instructions }}
+        {% else %}
+          Machine wash cold with similar colours. Do not bleach. Tumble dry low or hang to dry.
+        {% endif %}
+      </div>
+    </details>
+    {%- comment -%} CRO: extra accordions — shipping / returns / FAQ copy from section settings {%- endcomment -%}
+    {% if section.settings.shipping_accordion_body != blank %}
+      <details class="amazon-acc-item">
+        <summary>{{ section.settings.shipping_accordion_title | default: 'Shipping' }}</summary>
+        <div class="amazon-acc-body rte">{{ section.settings.shipping_accordion_body }}</div>
+      </details>
+    {% endif %}
+    {% if section.settings.returns_accordion_body != blank %}
+      <details class="amazon-acc-item">
+        <summary>{{ section.settings.returns_accordion_title | default: 'Returns' }}</summary>
+        <div class="amazon-acc-body rte">{{ section.settings.returns_accordion_body }}</div>
+      </details>
+    {% endif %}
+    {% if section.settings.faq_accordion_body != blank %}
+      <details class="amazon-acc-item">
+        <summary>{{ section.settings.faq_accordion_title | default: 'FAQs' }}</summary>
+        <div class="amazon-acc-body rte">{{ section.settings.faq_accordion_body }}</div>
+      </details>
+    {% endif %}
+  </div>
+</section>
+
+{%- comment -%} CRO: mount point for Shopify Product Reviews, Judge.me, Loox, etc. {%- endcomment -%}
+<section class="amazon-product-reviews-slot section-spacing" aria-label="{{ section.settings.reviews_heading | default: 'Reviews' }}">
+  <div class="container">
+    <h2 class="amazon-product-reviews-slot__heading">{{ section.settings.reviews_heading | default: 'Customer reviews' }}</h2>
+    <div id="shopify-product-reviews" class="amazon-product-reviews-slot__mount" data-product-reviews-placeholder data-product-id="{{ product.id }}"></div>
+  </div>
+</section>
+
+{% if section.settings.show_size_guide %}
+  <div class="product-modal" id="SizeGuideModal" role="dialog" aria-modal="true" aria-labelledby="SizeGuideModalTitle" hidden>
+    <div class="product-modal__backdrop" data-modal-close tabindex="-1"></div>
+    <div class="product-modal__panel" role="document">
+      <div class="product-modal__head">
+        <h2 id="SizeGuideModalTitle" class="product-modal__title">{{ section.settings.size_guide_modal_title | default: 'Size guide' }}</h2>
+        <button type="button" class="product-modal__close" data-modal-close aria-label="{{ 'general.accessibility.close' | t | default: 'Close' }}">&times;</button>
+      </div>
+      <div class="product-modal__body rte">
+        {% if section.settings.size_guide_content != blank %}
+          {{ section.settings.size_guide_content }}
+        {% else %}
+          <p>Use the <strong>Size &amp; fit</strong> details below. For a relaxed or oversized look, choose one size up. Measure a similar garment you own and compare to our chart when you add one in the theme editor.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endif %}
+
+{% if section.settings.enable_image_zoom %}
+  <div class="product-zoom-lightbox" id="ProductZoomLightbox" role="dialog" aria-modal="true" aria-label="{{ 'products.product.zoom' | t | default: 'Product image' }}" hidden>
+    <button type="button" class="product-zoom-lightbox__backdrop" id="ProductZoomClose" aria-label="{{ 'general.accessibility.close' | t | default: 'Close' }}"></button>
+    <div class="product-zoom-lightbox__frame">
+      <button type="button" class="product-zoom-lightbox__x" id="ProductZoomCloseBtn" aria-label="{{ 'general.accessibility.close' | t | default: 'Close' }}">&times;</button>
+      <img src="" alt="" class="product-zoom-lightbox__img" id="ProductZoomImg" width="1200" height="1200">
+    </div>
+  </div>
+{% endif %}
+
+{% if section.settings.enable_sticky_atc %}
+  <div class="mobile-sticky-atc" id="MobileStickyAtc" aria-hidden="true">
+    <div class="mobile-sticky-atc__inner">
+      <div class="mobile-sticky-atc__price" id="MobileStickyPrice">{{ product.selected_or_first_available_variant.price | money }}</div>
+      <button type="button" class="mobile-sticky-atc__btn" id="MobileStickyAtcBtn" {% unless product.selected_or_first_available_variant.available %}disabled{% endunless %}>
+        {% if product.selected_or_first_available_variant.available %}Add to cart{% else %}Sold out{% endif %}
+      </button>
+    </div>
+  </div>
+{% endif %}
+
+<div id="cart-popup" class="cart-popup" aria-live="polite" role="status" hidden>
+  <div class="cart-popup-content">
+    <p class="cart-popup-message">Product added to cart</p>
+    <a href="{{ routes.cart_url }}" class="cart-popup-view">View Cart</a>
+  </div>
+</div>
+
+<script>
+(function() {
+  var viewedKey = 'elovyn_recently_viewed';
+  try {
+    var viewed = JSON.parse(localStorage.getItem(viewedKey) || '[]');
+    viewed = viewed.filter(function(h) { return h && h !== {{ product.handle | json }}; });
+    viewed.unshift({{ product.handle | json }});
+    localStorage.setItem(viewedKey, JSON.stringify(viewed.slice(0, 16)));
+  } catch (e) {}
+
+  var form = document.getElementById('product-form');
+  if (!form) return;
+  var cartPopupTimeout = null;
+  function showCartPopup() {
+    var popup = document.getElementById('cart-popup');
+    if (!popup) return;
+    if (cartPopupTimeout) clearTimeout(cartPopupTimeout);
+    popup.removeAttribute('hidden');
+    popup.style.display = 'block';
+    cartPopupTimeout = setTimeout(function() {
+      popup.setAttribute('hidden', '');
+      popup.style.display = 'none';
+      cartPopupTimeout = null;
+    }, 4000);
+  }
+  var variantIdInput = form.querySelector('[data-variant-id]');
+  var addToCartBtn = form.querySelector('[data-add-to-cart]');
+  var stickyAtcBtn = document.getElementById('MobileStickyAtcBtn');
+  var stickyAtcPrice = document.getElementById('MobileStickyPrice');
+  var stickyAtcWrap = document.getElementById('MobileStickyAtc');
+  var priceEl = document.querySelector('[data-product-price]');
+  var variantData = {{ product.variants | json }};
+  var variantPrices = {};
+  {% for v in product.variants %}
+  variantPrices[{{ v.id }}] = {{ v.price | money | json }};
+  {% endfor %}
+  var optionNames = [];
+  try { optionNames = JSON.parse(form.getAttribute('data-option-names') || '[]'); } catch (e) {}
+  var optionRadios = form.querySelectorAll('.option-radio');
+
+  function getSelectedOptionsArray() {
+    var arr = [];
+    for (var i = 0; i < optionNames.length; i++) {
+      var name = 'options[' + optionNames[i] + ']';
+      var radio = form.querySelector('.option-radio[name="' + name + '"]:checked');
+      arr.push(radio ? radio.value : null);
+    }
+    return arr;
+  }
+  function findVariant() {
+    var selected = getSelectedOptionsArray();
+    for (var i = 0; i < variantData.length; i++) {
+      var v = variantData[i];
+      var match = true;
+      if (v.options) {
+        for (var j = 0; j < v.options.length; j++) {
+          if (selected[j] !== undefined && selected[j] !== v.options[j]) { match = false; break; }
+        }
+      }
+      if (match) return v;
+    }
+    return variantData[0];
+  }
+  function setActiveOptionStyles() {
+    form.querySelectorAll('.option-value-span').forEach(function(span) {
+      span.classList.remove('option-value-span--selected');
+    });
+    form.querySelectorAll('.option-radio:checked').forEach(function(radio) {
+      var span = radio.closest('.option-value-label').querySelector('.option-value-span');
+      if (span) span.classList.add('option-value-span--selected');
+    });
+  }
+  var showLowStockSetting = {{ section.settings.show_low_stock | json }};
+  var lowStockThreshold = {{ section.settings.low_stock_threshold | default: 5 }};
+  var lowStockTemplate = {{ section.settings.low_stock_message | default: 'Only [qty] left — order soon.' | json }};
+  var wishlistBtn = document.querySelector('[data-wishlist-toggle]');
+  var wishlistKey = 'elovyn_wishlist_handles';
+
+  function syncWishlist() {
+    if (!wishlistBtn) return;
+    var handle = wishlistBtn.getAttribute('data-product-handle');
+    try {
+      var items = JSON.parse(localStorage.getItem(wishlistKey) || '[]');
+      var has = items.indexOf(handle) > -1;
+      wishlistBtn.textContent = has ? 'Wishlisted' : 'Add to wishlist';
+      wishlistBtn.classList.toggle('amazon-product-wishlist-btn--active', has);
+    } catch (e) {}
+  }
+  if (wishlistBtn) {
+    wishlistBtn.addEventListener('click', function() {
+      var handle = wishlistBtn.getAttribute('data-product-handle');
+      try {
+        var items = JSON.parse(localStorage.getItem(wishlistKey) || '[]');
+        var idx = items.indexOf(handle);
+        if (idx > -1) items.splice(idx, 1);
+        else items.push(handle);
+        localStorage.setItem(wishlistKey, JSON.stringify(items));
+      } catch (e) {}
+      syncWishlist();
+    });
+    syncWishlist();
+  }
+
+  function updateLowStock(variant) {
+    var lowEl = document.getElementById('ProductLowStock');
+    if (!lowEl || !variant) return;
+    if (!showLowStockSetting) {
+      lowEl.hidden = true;
+      return;
+    }
+    var q = variant.inventory_quantity;
+    var im = variant.inventory_management;
+    if (im === 'shopify' && typeof q === 'number' && q > 0 && q <= lowStockThreshold) {
+      lowEl.hidden = false;
+      lowEl.textContent = (lowStockTemplate || '').replace(/\[qty\]|\[quantity\]/g, String(q));
+    } else {
+      lowEl.hidden = true;
+    }
+  }
+
+  function updateForm(variant) {
+    if (!variant) return;
+    if (variantIdInput) variantIdInput.value = variant.id;
+    if (priceEl && variantPrices[variant.id]) priceEl.textContent = variantPrices[variant.id];
+    if (stickyAtcPrice && variantPrices[variant.id]) stickyAtcPrice.textContent = variantPrices[variant.id];
+    if (addToCartBtn) {
+      addToCartBtn.disabled = !variant.available;
+      addToCartBtn.textContent = variant.available ? (window.variantStrings && window.variantStrings.addToCart ? window.variantStrings.addToCart : 'Add to bag') : (window.variantStrings && window.variantStrings.soldOut ? window.variantStrings.soldOut : 'Sold out');
+    }
+    if (stickyAtcBtn) {
+      stickyAtcBtn.disabled = !variant.available;
+      stickyAtcBtn.textContent = variant.available ? 'Add to bag' : 'Sold out';
+    }
+    updateLowStock(variant);
+    setActiveOptionStyles();
+    updateOptionAvailability();
+  }
+
+  function updateOptionAvailability() {
+    var selected = getSelectedOptionsArray();
+    optionRadios.forEach(function(radio) {
+      var optionIndex = parseInt(radio.getAttribute('data-option-index'), 10);
+      var value = radio.value;
+      var isAvailable = variantData.some(function(v) {
+        if (!v.available) return false;
+        if (!v.options || v.options[optionIndex] !== value) return false;
+        for (var i = 0; i < selected.length; i++) {
+          if (i === optionIndex || !selected[i]) continue;
+          if (v.options[i] !== selected[i]) return false;
+        }
+        return true;
+      });
+      radio.disabled = !isAvailable;
+      var span = radio.closest('.option-value-label') && radio.closest('.option-value-label').querySelector('.option-value-span');
+      if (span) span.classList.toggle('option-value-span--disabled', !isAvailable);
+    });
+  }
+  setActiveOptionStyles();
+  form.addEventListener('submit', function(e) {
+    var submitter = e.submitter || document.activeElement;
+    var isAddButton = false;
+    if (submitter) {
+      if ((submitter.matches && submitter.matches('[data-add-to-cart], .product-form__submit')) || submitter.name === 'add') {
+        isAddButton = true;
+      }
+    }
+    // Let non Add to Cart submits (for example, dynamic checkout) behave normally.
+    if (!isAddButton) {
+      return;
+    }
+
+    e.preventDefault();
+    if (form.dataset.processing === 'true') {
+      return;
+    }
+    form.dataset.processing = 'true';
+    if (addToCartBtn) addToCartBtn.disabled = true;
+
+    var cartAddUrl = (window.routes && window.routes.cart_add_url) || form.getAttribute('action') || '/cart/add';
+    var addUrl = cartAddUrl.replace(/\/add\/?(\?.*)?$/i, '') + '/add.js';
+    var formData = new FormData(form);
+
+    fetch(addUrl, {
+      method: 'POST',
+      body: formData,
+      credentials: 'same-origin',
+      headers: { 'Accept': 'application/json' }
+    })
+    .then(function(res) {
+      return res.json().then(function(data) {
+        return { ok: res.ok, data: data };
+      });
+    })
+    .then(function(result) {
+      if (result.ok) {
+        if (typeof window.updateCartCount === 'function') window.updateCartCount();
+        showCartPopup();
+      } else {
+        console.error('Add to cart error', result.data);
+      }
+    })
+    .catch(function(err) {
+      console.error('Add to cart failed', err);
+    })
+    .finally(function() {
+      form.dataset.processing = 'false';
+      if (addToCartBtn) addToCartBtn.disabled = false;
+    });
+  });
+  optionRadios.forEach(function(radio) {
+    radio.addEventListener('change', function() { updateForm(findVariant()); });
+  });
+  form.querySelectorAll('[data-quantity-minus]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var inp = form.querySelector('[data-quantity-input]');
+      if (inp) { var n = parseInt(inp.value, 10) || 1; inp.value = Math.max(1, n - 1); }
+    });
+  });
+  form.querySelectorAll('[data-quantity-plus]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var inp = form.querySelector('[data-quantity-input]');
+      if (inp) { var n = parseInt(inp.value, 10) || 1; inp.value = Math.min(99, n + 1); }
+    });
+  });
+
+  var mainImg = document.getElementById('ProductPhotoImg');
+  var thumbs = document.querySelectorAll('.amazon-product-thumb');
+  thumbs.forEach(function(thumb) {
+    thumb.addEventListener('click', function() {
+      var src = this.getAttribute('data-src');
+      var zSrc = this.getAttribute('data-zoom-src');
+      if (mainImg && src) {
+        mainImg.style.opacity = '0.35';
+        mainImg.src = src;
+        if (zSrc) mainImg.setAttribute('data-zoom-src', zSrc);
+        mainImg.alt = this.querySelector('img') ? this.querySelector('img').getAttribute('alt') || '' : '';
+        setTimeout(function() { mainImg.style.opacity = '1'; }, 90);
+      }
+      thumbs.forEach(function(t) { t.classList.remove('thumbnail-active'); });
+      this.classList.add('thumbnail-active');
+    });
+  });
+
+  var sizeModal = document.getElementById('SizeGuideModal');
+  var sizeOpen = document.getElementById('SizeGuideOpen');
+  function closeSizeGuide() {
+    if (sizeModal) {
+      sizeModal.hidden = true;
+      document.body.style.overflow = '';
+    }
+  }
+  if (sizeOpen && sizeModal) {
+    sizeOpen.addEventListener('click', function() {
+      sizeModal.hidden = false;
+      document.body.style.overflow = 'hidden';
+    });
+    sizeModal.querySelectorAll('[data-modal-close]').forEach(function(el) {
+      el.addEventListener('click', closeSizeGuide);
+    });
+  }
+
+  var zoomBox = document.getElementById('ProductZoomLightbox');
+  var zoomImg = document.getElementById('ProductZoomImg');
+  var zoomOpenBtn = document.getElementById('ProductZoomOpen');
+  var zoomClose = document.getElementById('ProductZoomClose');
+  var zoomCloseBtn = document.getElementById('ProductZoomCloseBtn');
+  function openProductZoom() {
+    if (!zoomBox || !zoomImg || !mainImg) return;
+    var full = mainImg.getAttribute('data-zoom-src') || mainImg.src;
+    zoomImg.src = full;
+    zoomImg.alt = mainImg.alt || '';
+    zoomBox.hidden = false;
+    document.body.style.overflow = 'hidden';
+  }
+  function closeProductZoom() {
+    if (!zoomBox) return;
+    zoomBox.hidden = true;
+    document.body.style.overflow = '';
+  }
+  if (zoomOpenBtn) zoomOpenBtn.addEventListener('click', openProductZoom);
+  if (zoomClose) zoomClose.addEventListener('click', closeProductZoom);
+  if (zoomCloseBtn) zoomCloseBtn.addEventListener('click', closeProductZoom);
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Escape') return;
+    closeProductZoom();
+    closeSizeGuide();
+  });
+
+  if (stickyAtcBtn) {
+    stickyAtcBtn.addEventListener('click', function() {
+      if (addToCartBtn && !addToCartBtn.disabled) addToCartBtn.click();
+    });
+  }
+
+  function updateStickyAtcVisibility() {
+    if (!stickyAtcWrap || !addToCartBtn) return;
+    var rect = addToCartBtn.getBoundingClientRect();
+    var isDesktop = window.matchMedia('(min-width: 1024px)').matches;
+    if (isDesktop || (rect.top >= 0 && rect.bottom <= window.innerHeight)) {
+      stickyAtcWrap.classList.remove('show');
+      stickyAtcWrap.setAttribute('aria-hidden', 'true');
+    } else {
+      stickyAtcWrap.classList.add('show');
+      stickyAtcWrap.setAttribute('aria-hidden', 'false');
+    }
+  }
+  window.addEventListener('scroll', updateStickyAtcVisibility, { passive: true });
+  window.addEventListener('resize', updateStickyAtcVisibility);
+  updateStickyAtcVisibility();
+
+  var initialVariant = findVariant();
+  if (initialVariant) updateForm(initialVariant);
+  updateOptionAvailability();
+})();
+</script>
+
+<style>
+  .amazon-product-gallery {
+    position: relative;
+    overflow: hidden;
+  }
+  .amazon-product-main-img {
+    transition: transform 0.35s ease, opacity 0.2s ease;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .amazon-product-gallery:hover .amazon-product-main-img {
+      transform: scale(1.05);
+    }
+  }
+  .amazon-product-short-desc {
+    margin: 0.55rem 0 1rem;
+    color: #505050;
+    font-size: 0.95rem;
+    line-height: 1.6;
+  }
+  /* CRO: urgency strip + guarantee */
+  .amazon-product-urgency {
+    margin: 0 0 0.65rem;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #111;
+  }
+  .amazon-product-guarantee {
+    margin: 0.75rem 0 0;
+    font-size: 0.8125rem;
+    color: #444;
+    line-height: 1.5;
+    padding: 0.65rem 0.75rem;
+    background: #f5f5f5;
+    border-left: 3px solid #111;
+  }
+  .amazon-product-bullets--above-fold {
+    margin: 0 0 0.85rem 1rem;
+  }
+  /* CRO: full-width primary CTA on small screens */
+  @media (max-width: 639px) {
+    .amazon-product-actions {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .amazon-product-actions .product-form__submit {
+      width: 100%;
+      min-width: 0;
+      order: -1;
+    }
+    .amazon-product-actions .amazon-product-wishlist-btn {
+      width: 100%;
+    }
+  }
+  .amazon-product-reviews-slot__heading {
+    margin: 0 0 1rem;
+    font-size: clamp(1.1rem, 2.5vw, 1.35rem);
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .amazon-product-reviews-slot__mount:empty {
+    min-height: 0;
+  }
+  .amazon-product-payment-trust {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .amazon-product-payment-trust .trust-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.35rem 0.65rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    background: #fff;
+    color: #111;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .amazon-product-wishlist-btn {
+    min-height: 44px;
+    padding: 0.72rem 1rem;
+    border: 1px solid #111;
+    background: #fff;
+    color: #111;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    border-radius: 0.5rem;
+    cursor: pointer;
+  }
+  .amazon-product-wishlist-btn:hover {
+    background: #f5f5f5;
+  }
+  .amazon-product-wishlist-btn--active {
+    background: #111;
+    color: #fff;
+  }
+  .mobile-sticky-atc {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 100000;
+    background: rgba(255, 255, 255, 0.96);
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(6px);
+    transform: translateY(110%);
+    transition: transform 0.22s ease;
+  }
+  .mobile-sticky-atc.show { transform: translateY(0); }
+  .mobile-sticky-atc__inner {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom, 0));
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .mobile-sticky-atc__price {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #111;
+  }
+  .mobile-sticky-atc__btn {
+    border: none;
+    border-radius: 0.65rem;
+    background: #111;
+    color: #fff;
+    font-size: 0.86rem;
+    font-weight: 600;
+    padding: 0.72rem 1rem;
+    min-width: 148px;
+  }
+  .mobile-sticky-atc__btn:disabled {
+    opacity: 0.55;
+  }
+  @media (min-width: 1024px) {
+    .mobile-sticky-atc { display: none; }
+  }
+  .amazon-product-option-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.5rem;
+  }
+  .amazon-product-size-guide-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #111;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .amazon-product-size-guide-btn:hover {
+    opacity: 0.7;
+  }
+  .amazon-product-bullets {
+    margin: 0 0 1.25rem 1rem;
+    padding: 0;
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    color: #333;
+  }
+  .amazon-product-bullets li {
+    margin-bottom: 0.35rem;
+    list-style: disc;
+  }
+  .amazon-product-low-stock {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #b45309;
+    margin: 0 0 1rem;
+  }
+  .amazon-product-zoom-trigger {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: zoom-in;
+  }
+  .amazon-product-zoom-trigger img {
+    display: block;
+    width: 100%;
+    height: auto;
+    vertical-align: top;
+  }
+  .option-value-span--selected {
+    border-color: #111 !important;
+    box-shadow: 0 0 0 2px rgba(17, 17, 17, 0.18);
+  }
+  .option-value-span--disabled {
+    background: #f3f4f6 !important;
+    color: #9ca3af !important;
+    border-color: #e5e7eb !important;
+    text-decoration: line-through;
+    cursor: not-allowed;
+  }
+  .option-value-label:hover .option-value-span:not(.option-value-span--selected) {
+    border-color: #9ca3af;
+  }
+  .amazon-product-trust-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 0.35rem;
+    color: #333;
+    font-size: 0.88rem;
+  }
+  .amazon-product-trust-list li::before {
+    content: "✓";
+    margin-right: 0.5rem;
+    color: #111;
+    font-weight: 700;
+  }
+  .amazon-product-info-accordion .container {
+    max-width: 960px;
+  }
+  .amazon-acc-item {
+    border-top: 1px solid rgba(0, 0, 0, 0.12);
+    padding: 0.25rem 0;
+  }
+  .amazon-acc-item:last-child {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+  }
+  .amazon-acc-item summary {
+    list-style: none;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    padding: 0.9rem 0;
+    display: flex;
+    justify-content: space-between;
+  }
+  .amazon-acc-item summary::-webkit-details-marker { display: none; }
+  .amazon-acc-item summary::after {
+    content: "+";
+    font-size: 1rem;
+    font-weight: 600;
+  }
+  .amazon-acc-item[open] summary::after { content: "−"; }
+  .amazon-acc-body {
+    padding: 0 0 1rem;
+    color: #444;
+    line-height: 1.7;
+    font-size: 0.95rem;
+  }
+  .product-modal[hidden],
+  .product-zoom-lightbox[hidden] {
+    display: none !important;
+  }
+  .product-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 100050;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+  .product-modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+  }
+  .product-modal__panel {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 520px;
+    max-height: 85vh;
+    overflow: auto;
+    background: #fff;
+    color: #111;
+    padding: 1.25rem 1.25rem 1.5rem;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.25);
+  }
+  .product-modal__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  .product-modal__title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+  }
+  .product-modal__close {
+    background: none;
+    border: none;
+    font-size: 1.75rem;
+    line-height: 1;
+    cursor: pointer;
+    color: #111;
+    padding: 0.15rem;
+  }
+  .product-modal__body {
+    font-size: 0.9375rem;
+    line-height: 1.6;
+  }
+  .product-zoom-lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 100060;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .product-zoom-lightbox__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.88);
+    border: none;
+    cursor: zoom-out;
+  }
+  .product-zoom-lightbox__frame {
+    position: relative;
+    z-index: 1;
+    max-width: min(96vw, 1200px);
+    max-height: 92vh;
+    margin: 1rem;
+  }
+  .product-zoom-lightbox__img {
+    display: block;
+    max-width: 100%;
+    max-height: 92vh;
+    width: auto;
+    height: auto;
+    margin: 0 auto;
+    object-fit: contain;
+  }
+  .product-zoom-lightbox__x {
+    position: absolute;
+    top: -2.5rem;
+    right: 0;
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 2rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0.25rem;
+  }
+  @media (min-width: 1024px) {
+    .amazon-product-details--sticky {
+      position: sticky;
+      top: calc(var(--header-height, 5rem) + 1rem);
+      align-self: start;
+    }
+  }
+</style>
+
+{% schema %}
+{
+  "name": "Product",
+  "settings": [
+    {
+      "type": "checkbox",
+      "id": "show_star_rating",
+      "label": "Show star rating row (decorative)",
+      "default": false,
+      "info": "Turn on only if you use a real reviews app that replaces this area, or for placeholder styling."
+    },
+    {
+      "type": "checkbox",
+      "id": "show_urgency_message",
+      "label": "Show urgency message",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "urgency_message",
+      "label": "Urgency message",
+      "default": "Limited stock available — order while your size is in stock."
+    },
+    {
+      "type": "header",
+      "content": "Trust below Add to cart"
+    },
+    {
+      "type": "text",
+      "id": "trust_line_1",
+      "label": "Trust line 1",
+      "default": "Ships in 2–5 business days"
+    },
+    {
+      "type": "text",
+      "id": "trust_line_2",
+      "label": "Trust line 2",
+      "default": "Easy 14-day returns"
+    },
+    {
+      "type": "text",
+      "id": "trust_line_3",
+      "label": "Trust line 3",
+      "default": "Encrypted secure checkout"
+    },
+    {
+      "type": "text",
+      "id": "guarantee_text",
+      "label": "Guarantee text",
+      "default": "Shop with confidence — we stand behind every order."
+    },
+    {
+      "type": "header",
+      "content": "Extra accordions"
+    },
+    {
+      "type": "text",
+      "id": "shipping_accordion_title",
+      "label": "Shipping accordion title",
+      "default": "Shipping"
+    },
+    {
+      "type": "richtext",
+      "id": "shipping_accordion_body",
+      "label": "Shipping accordion content",
+      "default": "<p>Processing time is 1–3 business days. Delivery usually takes 7–12 business days. Tracking is emailed when your order ships.</p>"
+    },
+    {
+      "type": "text",
+      "id": "returns_accordion_title",
+      "label": "Returns accordion title",
+      "default": "Returns"
+    },
+    {
+      "type": "richtext",
+      "id": "returns_accordion_body",
+      "label": "Returns accordion content",
+      "default": "<p>Request a return within 14 days of delivery. Items must be unused with original packaging where applicable.</p>"
+    },
+    {
+      "type": "text",
+      "id": "faq_accordion_title",
+      "label": "FAQ accordion title",
+      "default": "FAQs"
+    },
+    {
+      "type": "richtext",
+      "id": "faq_accordion_body",
+      "label": "FAQ accordion content",
+      "default": "<p><strong>Need help?</strong> Contact us from the footer — we reply as fast as we can.</p>"
+    },
+    {
+      "type": "header",
+      "content": "Reviews block"
+    },
+    {
+      "type": "text",
+      "id": "reviews_heading",
+      "label": "Reviews section heading",
+      "default": "Customer reviews"
+    },
+    {
+      "type": "checkbox",
+      "id": "enable_sticky_atc",
+      "label": "Enable sticky Add to Cart on mobile",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "sticky_buy_column",
+      "label": "Sticky product details on desktop",
+      "default": true,
+      "info": "Keeps title, price, and form visible while scrolling on large screens."
+    },
+    {
+      "type": "checkbox",
+      "id": "enable_image_zoom",
+      "label": "Enable image zoom (lightbox)",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_size_guide",
+      "label": "Show size guide link (when a Size option exists)",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "size_guide_button_label",
+      "label": "Size guide button label",
+      "default": "Size guide"
+    },
+    {
+      "type": "text",
+      "id": "size_guide_modal_title",
+      "label": "Size guide modal title",
+      "default": "Size guide"
+    },
+    {
+      "type": "richtext",
+      "id": "size_guide_content",
+      "label": "Size guide content"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_low_stock",
+      "label": "Show low stock message",
+      "default": true
+    },
+    {
+      "type": "range",
+      "id": "low_stock_threshold",
+      "label": "Low stock threshold (units)",
+      "min": 1,
+      "max": 50,
+      "step": 1,
+      "default": 8
+    },
+    {
+      "type": "text",
+      "id": "low_stock_message",
+      "label": "Low stock message",
+      "default": "Only [qty] left — order soon.",
+      "info": "Use [qty] for the remaining quantity."
+    }
+  ],
+  "blocks": [
+    {
+      "type": "feature_bullet",
+      "name": "Feature bullet",
+      "settings": [
+        {
+          "type": "text",
+          "id": "text",
+          "label": "Text",
+          "default": "Premium quality"
+        }
+      ]
+    }
+  ],
+  "max_blocks": 12
+}
+{% endschema %}
