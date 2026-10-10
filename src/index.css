@@ -94,6 +94,26 @@
   .announcement-bar {
     @apply bg-neutral-950 text-white;
   }
+
+  .store-header {
+    @apply flex w-full items-center justify-between gap-3 border-b border-neutral-200 bg-white/95 px-4 py-3 backdrop-blur-md sm:px-6 lg:px-8;
+  }
+
+  .header-left {
+    @apply flex min-w-0 items-center gap-4 lg:gap-8;
+  }
+
+  .header-nav {
+    @apply hidden items-center gap-3 lg:flex xl:gap-4 2xl:gap-6;
+  }
+
+  .header-actions {
+    @apply flex shrink-0 items-center gap-1 sm:gap-2 md:gap-3;
+  }
+
+  .header-icon {
+    @apply inline-flex h-10 w-10 items-center justify-center rounded-full text-neutral-900 transition-colors hover:bg-neutral-100;
+  }
 }
 
 @layer utilities {

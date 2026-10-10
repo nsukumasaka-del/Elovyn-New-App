@@ -1,3 +1,4 @@
+import { useStore } from "@/lib/store";
 import { Header } from "@/components/Header";
 import { Hero } from "@/components/Hero";
 import { ClothingShowcase } from "@/components/ClothingShowcase";
@@ -21,6 +22,14 @@ const categoryTiles = [
 ];
 
 const Index = () => {
+  const { products, addToCart } = useStore();
+  const storefrontProductIds = new Set([
+    "essential-box-tee", "everyday-overshirt", "layered-set", "signature-hoodie",
+    "raw-luxe-bundle", "hydration-set", "styling-kit", "signature-layer",
+    "leather-crossbody", "structured-cap", "layered-chains", "everyday-tote",
+  ]);
+  const newProducts = products.filter((product) => !storefrontProductIds.has(product.id));
+
   return (
     <div id="top" className="min-h-screen bg-[#f6f1ea] text-neutral-950">
       <Header />
@@ -126,6 +135,37 @@ const Index = () => {
 
         <AccessoriesShowcase />
         <Community />
+
+        {newProducts.length > 0 && (
+          <section className="bg-white py-16">
+            <div className="section-shell">
+              <p className="eyebrow">Fresh from the studio</p>
+              <h2 className="section-heading mt-3">Just added</h2>
+              <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                {newProducts.map((product) => (
+                  <article key={product.id} id={`product-${product.id}`} className="product-card overflow-hidden">
+                    <img src={product.image_url || clothingImage} alt={product.title} className="aspect-[4/5] w-full object-cover" />
+                    <div className="space-y-3 p-5">
+                      <p className="text-xs uppercase tracking-wider text-neutral-500">{product.category}</p>
+                      <h3 className="font-semibold">{product.title}</h3>
+                      <div className="flex items-center justify-between"><span>R {Number(product.price).toFixed(2)}</span><span className="text-xs text-neutral-500">{product.stock_quantity > 0 ? "In stock" : "Sold out"}</span></div>
+                      <button
+                        disabled={product.stock_quantity <= 0}
+                        onClick={() => addToCart({
+                          id: product.id,
+                          title: product.title,
+                          price: Number(product.price),
+                          imageUrl: product.image_url || clothingImage,
+                        })}
+                        className="btn-secondary w-full disabled:opacity-50"
+                      >Add to bag</button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
 
         <section className="pb-16 pt-6 sm:pb-20 lg:pb-24">
           <div className="section-shell">

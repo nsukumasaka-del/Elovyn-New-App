@@ -5,6 +5,7 @@ import clothingImage1 from "../assets/CLOTHING.jpg";
 import shirtImage from "../assets/Shirt 1.jpg";
 import shirt2Image from "../assets/Shirt 2.jpg";
 import twoPieceImage from "../assets/Two Piece.jpg";
+import { useStore } from "@/lib/store";
 
 const clothes = [
   {
@@ -42,6 +43,7 @@ const clothes = [
 ];
 
 export const ClothingShowcase = () => {
+  const { addToCart, wishlist, toggleWishlist } = useStore();
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-100px" });
 
@@ -72,6 +74,7 @@ export const ClothingShowcase = () => {
           {clothes.map((item, index) => (
             <motion.article
               key={item.id}
+              id={`product-${["essential-box-tee", "everyday-overshirt", "layered-set", "signature-hoodie"][item.id - 1]}`}
               initial={{ opacity: 0, y: 30 }}
               animate={isInView ? { opacity: 1, y: 0 } : {}}
               transition={{ duration: 0.45, delay: index * 0.08 }}
@@ -87,14 +90,23 @@ export const ClothingShowcase = () => {
                     <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-neutral-500">{item.category}</p>
                     <h3 className="mt-2 text-xl font-semibold tracking-[-0.05em] text-neutral-950">{item.name}</h3>
                   </div>
-                  <button aria-label={`Save ${item.name}`} className="rounded-full border border-neutral-200 p-2 text-neutral-700 transition-colors hover:border-neutral-900 hover:text-neutral-900">
-                    ♡
+                  <button aria-label={`Save ${item.name}`} aria-pressed={wishlist.includes(["essential-box-tee", "everyday-overshirt", "layered-set", "signature-hoodie"][item.id - 1])} onClick={() => toggleWishlist(
+                    ["essential-box-tee", "everyday-overshirt", "layered-set", "signature-hoodie"][item.id - 1],
+                    { id: ["essential-box-tee", "everyday-overshirt", "layered-set", "signature-hoodie"][item.id - 1], title: item.name, price: Number(item.price.replace(/[^\d.]/g, "")), imageUrl: item.image },
+                  )} className="rounded-full border border-neutral-200 p-2 text-neutral-700 transition-colors hover:border-neutral-900 hover:text-neutral-900" type="button">
+                    {wishlist.includes(["essential-box-tee", "everyday-overshirt", "layered-set", "signature-hoodie"][item.id - 1]) ? "♥" : "♡"}
                   </button>
                 </div>
                 <div className="flex items-center justify-between gap-3 text-sm text-neutral-600">
                   <span>{item.accent}</span>
                   <span className="text-base font-semibold text-neutral-950">{item.price}</span>
                 </div>
+                <button type="button" onClick={() => addToCart({
+                  id: ["essential-box-tee", "everyday-overshirt", "layered-set", "signature-hoodie"][item.id - 1],
+                  title: item.name,
+                  price: Number(item.price.replace(/[^\d.]/g, "")),
+                  imageUrl: item.image,
+                })} className="btn-secondary w-full py-2.5">Add to bag</button>
               </div>
             </motion.article>
           ))}

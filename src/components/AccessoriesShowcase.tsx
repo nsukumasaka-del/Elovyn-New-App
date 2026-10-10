@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { useInView } from "framer-motion";
 import { useRef } from "react";
+import { useStore } from "@/lib/store";
 
 const accessories = [
   {
@@ -38,6 +39,7 @@ const accessories = [
 ];
 
 export const AccessoriesShowcase = () => {
+  const { addToCart, wishlist, toggleWishlist } = useStore();
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-100px" });
 
@@ -62,6 +64,7 @@ export const AccessoriesShowcase = () => {
           {accessories.map((item, index) => (
             <motion.article
               key={item.id}
+              id={`product-${["leather-crossbody", "structured-cap", "layered-chains", "everyday-tote"][item.id - 1]}`}
               initial={{ opacity: 0, y: 30 }}
               animate={isInView ? { opacity: 1, y: 0 } : {}}
               transition={{ duration: 0.45, delay: index * 0.08 }}
@@ -76,14 +79,23 @@ export const AccessoriesShowcase = () => {
                     <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-neutral-500">{item.category}</p>
                     <h3 className="mt-2 text-xl font-semibold tracking-[-0.05em] text-neutral-950">{item.name}</h3>
                   </div>
-                  <button aria-label={`Save ${item.name}`} className="rounded-full border border-neutral-200 p-2 text-neutral-700 transition-colors hover:border-neutral-900 hover:text-neutral-900">
-                    ♡
+                  <button aria-label={`Save ${item.name}`} aria-pressed={wishlist.includes(["leather-crossbody", "structured-cap", "layered-chains", "everyday-tote"][item.id - 1])} onClick={() => toggleWishlist(
+                    ["leather-crossbody", "structured-cap", "layered-chains", "everyday-tote"][item.id - 1],
+                    { id: ["leather-crossbody", "structured-cap", "layered-chains", "everyday-tote"][item.id - 1], title: item.name, price: Number(item.price.replace(/[^\d.]/g, "")), imageUrl: item.image },
+                  )} className="rounded-full border border-neutral-200 p-2 text-neutral-700 transition-colors hover:border-neutral-900 hover:text-neutral-900" type="button">
+                    {wishlist.includes(["leather-crossbody", "structured-cap", "layered-chains", "everyday-tote"][item.id - 1]) ? "♥" : "♡"}
                   </button>
                 </div>
                 <div className="flex items-center justify-between gap-3 text-sm text-neutral-600">
                   <span>{item.tone}</span>
                   <span className="text-base font-semibold text-neutral-950">{item.price}</span>
                 </div>
+                <button type="button" onClick={() => addToCart({
+                  id: ["leather-crossbody", "structured-cap", "layered-chains", "everyday-tote"][item.id - 1],
+                  title: item.name,
+                  price: Number(item.price.replace(/[^\d.]/g, "")),
+                  imageUrl: item.image,
+                })} className="btn-secondary w-full py-2.5">Add to bag</button>
               </div>
             </motion.article>
           ))}
