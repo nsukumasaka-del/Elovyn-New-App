@@ -5,7 +5,9 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { promisify } from "node:util";
-import { getDb } from "./db";
+import { and, eq, gt, sql } from "drizzle-orm";
+import { db } from "../../../db/index.js";
+import { sessions, users } from "../../../db/schema.js";
 
 const scrypt = promisify(scryptCallback);
 const sessionLifetimeSeconds = 60 * 60 * 24 * 14;
@@ -54,11 +56,11 @@ export function readSessionToken(request: Request) {
 
 export async function createSession(user: StoreUser) {
   const token = randomBytes(32).toString("base64url");
-  const db = getDb();
-  await db`
-    INSERT INTO sessions (token_hash, user_id, expires_at)
-    VALUES (${sessionDigest(token)}, ${user.id}, NOW() + INTERVAL '14 days')
-  `;
+  await db.insert(sessions).values({
+    tokenHash: sessionDigest(token),
+    userId: user.id,
+    expiresAt: sql`NOW() + INTERVAL '14 days'`,
+  });
   return {
     token,
     maxAge: sessionLifetimeSeconds,
@@ -68,23 +70,19 @@ export async function createSession(user: StoreUser) {
 export async function getSessionUser(request: Request): Promise<StoreUser | null> {
   const token = readSessionToken(request);
   if (!token) return null;
-  const db = getDb();
-  const rows = await db<StoreUser[]>`
-    SELECT users.id, users.email, users.role
-    FROM sessions
-    JOIN users ON users.id = sessions.user_id
-    WHERE sessions.token_hash = ${sessionDigest(token)}
-      AND sessions.expires_at > NOW()
-    LIMIT 1
-  `;
+  const rows = await db
+    .select({ id: users.id, email: users.email, role: users.role })
+    .from(sessions)
+    .innerJoin(users, eq(users.id, sessions.userId))
+    .where(and(eq(sessions.tokenHash, sessionDigest(token)), gt(sessions.expiresAt, sql`NOW()`)))
+    .limit(1);
   return rows[0] ?? null;
 }
 
 export async function deleteSession(request: Request) {
   const token = readSessionToken(request);
   if (!token) return;
-  const db = getDb();
-  await db`DELETE FROM sessions WHERE token_hash = ${sessionDigest(token)}`;
+  await db.delete(sessions).where(eq(sessions.tokenHash, sessionDigest(token)));
 }
 
 export function sessionCookie(token: string, maxAge: number) {
