@@ -44,6 +44,11 @@ Cloudflare's automatic dependency installation uses npm rather than Bun's
 frozen-lockfile mode. `wrangler.toml` provides the Pages output directory,
 compatibility date, and production storage bindings.
 
+If using Cloudflare Workers Builds with a custom deploy command, set it to
+`npm run deploy:cloudflare`. This command builds the Vite site and deploys the
+`dist` directory with `wrangler pages deploy`. Do not use `wrangler deploy`:
+that command deploys Workers scripts, not this Pages project.
+
 Configure separate D1 and R2 bindings for Cloudflare's Preview environment in
 the Pages project settings before enabling preview deployments. Do not point
 preview builds at the production database or assets bucket.

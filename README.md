@@ -58,7 +58,9 @@ This project is built with:
 
 See [CLOUDFLARE_SETUP.md](./CLOUDFLARE_SETUP.md) for D1, R2, secret, and
 Cloudflare Pages configuration instructions. The Pages build uses
-`npm run build`; Cloudflare installs from the committed npm lockfile.
+`npm run build`; Cloudflare installs from the committed npm lockfile. When
+using Workers Builds with a custom deploy command, set it to
+`npm run deploy:cloudflare` (not `wrangler deploy`).
 
 ## Can I connect a custom domain to my project?
 
