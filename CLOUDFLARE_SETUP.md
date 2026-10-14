@@ -80,23 +80,29 @@ a `VITE_` variable or commit it to the repository.
 
 ## Local development and verification
 
-Install from the committed lockfile, build the app, then run Pages locally:
+Install from the committed lockfile and start the local Pages runtime:
 
 ```sh
 npm ci
-npm run build
-npx wrangler pages dev dist
+npm run dev
 ```
 
-For local secrets, create a git-ignored `.dev.vars` file:
+This builds the frontend, applies pending migrations to the local D1 emulator,
+and serves the app and Pages Functions together. The command uses Wrangler's
+local D1 and R2 emulators; it does not change the remote database. To use Vite
+HMR for frontend-only work, run `npm run dev:vite` instead; API requests require
+the Pages runtime.
+
+For local secrets, create a git-ignored `.dev.vars` file before starting the
+server:
 
 ```dotenv
 ADMIN_PASSWORD_HASH=pbkdf2$...
 SUPPLIER_SECRET_ENCRYPTION_KEY=...
 ```
 
-The local D1 emulator uses the configured binding and migrations. Apply them
-locally with:
+The `npm run dev` command applies pending migrations automatically. You can
+also apply them manually with:
 
 ```sh
 npx wrangler d1 migrations apply elovyn-store --local

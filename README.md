@@ -26,9 +26,14 @@ cd <YOUR_PROJECT_NAME>
 # Step 3: Install the necessary dependencies.
 npm i
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# Step 4: Start the app with its Cloudflare Pages API and local D1 database.
 npm run dev
 ```
+
+`npm run dev` builds the frontend and starts the Cloudflare Pages runtime so the
+store API and local D1 database work together. It does not provide Vite HMR;
+use `npm run dev:vite` for frontend-only work, where `/api` routes are not
+available.
 
 **Edit a file directly in GitHub**
 
