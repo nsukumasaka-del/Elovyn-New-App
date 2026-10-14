@@ -49,6 +49,33 @@ If using Cloudflare Workers Builds with a custom deploy command, set it to
 `dist` directory with `wrangler pages deploy`. Do not use `wrangler deploy`:
 that command deploys Workers scripts, not this Pages project.
 
+### Configure a Cloudflare API token for deployment
+
+For `npm run deploy:cloudflare`, create a scoped API token and make it available
+to the deployment environment as `CLOUDFLARE_API_TOKEN`:
+
+1. In the Cloudflare dashboard, open **My Profile → API Tokens** and choose
+   **Create Token**.
+2. Choose **Create Custom Token**.
+3. Add the permission **Account → Cloudflare Pages → Edit** (listed as
+   **Pages Write** in the API permission reference). This lets Wrangler inspect
+   the Pages project and upload deployments.
+4. Under **Account Resources**, select **Include → Specific account** and
+   choose the account that owns `elovyn-store`.
+5. Do not add zone permissions for a standard Pages deployment. Add
+   **Zone → DNS → Edit** only if the deployment automation also manages DNS
+   records or custom-domain configuration.
+6. Create the token, copy it once, and add it to the build/deployment
+   environment as the secret `CLOUDFLARE_API_TOKEN`. Do not commit it or expose
+   it in a `VITE_` variable.
+
+The token must be paired with the correct Cloudflare account. If Wrangler cannot
+select the account automatically, set `CLOUDFLARE_ACCOUNT_ID` in the deployment
+environment to that account's ID. For Cloudflare Pages' Git-integrated build
+pipeline, use build command `npm run build` and output directory `dist`; that
+pipeline handles deployment itself and does not need the custom deploy
+command.
+
 Configure separate D1 and R2 bindings for Cloudflare's Preview environment in
 the Pages project settings before enabling preview deployments. Do not point
 preview builds at the production database or assets bucket.
