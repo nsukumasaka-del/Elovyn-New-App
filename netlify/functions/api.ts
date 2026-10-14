@@ -96,6 +96,22 @@ async function requireAdmin(request: Request) {
   return user;
 }
 
+function getApiPath(url: URL) {
+  const publicPath = url.pathname === "/api"
+    ? ""
+    : url.pathname.startsWith("/api/")
+      ? url.pathname.slice("/api".length)
+      : null;
+  const functionPrefix = "/.netlify/functions/api";
+  const functionPath = url.pathname === functionPrefix
+    ? ""
+    : url.pathname.startsWith(`${functionPrefix}/`)
+      ? url.pathname.slice(functionPrefix.length)
+      : null;
+  const path = publicPath ?? functionPath ?? url.searchParams.get("path") ?? "";
+  return `/${path.replace(/^\/+|\/+$/g, "")}`;
+}
+
 async function authenticate(email: string, password: string): Promise<StoreUser> {
   if (email === primaryAdminEmail) {
     const adminPasswordHash = process.env.ADMIN_PASSWORD_HASH;
@@ -147,8 +163,13 @@ function encryptSecret(value: string) {
 
 async function route(request: Request) {
   const url = new URL(request.url);
-  const path = `/${(url.searchParams.get("path") ?? "").replace(/^\/+|\/+$/g, "")}`;
+  const path = getApiPath(url);
   const method = request.method;
+
+  if (path === "/health" && method === "GET") {
+    await db.execute(sql`select 1`);
+    return json({ ok: true, database: "connected" });
+  }
 
   if (path === "/auth/register" && method === "POST") {
     const body = await bodyAsJson(request);

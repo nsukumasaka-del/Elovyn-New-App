@@ -2,14 +2,33 @@ export type StoreUser = { id: string; email: string; role: "customer" | "admin" 
 export type CartProduct = { id: string; title: string; price: number; imageUrl: string };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api${path}`, {
-    ...init,
-    headers: {
-      ...(init?.body && !(init.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
-      ...init?.headers,
-    },
-  });
-  const data = await response.json().catch(() => ({})) as T & { error?: string };
+  let response: Response;
+  try {
+    response = await fetch(`/api${path}`, {
+      ...init,
+      headers: {
+        ...(init?.body && !(init.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
+        ...init?.headers,
+      },
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? ` (${error.message})` : "";
+    throw new Error(`Could not reach the store API. Check your connection and the Netlify function deployment${reason}`);
+  }
+
+  if (!response.headers.get("content-type")?.toLowerCase().includes("application/json")) {
+    if (response.status === 404 || response.headers.get("content-type")?.includes("text/html")) {
+      throw new Error(`Store API route is unavailable (HTTP ${response.status}). Check the Netlify /api/* function rewrite and deployment.`);
+    }
+    throw new Error(`Store API returned an unexpected response (HTTP ${response.status}).`);
+  }
+
+  let data: T & { error?: string };
+  try {
+    data = await response.json() as T & { error?: string };
+  } catch {
+    throw new Error("Store API returned invalid JSON.");
+  }
   if (!response.ok) throw new Error(data.error || `Request failed (${response.status}).`);
   return data;
 }

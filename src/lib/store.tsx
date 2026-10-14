@@ -24,6 +24,8 @@ export type StoreProduct = {
 type StoreContextValue = {
   user: StoreUser | null;
   ready: boolean;
+  connectionError: string | null;
+  retryConnection: () => void;
   products: StoreProduct[];
   cart: CartLine[];
   wishlist: string[];
@@ -77,6 +79,8 @@ function readWishlist(): string[] {
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<StoreUser | null>(null);
   const [ready, setReady] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   const [products, setProducts] = useState<StoreProduct[]>([]);
   const [cart, setCart] = useState<CartLine[]>(readStoredCart);
   const [wishlist, setWishlist] = useState<string[]>(readWishlist);
@@ -95,8 +99,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [user]);
 
+  const retryConnection = useCallback(() => {
+    setReady(false);
+    setRetryCount((count) => count + 1);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
+    setConnectionError(null);
     request<{ user: StoreUser | null }>("/auth/session")
       .then(async ({ user: currentUser }) => {
         if (cancelled) return;
@@ -126,10 +136,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           localStorage.setItem(cartStorageKey, JSON.stringify(merged));
         }
       })
-      .catch((error: Error) => toast.error(`Store connection unavailable: ${error.message}`))
+      .catch((error: Error) => {
+        if (!cancelled) setConnectionError(error.message);
+      })
       .finally(() => { if (!cancelled) setReady(true); });
     return () => { cancelled = true; };
-  }, []);
+  }, [retryCount]);
 
   const addToCart = useCallback((product: CartProduct) => {
     const current = readStoredCart();
@@ -217,15 +229,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [cart, user]);
 
   const value = useMemo(() => ({
-    user, ready, products, cart, wishlist, cartOpen, setCartOpen, authOpen, setAuthOpen,
+    user, ready, connectionError, retryConnection, products, cart, wishlist, cartOpen, setCartOpen, authOpen, setAuthOpen,
     authMode, setAuthMode, addToCart, changeQuantity, removeFromCart,
     toggleWishlist, signIn, signUp, signOut, checkout,
   }), [
-    user, ready, products, cart, wishlist, cartOpen, authOpen, authMode, addToCart,
+    user, ready, connectionError, retryConnection, products, cart, wishlist, cartOpen, authOpen, authMode, addToCart,
     changeQuantity, removeFromCart, toggleWishlist, signIn, signUp, signOut, checkout,
   ]);
 
-  return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
+  return (
+    <StoreContext.Provider value={value}>
+      {connectionError && (
+        <div role="alert" className="fixed inset-x-0 top-0 z-[100] flex items-center justify-center gap-4 bg-red-50 px-4 py-3 text-sm text-red-900 shadow-md">
+          <p><strong>Store connection unavailable.</strong> {connectionError}</p>
+          <button
+            type="button"
+            onClick={retryConnection}
+            disabled={!ready}
+            className="shrink-0 rounded-full border border-red-300 px-3 py-1 font-medium hover:bg-red-100 disabled:opacity-50"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      {children}
+    </StoreContext.Provider>
+  );
 }
 
 export function useStore() {
