@@ -11,7 +11,33 @@ import {
   verifyPassword,
   type StoreUser,
 } from "./lib/auth";
-import { getDb, StorageNotConfiguredError } from "./lib/db";
+import { asc, desc, eq, sql } from "drizzle-orm";
+import { db } from "../../db/index.js";
+import { orders, products, supplierIntegrations, users } from "../../db/schema.js";
+
+const productColumns = {
+  id: products.id,
+  title: products.title,
+  sku: products.sku,
+  price: products.price,
+  stock_quantity: products.stockQuantity,
+  status: sql<string>`CASE WHEN ${products.stockQuantity} <= 0 THEN 'Out of Stock'
+    WHEN ${products.stockQuantity} <= 5 THEN 'Low Stock'
+    ELSE 'In Stock' END`.as("status"),
+  category: products.category,
+  image_url: products.imageUrl,
+  updated_at: products.updatedAt,
+};
+
+const supplierColumns = {
+  id: supplierIntegrations.id,
+  name: supplierIntegrations.name,
+  api_base_url: supplierIntegrations.apiBaseUrl,
+  webhook_url: supplierIntegrations.webhookUrl,
+  auto_sync: supplierIntegrations.autoSync,
+  has_api_key: sql<boolean>`(${supplierIntegrations.encryptedApiKey} IS NOT NULL)`.as("has_api_key"),
+  updated_at: supplierIntegrations.updatedAt,
+};
 
 class ApiError extends Error {
   constructor(
@@ -71,7 +97,6 @@ async function requireAdmin(request: Request) {
 }
 
 async function authenticate(email: string, password: string): Promise<StoreUser> {
-  const db = getDb();
   if (email === primaryAdminEmail) {
     const adminPasswordHash = process.env.ADMIN_PASSWORD_HASH;
     if (!adminPasswordHash) {
@@ -83,24 +108,20 @@ async function authenticate(email: string, password: string): Promise<StoreUser>
     if (!await verifyPassword(password, adminPasswordHash)) {
       throw new ApiError("Email or password is incorrect.", 401);
     }
-    const rows = await db<StoreUser[]>`
-      INSERT INTO users (id, email, password_hash, role)
-      VALUES (${randomUUID()}, ${primaryAdminEmail}, ${adminPasswordHash}, 'admin')
-      ON CONFLICT (email) DO UPDATE
-      SET password_hash = EXCLUDED.password_hash, role = 'admin'
-      RETURNING id, email, role
-    `;
+    const rows = await db
+      .insert(users)
+      .values({ id: randomUUID(), email: primaryAdminEmail, passwordHash: adminPasswordHash, role: "admin" })
+      .onConflictDoUpdate({ target: users.email, set: { passwordHash: adminPasswordHash, role: "admin" } })
+      .returning({ id: users.id, email: users.email, role: users.role });
     return rows[0];
   }
 
-  const users = await db<Array<StoreUser & { password_hash: string }>>`
-    SELECT id, email, role, password_hash
-    FROM users
-    WHERE email = ${email}
-    LIMIT 1
-  `;
-  const user = users[0];
-  if (!user || !await verifyPassword(password, user.password_hash)) {
+  const [user] = await db
+    .select({ id: users.id, email: users.email, role: users.role, passwordHash: users.passwordHash })
+    .from(users)
+    .where(eq(users.email, email))
+    .limit(1);
+  if (!user || !await verifyPassword(password, user.passwordHash)) {
     throw new ApiError("Email or password is incorrect.", 401);
   }
   return { id: user.id, email: user.email, role: user.role };
@@ -128,7 +149,6 @@ async function route(request: Request) {
   const url = new URL(request.url);
   const path = `/${(url.searchParams.get("path") ?? "").replace(/^\/+|\/+$/g, "")}`;
   const method = request.method;
-  const db = getDb();
 
   if (path === "/auth/register" && method === "POST") {
     const body = await bodyAsJson(request);
@@ -139,12 +159,11 @@ async function route(request: Request) {
       throw new ApiError("This email is reserved for the primary administrator.", 409);
     }
     const passwordHash = await hashPassword(password);
-    const rows = await db<StoreUser[]>`
-      INSERT INTO users (id, email, password_hash, role)
-      VALUES (${randomUUID()}, ${email}, ${passwordHash}, 'customer')
-      ON CONFLICT (email) DO NOTHING
-      RETURNING id, email, role
-    `;
+    const rows = await db
+      .insert(users)
+      .values({ id: randomUUID(), email, passwordHash, role: "customer" })
+      .onConflictDoNothing({ target: users.email })
+      .returning({ id: users.id, email: users.email, role: users.role });
     if (!rows[0]) throw new ApiError("An account with this email already exists.", 409);
     const session = await createSession(rows[0]);
     return json({ user: rows[0] }, 201, { "Set-Cookie": sessionCookie(session.token, session.maxAge) });
@@ -169,16 +188,8 @@ async function route(request: Request) {
   }
 
   if (path === "/products" && method === "GET") {
-    const products = await db`
-      SELECT id, title, sku, price, stock_quantity,
-        CASE WHEN stock_quantity <= 0 THEN 'Out of Stock'
-             WHEN stock_quantity <= 5 THEN 'Low Stock'
-             ELSE 'In Stock' END AS status,
-        category, image_url, updated_at
-      FROM products
-      ORDER BY updated_at DESC
-    `;
-    return json({ products });
+    const rows = await db.select(productColumns).from(products).orderBy(desc(products.updatedAt));
+    return json({ products: rows });
   }
 
   if (path === "/cart" && (method === "GET" || method === "PUT")) {
@@ -209,13 +220,18 @@ async function route(request: Request) {
 
   if (path === "/orders" && method === "GET") {
     const user = await requireUser(request);
-    const orders = await db`
-      SELECT id, total_amount, status, items_json, created_at
-      FROM orders
-      WHERE user_id = ${user.id}
-      ORDER BY created_at DESC
-    `;
-    return json({ orders });
+    const rows = await db
+      .select({
+        id: orders.id,
+        total_amount: orders.totalAmount,
+        status: orders.status,
+        items_json: orders.itemsJson,
+        created_at: orders.createdAt,
+      })
+      .from(orders)
+      .where(eq(orders.userId, user.id))
+      .orderBy(desc(orders.createdAt));
+    return json({ orders: rows });
   }
 
   if (path === "/orders" && method === "POST") {
@@ -228,22 +244,16 @@ async function route(request: Request) {
 
   if (path === "/admin/inventory" && method === "GET") {
     await requireAdmin(request);
-    const products = await db`
-      SELECT id, title, sku, price, stock_quantity,
-        CASE WHEN stock_quantity <= 0 THEN 'Out of Stock'
-             WHEN stock_quantity <= 5 THEN 'Low Stock'
-             ELSE 'In Stock' END AS status,
-        category, image_url, updated_at
-      FROM products
-      ORDER BY title
-    `;
-    const stats = await db`
-      SELECT
-        (SELECT COALESCE(SUM(total_amount), 0) FROM orders WHERE status IN ('Paid', 'Completed', 'Fulfilled')) AS total_sales,
-        (SELECT COUNT(*) FROM orders) AS order_count,
-        (SELECT COUNT(*) FROM products) AS product_count
-    `;
-    return json({ products, stats: stats[0] });
+    const rows = await db.select(productColumns).from(products).orderBy(asc(products.title));
+    const [stats] = await db
+      .select({
+        total_sales: sql<string>`(SELECT COALESCE(SUM(${orders.totalAmount}), 0) FROM ${orders}
+          WHERE ${orders.status} IN ('Paid', 'Completed', 'Fulfilled'))`,
+        order_count: sql<string>`(SELECT COUNT(*) FROM ${orders})`,
+        product_count: sql<string>`(SELECT COUNT(*) FROM ${products})`,
+      })
+      .from(sql`(SELECT 1) AS stats`);
+    return json({ products: rows, stats });
   }
 
   if (path === "/admin/inventory/stock" && method === "PATCH") {
@@ -254,16 +264,18 @@ async function route(request: Request) {
     if (!Number.isInteger(change) || change === 0 || Math.abs(change) > 9999) {
       throw new ApiError("Stock change must be a non-zero integer.", 400);
     }
-    const updated = await db`
-      UPDATE products
-      SET stock_quantity = GREATEST(0, stock_quantity + ${change}),
-          status = CASE WHEN GREATEST(0, stock_quantity + ${change}) <= 0 THEN 'Out of Stock'
-                        WHEN GREATEST(0, stock_quantity + ${change}) <= 5 THEN 'Low Stock'
-                        ELSE 'In Stock' END,
-          updated_at = NOW()
-      WHERE id = ${id}
-      RETURNING id, stock_quantity, status
-    `;
+    const newStock = sql`GREATEST(0, ${products.stockQuantity} + ${change})`;
+    const updated = await db
+      .update(products)
+      .set({
+        stockQuantity: newStock,
+        status: sql`CASE WHEN ${newStock} <= 0 THEN 'Out of Stock'
+                         WHEN ${newStock} <= 5 THEN 'Low Stock'
+                         ELSE 'In Stock' END`,
+        updatedAt: sql`NOW()`,
+      })
+      .where(eq(products.id, id))
+      .returning({ id: products.id, stock_quantity: products.stockQuantity, status: products.status });
     if (!updated[0]) throw new ApiError("Product not found.", 404);
     return json({ product: updated[0] });
   }
@@ -281,25 +293,33 @@ async function route(request: Request) {
     const category = requiredString(body.category, "Category", 100);
     const imageUrl = typeof body.image_url === "string" ? body.image_url.slice(0, 500) : null;
     const status = statusForStock(stock);
-    const rows = await db`
-      INSERT INTO products (id, title, sku, price, stock_quantity, status, category, image_url)
-      VALUES (${randomUUID()}, ${title}, ${sku}, ${price.toFixed(2)}, ${stock}, ${status}, ${category}, ${imageUrl})
-      ON CONFLICT (sku) DO NOTHING
-      RETURNING id, title, sku, price, stock_quantity, status, category, image_url, updated_at
-    `;
+    const rows = await db
+      .insert(products)
+      .values({
+        id: randomUUID(), title, sku, price: price.toFixed(2), stockQuantity: stock, status, category, imageUrl,
+      })
+      .onConflictDoNothing({ target: products.sku })
+      .returning({
+        id: products.id,
+        title: products.title,
+        sku: products.sku,
+        price: products.price,
+        stock_quantity: products.stockQuantity,
+        status: products.status,
+        category: products.category,
+        image_url: products.imageUrl,
+        updated_at: products.updatedAt,
+      });
     if (!rows[0]) throw new ApiError("A product with this SKU already exists.", 409);
     return json({ product: rows[0] }, 201);
   }
 
   if (path === "/admin/suppliers" && method === "GET") {
     await requireAdmin(request);
-    const suppliers = await db`
-      SELECT id, name, api_base_url, webhook_url, auto_sync,
-        (encrypted_api_key IS NOT NULL) AS has_api_key,
-        updated_at
-      FROM supplier_integrations
-      ORDER BY name
-    `;
+    const suppliers = await db
+      .select(supplierColumns)
+      .from(supplierIntegrations)
+      .orderBy(asc(supplierIntegrations.name));
     return json({ suppliers });
   }
 
@@ -323,26 +343,18 @@ async function route(request: Request) {
     const apiKey = typeof body.api_key === "string" ? body.api_key.trim() : "";
     const encryptedKey = apiKey ? encryptSecret(apiKey) : null;
     const autoSync = body.auto_sync === true;
-    const rows = encryptedKey
-      ? await db`
-          INSERT INTO supplier_integrations (id, name, api_base_url, webhook_url, encrypted_api_key, auto_sync)
-          VALUES (${id}, ${name}, ${apiBaseUrl || null}, ${webhookUrl || null}, ${encryptedKey}, ${autoSync})
-          ON CONFLICT (id) DO UPDATE SET
-            name = EXCLUDED.name, api_base_url = EXCLUDED.api_base_url,
-            webhook_url = EXCLUDED.webhook_url, encrypted_api_key = EXCLUDED.encrypted_api_key,
-            auto_sync = EXCLUDED.auto_sync, updated_at = NOW()
-          RETURNING id, name, api_base_url, webhook_url, auto_sync, TRUE AS has_api_key
-        `
-      : await db`
-          INSERT INTO supplier_integrations (id, name, api_base_url, webhook_url, auto_sync)
-          VALUES (${id}, ${name}, ${apiBaseUrl || null}, ${webhookUrl || null}, ${autoSync})
-          ON CONFLICT (id) DO UPDATE SET
-            name = EXCLUDED.name, api_base_url = EXCLUDED.api_base_url,
-            webhook_url = EXCLUDED.webhook_url, auto_sync = EXCLUDED.auto_sync,
-            updated_at = NOW()
-          RETURNING id, name, api_base_url, webhook_url, auto_sync,
-            (encrypted_api_key IS NOT NULL) AS has_api_key
-        `;
+    const values = {
+      name,
+      apiBaseUrl: apiBaseUrl || null,
+      webhookUrl: webhookUrl || null,
+      autoSync,
+      ...(encryptedKey ? { encryptedApiKey: encryptedKey } : {}),
+    };
+    const rows = await db
+      .insert(supplierIntegrations)
+      .values({ id, ...values })
+      .onConflictDoUpdate({ target: supplierIntegrations.id, set: { ...values, updatedAt: sql`NOW()` } })
+      .returning(supplierColumns);
     return json({ supplier: rows[0] }, 200);
   }
 
@@ -388,7 +400,6 @@ export default async (request: Request) => {
     return await route(request);
   } catch (error) {
     if (error instanceof ApiError) return json({ error: error.message }, error.status);
-    if (error instanceof StorageNotConfiguredError) return json({ error: error.message }, 503);
     console.error("Store API request failed:", error);
     return json({ error: "The request could not be completed. Check the function logs for details." }, 500);
   }
