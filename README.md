@@ -54,9 +54,11 @@ This project is built with:
 - shadcn-ui
 - Tailwind CSS
 
-## How can I deploy this project?
+## Deploy to Cloudflare Pages
 
-You can deploy this project using various hosting platforms like Vercel, Netlify, or your preferred hosting service.
+See [CLOUDFLARE_SETUP.md](./CLOUDFLARE_SETUP.md) for D1, R2, secret, and
+Cloudflare Pages configuration instructions. The Pages build uses
+`npm run build`; Cloudflare installs from the committed npm lockfile.
 
 ## Can I connect a custom domain to my project?
 

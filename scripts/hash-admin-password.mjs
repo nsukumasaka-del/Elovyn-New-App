@@ -1,4 +1,4 @@
-import { randomBytes, scryptSync } from "node:crypto";
+import { pbkdf2Sync, randomBytes } from "node:crypto";
 import { stdin, stdout } from "node:process";
 
 if (!stdin.isTTY || !stdout.isTTY) {
@@ -18,10 +18,11 @@ stdin.on("data", (character) => {
     stdin.setRawMode(false);
     stdin.pause();
     stdout.write("\n");
+    const iterations = 600_000;
     const salt = randomBytes(16).toString("hex");
-    const digest = scryptSync(password, salt, 64).toString("hex");
+    const digest = pbkdf2Sync(password, Buffer.from(salt, "hex"), iterations, 32, "sha256").toString("hex");
     password = "";
-    console.log(`scrypt$${salt}$${digest}`);
+    console.log(`pbkdf2$${iterations}$${salt}$${digest}`);
     return;
   }
   if (character === "\u007f") {

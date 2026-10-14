@@ -13,12 +13,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     });
   } catch (error) {
     const reason = error instanceof Error ? ` (${error.message})` : "";
-    throw new Error(`Could not reach the store API. Check your connection and the Netlify function deployment${reason}`);
+    throw new Error(`Could not reach the store API. Check your connection and the Cloudflare Pages deployment${reason}`);
   }
 
   if (!response.headers.get("content-type")?.toLowerCase().includes("application/json")) {
     if (response.status === 404 || response.headers.get("content-type")?.includes("text/html")) {
-      throw new Error(`Store API route is unavailable (HTTP ${response.status}). Check the Netlify /api/* function rewrite and deployment.`);
+      throw new Error(`Store API route is unavailable (HTTP ${response.status}). Check the Cloudflare Pages Function deployment.`);
     }
     throw new Error(`Store API returned an unexpected response (HTTP ${response.status}).`);
   }

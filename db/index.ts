@@ -1,4 +1,8 @@
-import { drizzle } from "drizzle-orm/netlify-db";
-import * as schema from "./schema.js";
+import { drizzle } from "drizzle-orm/d1";
+import * as schema from "./schema";
 
-export const db = drizzle({ schema });
+export function createDb(binding: D1Database) {
+  return drizzle(binding, { schema });
+}
+
+export type StoreDb = ReturnType<typeof createDb>;

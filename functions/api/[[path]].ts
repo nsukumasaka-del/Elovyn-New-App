@@ -1,5 +1,6 @@
-import { createCipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
-import { getStore } from "@netlify/blobs";
+import { asc, desc, eq, sql } from "drizzle-orm";
+import { createDb } from "../../db";
+import { carts, orders, products, supplierIntegrations, users } from "../../db/schema";
 import {
   clearedSessionCookie,
   createSession,
@@ -10,10 +11,19 @@ import {
   sessionCookie,
   verifyPassword,
   type StoreUser,
-} from "./lib/auth";
-import { asc, desc, eq, sql } from "drizzle-orm";
-import { db } from "../../db/index.js";
-import { orders, products, supplierIntegrations, users } from "../../db/schema.js";
+} from "../lib/auth";
+
+export interface Env {
+  DB: D1Database;
+  PRODUCT_ASSETS: R2Bucket;
+  ADMIN_PASSWORD_HASH: string;
+  SUPPLIER_SECRET_ENCRYPTION_KEY: string;
+}
+
+interface PagesContext {
+  request: Request;
+  env: Env;
+}
 
 const productColumns = {
   id: products.id,
@@ -84,50 +94,42 @@ function isPrimaryAdmin(user: StoreUser | null): user is StoreUser {
     && user.email.trim().toLowerCase() === primaryAdminEmail.toLowerCase();
 }
 
-async function requireUser(request: Request) {
-  const user = await getSessionUser(request);
+async function requireUser(db: ReturnType<typeof createDb>, request: Request) {
+  const user = await getSessionUser(db, request);
   if (!user) throw new ApiError("Sign in to continue.", 401);
   return user;
 }
 
-async function requireAdmin(request: Request) {
-  const user = await getSessionUser(request);
+async function requireAdmin(db: ReturnType<typeof createDb>, request: Request) {
+  const user = await getSessionUser(db, request);
   if (!isPrimaryAdmin(user)) throw new ApiError("Administrator access is required.", 403);
   return user;
 }
 
-function getApiPath(url: URL) {
-  const publicPath = url.pathname === "/api"
-    ? ""
-    : url.pathname.startsWith("/api/")
-      ? url.pathname.slice("/api".length)
-      : null;
-  const functionPrefix = "/.netlify/functions/api";
-  const functionPath = url.pathname === functionPrefix
-    ? ""
-    : url.pathname.startsWith(`${functionPrefix}/`)
-      ? url.pathname.slice(functionPrefix.length)
-      : null;
-  const path = publicPath ?? functionPath ?? url.searchParams.get("path") ?? "";
-  return `/${path.replace(/^\/+|\/+$/g, "")}`;
-}
-
-async function authenticate(email: string, password: string): Promise<StoreUser> {
+async function authenticate(
+  db: ReturnType<typeof createDb>,
+  env: Env,
+  email: string,
+  password: string,
+): Promise<StoreUser> {
   if (email === primaryAdminEmail) {
-    const adminPasswordHash = process.env.ADMIN_PASSWORD_HASH;
+    const adminPasswordHash = env.ADMIN_PASSWORD_HASH;
     if (!adminPasswordHash) {
-      throw new ApiError("Primary administrator credentials are not configured on Netlify.", 503);
+      throw new ApiError("Primary administrator credentials are not configured for this Cloudflare deployment.", 503);
     }
-    if (!/^scrypt\$[a-f\d]{32}\$[a-f\d]{128}$/i.test(adminPasswordHash)) {
-      throw new ApiError("ADMIN_PASSWORD_HASH is invalid. Regenerate it with the setup utility.", 503);
+    if (!/^pbkdf2\$\d{6,7}\$[a-f\d]{32}\$[a-f\d]{64}$/i.test(adminPasswordHash)) {
+      throw new ApiError("ADMIN_PASSWORD_HASH is invalid. Regenerate it with the password setup utility.", 503);
     }
     if (!await verifyPassword(password, adminPasswordHash)) {
       throw new ApiError("Email or password is incorrect.", 401);
     }
     const rows = await db
       .insert(users)
-      .values({ id: randomUUID(), email: primaryAdminEmail, passwordHash: adminPasswordHash, role: "admin" })
-      .onConflictDoUpdate({ target: users.email, set: { passwordHash: adminPasswordHash, role: "admin" } })
+      .values({ id: crypto.randomUUID(), email: primaryAdminEmail, passwordHash: adminPasswordHash, role: "admin" })
+      .onConflictDoUpdate({
+        target: users.email,
+        set: { passwordHash: adminPasswordHash, role: "admin" },
+      })
       .returning({ id: users.id, email: users.email, role: users.role });
     return rows[0];
   }
@@ -149,25 +151,32 @@ function statusForStock(quantity: number) {
   return "In Stock";
 }
 
-function encryptSecret(value: string) {
-  const secret = process.env.SUPPLIER_SECRET_ENCRYPTION_KEY;
-  if (!secret) {
-    throw new ApiError("Set SUPPLIER_SECRET_ENCRYPTION_KEY on Netlify before saving supplier credentials.", 503);
-  }
-  const key = createHash("sha256").update(secret).digest();
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key, iv);
-  const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
-  return `${iv.toString("hex")}.${cipher.getAuthTag().toString("hex")}.${encrypted.toString("hex")}`;
+function bytesToHex(bytes: Uint8Array) {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function route(request: Request) {
+async function encryptSecret(value: string, secret: string) {
+  if (!secret) {
+    throw new ApiError("Set SUPPLIER_SECRET_ENCRYPTION_KEY as a Cloudflare secret before saving supplier credentials.", 503);
+  }
+  const rawKey = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
+  const key = await crypto.subtle.importKey("raw", rawKey, "AES-GCM", false, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    new TextEncoder().encode(value),
+  );
+  return `${bytesToHex(iv)}.${bytesToHex(new Uint8Array(encrypted))}`;
+}
+
+async function route(request: Request, env: Env, db: ReturnType<typeof createDb>) {
   const url = new URL(request.url);
-  const path = getApiPath(url);
+  const path = `/${url.pathname.replace(/^\/api\/?/, "").replace(/\/+$/, "")}`;
   const method = request.method;
 
   if (path === "/health" && method === "GET") {
-    await db.execute(sql`select 1`);
+    await env.DB.prepare("SELECT 1").first();
     return json({ ok: true, database: "connected" });
   }
 
@@ -182,30 +191,37 @@ async function route(request: Request) {
     const passwordHash = await hashPassword(password);
     const rows = await db
       .insert(users)
-      .values({ id: randomUUID(), email, passwordHash, role: "customer" })
+      .values({ id: crypto.randomUUID(), email, passwordHash, role: "customer" })
       .onConflictDoNothing({ target: users.email })
       .returning({ id: users.id, email: users.email, role: users.role });
     if (!rows[0]) throw new ApiError("An account with this email already exists.", 409);
-    const session = await createSession(rows[0]);
-    return json({ user: rows[0] }, 201, { "Set-Cookie": sessionCookie(session.token, session.maxAge) });
+    const session = await createSession(db, rows[0]);
+    const secure = url.protocol === "https:" ? "; Secure" : "";
+    return json({ user: rows[0] }, 201, {
+      "Set-Cookie": sessionCookie(session.token, session.maxAge, secure),
+    });
   }
 
   if (path === "/auth/login" && method === "POST") {
     const body = await bodyAsJson(request);
     const email = normalizeEmail(body.email);
     const password = requiredString(body.password, "Password", 256);
-    const user = await authenticate(email, password);
-    const session = await createSession(user);
-    return json({ user }, 200, { "Set-Cookie": sessionCookie(session.token, session.maxAge) });
+    const user = await authenticate(db, env, email, password);
+    const session = await createSession(db, user);
+    const secure = url.protocol === "https:" ? "; Secure" : "";
+    return json({ user }, 200, {
+      "Set-Cookie": sessionCookie(session.token, session.maxAge, secure),
+    });
   }
 
   if (path === "/auth/session" && method === "GET") {
-    return json({ user: await getSessionUser(request) });
+    return json({ user: await getSessionUser(db, request) });
   }
 
   if (path === "/auth/logout" && method === "POST") {
-    await deleteSession(request);
-    return json({ ok: true }, 200, { "Set-Cookie": clearedSessionCookie() });
+    await deleteSession(db, request);
+    const secure = url.protocol === "https:" ? "; Secure" : "";
+    return json({ ok: true }, 200, { "Set-Cookie": clearedSessionCookie(secure) });
   }
 
   if (path === "/products" && method === "GET") {
@@ -214,12 +230,21 @@ async function route(request: Request) {
   }
 
   if (path === "/cart" && (method === "GET" || method === "PUT")) {
-    const user = await requireUser(request);
-    const store = getStore("elovyn-carts");
-    const key = `user-${user.id}`;
+    const user = await requireUser(db, request);
     if (method === "GET") {
-      const cart = await store.get(key, { type: "json" }) ?? [];
-      return json({ cart });
+      const [saved] = await db
+        .select({ itemsJson: carts.itemsJson })
+        .from(carts)
+        .where(eq(carts.userId, user.id))
+        .limit(1);
+      if (!saved) return json({ cart: [] });
+      try {
+        const cart: unknown = JSON.parse(saved.itemsJson);
+        if (!Array.isArray(cart)) throw new Error("Cart must be an array.");
+        return json({ cart });
+      } catch {
+        throw new ApiError("Saved cart data is invalid. Clear the saved cart and try again.", 500);
+      }
     }
     const body = await bodyAsJson(request);
     if (!Array.isArray(body.cart) || body.cart.length > 100) {
@@ -235,12 +260,18 @@ async function route(request: Request) {
       }
       return { id, quantity };
     });
-    await store.setJSON(key, cart);
+    await db
+      .insert(carts)
+      .values({ userId: user.id, itemsJson: JSON.stringify(cart) })
+      .onConflictDoUpdate({
+        target: carts.userId,
+        set: { itemsJson: JSON.stringify(cart), updatedAt: sql`CURRENT_TIMESTAMP` },
+      });
     return json({ cart });
   }
 
   if (path === "/orders" && method === "GET") {
-    const user = await requireUser(request);
+    const user = await requireUser(db, request);
     const rows = await db
       .select({
         id: orders.id,
@@ -256,7 +287,7 @@ async function route(request: Request) {
   }
 
   if (path === "/orders" && method === "POST") {
-    await requireUser(request);
+    await requireUser(db, request);
     throw new ApiError(
       "Online checkout is unavailable because no payment provider is configured. Your cart and inventory have not been changed.",
       503,
@@ -264,28 +295,28 @@ async function route(request: Request) {
   }
 
   if (path === "/admin/inventory" && method === "GET") {
-    await requireAdmin(request);
+    await requireAdmin(db, request);
     const rows = await db.select(productColumns).from(products).orderBy(asc(products.title));
     const [stats] = await db
       .select({
-        total_sales: sql<string>`(SELECT COALESCE(SUM(${orders.totalAmount}), 0) FROM ${orders}
-          WHERE ${orders.status} IN ('Paid', 'Completed', 'Fulfilled'))`,
-        order_count: sql<string>`(SELECT COUNT(*) FROM ${orders})`,
-        product_count: sql<string>`(SELECT COUNT(*) FROM ${products})`,
+        total_sales: sql<number>`COALESCE((SELECT SUM(${orders.totalAmount}) FROM ${orders}
+          WHERE ${orders.status} IN ('Paid', 'Completed', 'Fulfilled')), 0)`,
+        order_count: sql<number>`(SELECT COUNT(*) FROM ${orders})`,
+        product_count: sql<number>`COUNT(*)`,
       })
-      .from(sql`(SELECT 1) AS stats`);
+      .from(products);
     return json({ products: rows, stats });
   }
 
   if (path === "/admin/inventory/stock" && method === "PATCH") {
-    await requireAdmin(request);
+    await requireAdmin(db, request);
     const body = await bodyAsJson(request);
     const id = requiredString(body.id, "Product id", 100);
     const change = Number(body.change);
     if (!Number.isInteger(change) || change === 0 || Math.abs(change) > 9999) {
       throw new ApiError("Stock change must be a non-zero integer.", 400);
     }
-    const newStock = sql`GREATEST(0, ${products.stockQuantity} + ${change})`;
+    const newStock = sql`MAX(0, ${products.stockQuantity} + ${change})`;
     const updated = await db
       .update(products)
       .set({
@@ -293,7 +324,7 @@ async function route(request: Request) {
         status: sql`CASE WHEN ${newStock} <= 0 THEN 'Out of Stock'
                          WHEN ${newStock} <= 5 THEN 'Low Stock'
                          ELSE 'In Stock' END`,
-        updatedAt: sql`NOW()`,
+        updatedAt: sql`CURRENT_TIMESTAMP`,
       })
       .where(eq(products.id, id))
       .returning({ id: products.id, stock_quantity: products.stockQuantity, status: products.status });
@@ -302,7 +333,7 @@ async function route(request: Request) {
   }
 
   if (path === "/admin/products" && method === "POST") {
-    await requireAdmin(request);
+    await requireAdmin(db, request);
     const body = await bodyAsJson(request);
     const title = requiredString(body.title, "Product title");
     const sku = requiredString(body.sku, "SKU", 100);
@@ -317,7 +348,7 @@ async function route(request: Request) {
     const rows = await db
       .insert(products)
       .values({
-        id: randomUUID(), title, sku, price: price.toFixed(2), stockQuantity: stock, status, category, imageUrl,
+        id: crypto.randomUUID(), title, sku, price, stockQuantity: stock, status, category, imageUrl,
       })
       .onConflictDoNothing({ target: products.sku })
       .returning({
@@ -336,7 +367,7 @@ async function route(request: Request) {
   }
 
   if (path === "/admin/suppliers" && method === "GET") {
-    await requireAdmin(request);
+    await requireAdmin(db, request);
     const suppliers = await db
       .select(supplierColumns)
       .from(supplierIntegrations)
@@ -345,10 +376,10 @@ async function route(request: Request) {
   }
 
   if (path === "/admin/suppliers" && method === "PUT") {
-    await requireAdmin(request);
+    await requireAdmin(db, request);
     const body = await bodyAsJson(request);
     const name = requiredString(body.name, "Supplier name", 100);
-    const id = typeof body.id === "string" && body.id.trim() ? body.id.trim() : randomUUID();
+    const id = typeof body.id === "string" && body.id.trim() ? body.id.trim() : crypto.randomUUID();
     const apiBaseUrl = typeof body.api_base_url === "string" ? body.api_base_url.trim() : "";
     const webhookUrl = typeof body.webhook_url === "string" ? body.webhook_url.trim() : "";
     for (const [label, value] of [["API base URL", apiBaseUrl], ["Webhook URL", webhookUrl]] as const) {
@@ -362,7 +393,7 @@ async function route(request: Request) {
       }
     }
     const apiKey = typeof body.api_key === "string" ? body.api_key.trim() : "";
-    const encryptedKey = apiKey ? encryptSecret(apiKey) : null;
+    const encryptedKey = apiKey ? await encryptSecret(apiKey, env.SUPPLIER_SECRET_ENCRYPTION_KEY) : null;
     const autoSync = body.auto_sync === true;
     const values = {
       name,
@@ -374,7 +405,10 @@ async function route(request: Request) {
     const rows = await db
       .insert(supplierIntegrations)
       .values({ id, ...values })
-      .onConflictDoUpdate({ target: supplierIntegrations.id, set: { ...values, updatedAt: sql`NOW()` } })
+      .onConflictDoUpdate({
+        target: supplierIntegrations.id,
+        set: { ...values, updatedAt: sql`CURRENT_TIMESTAMP` },
+      })
       .returning(supplierColumns);
     return json({ supplier: rows[0] }, 200);
   }
@@ -382,18 +416,18 @@ async function route(request: Request) {
   if (path.startsWith("/assets/") && method === "GET") {
     const key = decodeURIComponent(path.slice("/assets/".length));
     if (!key || key.includes("/") || key.includes("..")) throw new ApiError("Asset not found.", 404);
-    const asset = await getStore("elovyn-product-assets").get(key, { type: "arrayBuffer" });
+    const asset = await env.PRODUCT_ASSETS.get(key);
     if (!asset) throw new ApiError("Asset not found.", 404);
-    const contentType = key.endsWith(".png") ? "image/png"
-      : key.endsWith(".webp") ? "image/webp"
-        : key.endsWith(".gif") ? "image/gif" : "image/jpeg";
-    return new Response(asset, {
-      headers: { "Content-Type": contentType, "Cache-Control": "public, max-age=31536000, immutable" },
+    return new Response(asset.body, {
+      headers: {
+        "Content-Type": asset.httpMetadata?.contentType ?? "application/octet-stream",
+        "Cache-Control": "public, max-age=31536000, immutable",
+      },
     });
   }
 
   if (path === "/admin/assets" && method === "POST") {
-    await requireAdmin(request);
+    await requireAdmin(db, request);
     const form = await request.formData();
     const file = form.get("file");
     if (!file || typeof file === "string") throw new ApiError("Select an image to upload.", 400);
@@ -406,22 +440,21 @@ async function route(request: Request) {
     const extension = extensions[file.type];
     if (!extension) throw new ApiError("Upload a JPEG, PNG, WebP, or GIF image.", 400);
     if (file.size > 5 * 1024 * 1024) throw new ApiError("Product images must be 5 MB or smaller.", 413);
-    const key = `${randomUUID()}.${extension}`;
-    await getStore("elovyn-product-assets").set(key, file, {
-      metadata: { contentType: file.type },
-    });
+    const key = `${crypto.randomUUID()}.${extension}`;
+    await env.PRODUCT_ASSETS.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type } });
     return json({ image_url: `/api/assets/${key}` }, 201);
   }
 
   throw new ApiError("API route not found.", 404);
 }
 
-export default async (request: Request) => {
+export async function onRequest({ request, env }: PagesContext) {
   try {
-    return await route(request);
+    const db = createDb(env.DB);
+    return await route(request, env, db);
   } catch (error) {
     if (error instanceof ApiError) return json({ error: error.message }, error.status);
     console.error("Store API request failed:", error);
-    return json({ error: "The request could not be completed. Check the function logs for details." }, 500);
+    return json({ error: "The request could not be completed. Check the Cloudflare Pages Function logs for details." }, 500);
   }
-};
+}
