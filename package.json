@@ -9,7 +9,7 @@
     "dev:cloudflare": "npm run build && wrangler d1 migrations apply elovyn-store --local && wrangler pages dev dist",
     "build": "vite build",
     "build:dev": "vite build --mode development",
-    "deploy:cloudflare": "npm run build && wrangler pages deploy dist --project-name elovyn-new-app",
+    "deploy:cloudflare": "npm run build && wrangler pages deploy dist --project-name elovyn-store",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
