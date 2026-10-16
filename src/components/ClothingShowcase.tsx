@@ -35,7 +35,7 @@ const clothes = [
   {
     id: 4,
     name: "Signature Hoodie",
-    category: "Hoodies",
+    category: "M/F Hoodies",
     price: "R 899.00",
     image: clothingImage1,
     accent: "Charcoal",
