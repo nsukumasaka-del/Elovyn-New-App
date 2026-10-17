@@ -17,10 +17,11 @@ The initial deployment can publish the storefront before its storage resources
 exist. The API will not be usable until the D1 and R2 resources are created and
 bound in the next section.
 
-`wrangler.toml` is intentionally limited to local development: it does not set
-`pages_build_output_dir`, so production Pages settings and bindings remain
-managed by the Cloudflare dashboard. Its all-zero D1 ID is only a local
-emulator placeholder and must not be used for a production binding.
+`wrangler.toml` sets `pages_build_output_dir = "./dist"` so Pages publishes the
+Vite production build rather than the uncompiled source files. It does not
+declare storage bindings until the real resources exist. `wrangler.local.toml`
+is used only for local development and contains an all-zero D1 ID for the local
+emulator; never use that ID for production.
 
 The repository uses `package-lock.json` and does not include a Bun lockfile, so
 Cloudflare's automatic dependency installation uses npm rather than Bun's
@@ -32,8 +33,7 @@ After the first deployment:
 
 1. Create a D1 database named `elovyn-store` in **Workers & Pages → D1** (or run
    `npx wrangler d1 create elovyn-store` after authenticating Wrangler). Copy
-   its UUID into the local `database_id` field in `wrangler.toml`; this enables
-   the local D1 emulator and is not used as the production binding.
+   its UUID for the production binding.
 2. Create an R2 bucket named `elovyn-product-assets` in **R2** (or run
    `npx wrangler r2 bucket create elovyn-product-assets`).
 3. Apply the schema and seed migrations:
@@ -42,11 +42,23 @@ After the first deployment:
    npx wrangler d1 migrations apply elovyn-store --remote
    ```
 
-4. In the Pages project, open **Settings → Bindings** and add:
-   - A D1 database binding named `DB`, connected to `elovyn-store`.
-   - An R2 bucket binding named `PRODUCT_ASSETS`, connected to
-     `elovyn-product-assets`.
-5. Redeploy the Pages project so the Functions receive the new bindings.
+4. Add the production bindings to `wrangler.toml`:
+
+   ```toml
+   [[d1_databases]]
+   binding = "DB"
+   database_name = "elovyn-store"
+   database_id = "<YOUR_D1_DATABASE_UUID>"
+   migrations_dir = "migrations"
+
+   [[r2_buckets]]
+   binding = "PRODUCT_ASSETS"
+   bucket_name = "elovyn-product-assets"
+   ```
+
+5. Push the updated configuration and redeploy so the Functions receive the
+   bindings. Since `wrangler.toml` sets `pages_build_output_dir`, it is the
+   source of truth for Pages settings and production bindings.
 
 The API initializes Drizzle from `env.DB` for each request; it does not depend
 on a process-global database connection.
@@ -122,10 +134,10 @@ npm run dev
 ```
 
 This builds the frontend, applies pending migrations to the local D1 emulator,
-and serves the app and Pages Functions together. The command uses Wrangler's
-local D1 and R2 emulators; it does not change the remote database. To use Vite
-HMR for frontend-only work, run `npm run dev:vite` instead; API requests require
-the Pages runtime.
+and serves the app and Pages Functions together using `wrangler.local.toml`.
+The command uses Wrangler's local D1 and R2 emulators; it does not change the
+remote database. To use Vite HMR for frontend-only work, run
+`npm run dev:vite` instead; API requests require the Pages runtime.
 
 For local secrets, create a git-ignored `.dev.vars` file before starting the
 server:
@@ -139,7 +151,7 @@ The `npm run dev` command applies pending migrations automatically. You can
 also apply them manually with:
 
 ```sh
-npx wrangler d1 migrations apply elovyn-store --local
+npx wrangler --config wrangler.local.toml d1 migrations apply elovyn-store --local
 ```
 
 After deployment, `/api/health` verifies the function route and D1 binding. A

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "npm run dev:cloudflare",
     "dev:vite": "vite",
-    "dev:cloudflare": "npm run build && wrangler d1 migrations apply elovyn-store --local && wrangler pages dev dist",
+    "dev:cloudflare": "npm run build && wrangler --config wrangler.local.toml d1 migrations apply elovyn-store --local && wrangler pages dev dist --config wrangler.local.toml",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "deploy:cloudflare": "npm run build && wrangler pages deploy dist --project-name elovyn-store",
