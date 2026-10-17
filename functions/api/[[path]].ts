@@ -450,6 +450,12 @@ async function route(request: Request, env: Env, db: ReturnType<typeof createDb>
 
 export async function onRequest({ request, env }: PagesContext) {
   try {
+    if (!env.DB) {
+      throw new ApiError(
+        "The Cloudflare Pages D1 binding DB is not configured. Connect the elovyn-store database to the DB binding and redeploy.",
+        503,
+      );
+    }
     const db = createDb(env.DB);
     return await route(request, env, db);
   } catch (error) {

@@ -62,6 +62,8 @@ After the first deployment:
 
 The API initializes Drizzle from `env.DB` for each request; it does not depend
 on a process-global database connection.
+Until the production `DB` binding is configured, API requests return HTTP 503
+with a setup message instead of an opaque HTTP 500.
 
 If using Cloudflare Workers Builds with a custom deploy command, set it to
 `npm run deploy:cloudflare`. This command builds the Vite site and deploys the
