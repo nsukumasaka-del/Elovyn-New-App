@@ -1,4 +1,9 @@
-export type StoreUser = { id: string; email: string; role: "customer" | "admin" };
+export type StoreUser = {
+  id: string;
+  email: string;
+  role: "customer" | "admin";
+  fullName: string | null;
+};
 export type CartProduct = { id: string; title: string; price: number; imageUrl: string };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

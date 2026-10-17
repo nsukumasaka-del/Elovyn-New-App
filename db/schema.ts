@@ -4,15 +4,18 @@ import { check, index, integer, real, sqliteTable, text } from "drizzle-orm/sqli
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
   email: text("email").notNull().unique(),
-  passwordHash: text("password_hash").notNull(),
+  passwordHash: text("password_hash"),
   role: text("role", { enum: ["customer", "admin"] }).notNull().default("customer"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  fullName: text("full_name"),
+  googleId: text("google_id").unique(),
 }, (table) => [
   check("users_role_check", sql`${table.role} IN ('customer', 'admin')`),
 ]);
 
 export const sessions = sqliteTable("sessions", {
-  tokenHash: text("token_hash").primaryKey(),
+  id: text("id").primaryKey(),
+  tokenHash: text("token_hash").notNull().unique(),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   expiresAt: integer("expires_at").notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),

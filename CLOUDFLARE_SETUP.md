@@ -40,6 +40,10 @@ After the first deployment:
    npx wrangler d1 migrations apply elovyn-store --remote
    ```
 
+   Migration `0003_oauth_auth.sql` adds Google-account and profile fields while
+   preserving existing users, orders, carts, and active sessions. Run this
+   migration before deploying the authentication code that uses those fields.
+
 4. Add the production D1 and R2 bindings to `wrangler.toml`:
 
    ```toml
@@ -102,6 +106,45 @@ preview builds at the production database or assets bucket.
 
 ## Configure secrets
 
+Configure these values for both **Production** and any Pages **Preview**
+environment that should support authentication:
+
+| Name | Cloudflare configuration | Purpose |
+| --- | --- | --- |
+| `GOOGLE_CLIENT_ID` | Environment variable | Google OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | Secret | Google OAuth client secret |
+| `JWT_SECRET` | Secret | Random key used to sign and verify OAuth state |
+| `RESEND_API_KEY` | Secret | Sends signup welcome emails |
+| `RESEND_FROM_EMAIL` | Environment variable | Sender address verified in Resend, such as `Elovyn <noreply@your-verified-domain>` |
+
+Generate a strong OAuth-state signing key with:
+
+```sh
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+```
+
+Add the Google OAuth callback URLs to **Authorized redirect URIs** in the
+Google Cloud OAuth client. Add each hostname used by the store:
+
+```text
+https://elovyn.store/api/auth/callback/google
+https://www.elovyn.store/api/auth/callback/google
+https://elovyn-new-app.pages.dev/api/auth/callback/google
+```
+
+Only add the `www` URI if that hostname is enabled. Google OAuth will reject
+any callback hostname that is not registered exactly. Preview deployments need
+their own authorized callback URI if Google sign-in is required there.
+
+Set the Resend sender to an address on a domain verified in your Resend
+account. If `RESEND_API_KEY` or `RESEND_FROM_EMAIL` is missing or Resend
+rejects the request, account creation still succeeds, but the API logs the
+delivery failure and the storefront displays a notice.
+
+The API stores opaque random session tokens in HttpOnly, SameSite cookies and
+persists only their SHA-256 hashes in D1. `JWT_SECRET` signs the short-lived
+OAuth state; it is not used as a browser session token.
+
 Generate the administrator password hash in an interactive terminal:
 
 ```sh
@@ -146,6 +189,11 @@ server:
 ```dotenv
 ADMIN_PASSWORD_HASH=pbkdf2$...
 SUPPLIER_SECRET_ENCRYPTION_KEY=...
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+JWT_SECRET=...
+RESEND_API_KEY=...
+RESEND_FROM_EMAIL=Elovyn <noreply@your-verified-domain>
 ```
 
 The `npm run dev` command applies pending migrations automatically. You can

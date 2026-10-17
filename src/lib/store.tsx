@@ -40,7 +40,7 @@ type StoreContextValue = {
   removeFromCart: (id: string) => void;
   toggleWishlist: (id: string, product: CartProduct) => void;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string, fullName: string) => Promise<void>;
   signOut: () => Promise<void>;
   checkout: () => Promise<void>;
 };
@@ -107,7 +107,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     setConnectionError(null);
-    request<{ user: StoreUser | null }>("/auth/session")
+    request<{ user: StoreUser | null }>("/auth/me")
       .then(async ({ user: currentUser }) => {
         if (cancelled) return;
         setUser(currentUser);
@@ -173,44 +173,59 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const establishSession = useCallback(async (path: string, email: string, password: string) => {
-    const result = await request<{ user: StoreUser }>(path, {
+  const establishSession = useCallback(async (
+    path: string,
+    email: string,
+    password: string,
+    fullName?: string,
+  ) => {
+    const result = await request<{ user: StoreUser; welcomeEmailSent?: boolean }>(path, {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, ...(fullName ? { fullName } : {}) }),
     });
     setUser(result.user);
     setAuthOpen(false);
-    const currentCart = readStoredCart();
-    const savedCart = await request<{ cart: { id: string; quantity: number }[] }>("/cart");
-    const quantities = new Map(savedCart.cart.map((item) => [item.id, item.quantity]));
-    const mergedCart = currentCart.map((item) => ({
-      ...item,
-      quantity: Math.min(99, item.quantity + (quantities.get(item.id) ?? 0)),
-    }));
-    for (const item of savedCart.cart) {
-      if (mergedCart.some((entry) => entry.id === item.id)) continue;
-      const stored = localStorage.getItem(`${cartStorageKey}:${item.id}`);
-      if (stored) mergedCart.push({ ...(JSON.parse(stored) as CartProduct), quantity: item.quantity });
+    const isSignUp = path.endsWith("register") || path.endsWith("signup");
+    if (isSignUp && result.welcomeEmailSent === false) {
+      toast.error("Your account was created, but we could not send the welcome email.");
+    } else {
+      toast.success(isSignUp ? "Your account is ready." : "Welcome back.");
     }
-    setCart(mergedCart);
-    localStorage.setItem(cartStorageKey, JSON.stringify(mergedCart));
-    await request("/cart", {
-      method: "PUT",
-      body: JSON.stringify({ cart: mergedCart.map(({ id, quantity }) => ({ id, quantity })) }),
-    });
-    toast.success(path.endsWith("register") ? "Your account is ready." : "Welcome back.");
+    try {
+      const currentCart = readStoredCart();
+      const savedCart = await request<{ cart: { id: string; quantity: number }[] }>("/cart");
+      const quantities = new Map(savedCart.cart.map((item) => [item.id, item.quantity]));
+      const mergedCart = currentCart.map((item) => ({
+        ...item,
+        quantity: Math.min(99, item.quantity + (quantities.get(item.id) ?? 0)),
+      }));
+      for (const item of savedCart.cart) {
+        if (mergedCart.some((entry) => entry.id === item.id)) continue;
+        const stored = localStorage.getItem(`${cartStorageKey}:${item.id}`);
+        if (stored) mergedCart.push({ ...(JSON.parse(stored) as CartProduct), quantity: item.quantity });
+      }
+      setCart(mergedCart);
+      localStorage.setItem(cartStorageKey, JSON.stringify(mergedCart));
+      await request("/cart", {
+        method: "PUT",
+        body: JSON.stringify({ cart: mergedCart.map(({ id, quantity }) => ({ id, quantity })) }),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The saved cart could not be synchronized.";
+      toast.error(`You are signed in, but your saved cart could not be synchronized: ${message}`);
+    }
   }, []);
 
   const signIn = useCallback((email: string, password: string) => (
     establishSession("/auth/login", email, password)
   ), [establishSession]);
 
-  const signUp = useCallback((email: string, password: string) => (
-    establishSession("/auth/register", email, password)
+  const signUp = useCallback((email: string, password: string, fullName: string) => (
+    establishSession("/auth/signup", email, password, fullName)
   ), [establishSession]);
 
   const signOut = useCallback(async () => {
-    await request("/auth/logout", { method: "POST" });
+    await request("/auth/signout", { method: "POST" });
     setUser(null);
     toast.success("You have signed out.");
   }, []);

@@ -7,7 +7,7 @@ import { StoreProvider } from "@/lib/store";
 describe("homepage storefront", () => {
   it("renders the premium fashion storefront sections", () => {
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
-      const payload = String(input).includes("/auth/session") ? { user: null } : { products: [] };
+      const payload = String(input).includes("/auth/me") ? { user: null } : { products: [] };
       return Promise.resolve(new Response(JSON.stringify(payload), {
         status: 200,
         headers: { "Content-Type": "application/json" },

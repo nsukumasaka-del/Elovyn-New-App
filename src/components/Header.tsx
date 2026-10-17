@@ -26,6 +26,7 @@ const collectionSearchItems = [
 
 function AuthDialog({ onClose }: { onClose: () => void }) {
   const { authMode, setAuthMode, signIn, signUp } = useStore();
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -37,10 +38,12 @@ function AuthDialog({ onClose }: { onClose: () => void }) {
     setSubmitting(true);
     try {
       if (authMode === "signin") await signIn(email, password);
-      else await signUp(email, password);
+      else await signUp(email, password, fullName);
       onClose();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to complete sign in.");
+      const message = reason instanceof Error ? reason.message : "Unable to complete sign in.";
+      setError(message);
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }
@@ -67,6 +70,18 @@ function AuthDialog({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <form onSubmit={submit} className="mt-7 space-y-4">
+          {authMode === "signup" && (
+            <label className="block text-sm font-medium">
+              Full name <span className="font-normal text-neutral-500">(optional)</span>
+              <input
+                autoComplete="name"
+                maxLength={120}
+                value={fullName}
+                onChange={(event) => setFullName(event.target.value)}
+                className="mt-2 h-12 w-full rounded-xl border border-neutral-300 px-4 outline-none focus:border-neutral-950"
+              />
+            </label>
+          )}
           <label className="block text-sm font-medium">
             Email address
             <input
@@ -96,6 +111,25 @@ function AuthDialog({ onClose }: { onClose: () => void }) {
             {submitting ? "Please wait…" : authMode === "signin" ? "Sign in" : "Create account"}
           </button>
         </form>
+        <div className="my-5 flex items-center gap-3 text-xs text-neutral-400">
+          <span className="h-px flex-1 bg-neutral-200" />
+          <span>or</span>
+          <span className="h-px flex-1 bg-neutral-200" />
+        </div>
+        <button
+          type="button"
+          disabled={submitting}
+          onClick={() => window.location.assign("/api/auth/google")}
+          className="flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-neutral-300 bg-white text-sm font-semibold text-neutral-800 transition hover:bg-neutral-50 disabled:opacity-60"
+        >
+          <svg aria-hidden="true" viewBox="0 0 48 48" className="h-5 w-5">
+            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5Z" transform="translate(0 4)" />
+            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.91c-.58 2.96-2.26 5.48-4.77 7.18l7.73 6C44.38 37.96 46.98 31.8 46.98 24.55Z" />
+            <path fill="#FBBC05" d="M10.53 28.59a14.4 14.4 0 0 1 0-9.18l-7.98-6.19a23.94 23.94 0 0 0 0 21.56l7.98-6.19Z" transform="translate(0 4)" />
+            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.9-5.8l-7.73-6c-2.14 1.44-4.89 2.3-8.17 2.3-6.26 0-11.57-4.22-13.46-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48Z" transform="translate(0 -4)" />
+          </svg>
+          Continue with Google
+        </button>
         <button
           type="button"
           className="mt-5 w-full text-center text-sm text-neutral-600 hover:text-black"
@@ -243,14 +277,26 @@ export const Header = () => {
               <Search className="h-5 w-5" />
             </button>
             <div className="relative hidden sm:block">
-              <button aria-label="Account" aria-expanded={profileOpen} onClick={() => setProfileOpen((open) => !open)} className="header-icon">
+              <button
+                aria-label="Account"
+                aria-expanded={user ? profileOpen : authOpen}
+                onClick={() => {
+                  if (user) setProfileOpen((open) => !open);
+                  else {
+                    setAuthMode("signin");
+                    setAuthOpen(true);
+                  }
+                }}
+                className="header-icon"
+              >
                 <UserRound className="h-5 w-5" />
               </button>
               {profileOpen && (
                 <div className="absolute right-0 top-full mt-3 w-56 rounded-2xl border border-neutral-200 bg-white p-2 shadow-xl">
                   {user ? (
                     <>
-                      <p className="truncate px-3 py-2 text-xs text-neutral-500">{user.email}</p>
+                      <p className="truncate px-3 pt-2 text-sm font-semibold">{user.fullName || user.email}</p>
+                      {user.fullName && <p className="truncate px-3 pb-2 text-xs text-neutral-500">{user.email}</p>}
                       <a href="/profile" className="block rounded-xl px-3 py-2 text-sm hover:bg-neutral-100">My Profile</a>
                       <a href="/orders" className="block rounded-xl px-3 py-2 text-sm hover:bg-neutral-100">Order History</a>
                       {isPrimaryAdmin(user) && <Link to="/admin" className="block rounded-xl px-3 py-2 text-sm hover:bg-neutral-100">Admin Console</Link>}
@@ -302,6 +348,14 @@ export const Header = () => {
                 {navItems.map((item) => <a key={item.label} href={`/${item.href}`} onClick={() => setMobileOpen(false)} className="block border-b border-neutral-200 py-4 text-sm font-semibold uppercase tracking-widest">{item.label}</a>)}
               </nav>
               <div className="mt-auto space-y-3">
+                {user && (
+                  <div className="rounded-xl bg-neutral-50 px-4 py-3">
+                    <p className="truncate text-sm font-semibold">{user.fullName || user.email}</p>
+                    {user.fullName && <p className="truncate text-xs text-neutral-500">{user.email}</p>}
+                    <Link to="/profile" onClick={() => setMobileOpen(false)} className="mt-2 block text-sm underline">My Profile</Link>
+                    <Link to="/orders" onClick={() => setMobileOpen(false)} className="mt-2 block text-sm underline">Order History</Link>
+                  </div>
+                )}
                 {user && isPrimaryAdmin(user) && <Link to="/admin" onClick={() => setMobileOpen(false)} className="btn-secondary w-full">Admin Console</Link>}
                 <Link to="/wishlist" onClick={() => setMobileOpen(false)} className="btn-secondary w-full">Wishlist ({wishlist.length})</Link>
                 {user ? (

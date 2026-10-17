@@ -3,13 +3,18 @@ import { createDb } from "../../db";
 import { carts, orders, products, supplierIntegrations, users } from "../../db/schema";
 import {
   clearedSessionCookie,
+  clearedOAuthStateCookie,
+  createOAuthState,
   createSession,
   deleteSession,
   getSessionUser,
   hashPassword,
+  oauthStateCookie,
   primaryAdminEmail,
+  readOAuthStateCookie,
   sessionCookie,
   verifyPassword,
+  verifyOAuthState,
   type StoreUser,
 } from "../lib/auth";
 
@@ -18,6 +23,11 @@ export interface Env {
   PRODUCT_ASSETS?: R2Bucket;
   ADMIN_PASSWORD_HASH: string;
   SUPPLIER_SECRET_ENCRYPTION_KEY: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  RESEND_API_KEY?: string;
+  RESEND_FROM_EMAIL?: string;
+  JWT_SECRET?: string;
 }
 
 interface PagesContext {
@@ -88,6 +98,13 @@ function normalizeEmail(value: unknown) {
   return email;
 }
 
+function requiredPassword(value: unknown) {
+  if (typeof value !== "string" || value.length === 0 || value.length > 256) {
+    throw new ApiError("Password is required and must be no longer than 256 characters.", 400);
+  }
+  return value;
+}
+
 function isPrimaryAdmin(user: StoreUser | null): user is StoreUser {
   return !!user
     && user.role === "admin"
@@ -130,19 +147,198 @@ async function authenticate(
         target: users.email,
         set: { passwordHash: adminPasswordHash, role: "admin" },
       })
-      .returning({ id: users.id, email: users.email, role: users.role });
+      .returning({ id: users.id, email: users.email, role: users.role, fullName: users.fullName });
     return rows[0];
   }
 
   const [user] = await db
-    .select({ id: users.id, email: users.email, role: users.role, passwordHash: users.passwordHash })
+    .select({
+      id: users.id,
+      email: users.email,
+      role: users.role,
+      fullName: users.fullName,
+      passwordHash: users.passwordHash,
+    })
     .from(users)
     .where(eq(users.email, email))
     .limit(1);
-  if (!user || !await verifyPassword(password, user.passwordHash)) {
+  if (!user?.passwordHash || !await verifyPassword(password, user.passwordHash)) {
     throw new ApiError("Email or password is incorrect.", 401);
   }
-  return { id: user.id, email: user.email, role: user.role };
+  return { id: user.id, email: user.email, role: user.role, fullName: user.fullName };
+}
+
+function secureCookieAttribute(url: URL) {
+  return url.protocol === "https:" ? "; Secure" : "";
+}
+
+function randomOAuthState() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;",
+  })[character]!);
+}
+
+async function sendWelcomeEmail(env: Env, email: string, fullName: string | null) {
+  if (!env.RESEND_API_KEY) {
+    console.error("Welcome email was not sent: RESEND_API_KEY is not configured.");
+    return false;
+  }
+  if (!env.RESEND_FROM_EMAIL) {
+    console.error("Welcome email was not sent: RESEND_FROM_EMAIL is not configured.");
+    return false;
+  }
+
+  const greeting = fullName ? `Hi ${escapeHtml(fullName)},` : "Welcome,";
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: env.RESEND_FROM_EMAIL,
+        to: [email],
+        subject: "Welcome to Elovyn",
+        html: `<p>${greeting}</p><p>Your Elovyn account is ready. We’re glad you’re here.</p>`,
+        text: `${fullName ? `Hi ${fullName},` : "Welcome,"}\n\nYour Elovyn account is ready. We’re glad you’re here.`,
+      }),
+    });
+    if (!response.ok) {
+      console.error("Welcome email delivery failed:", response.status, (await response.text()).slice(0, 500));
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.error("Welcome email request failed:", error);
+    return false;
+  }
+}
+
+async function authenticateWithGoogle(
+  request: Request,
+  env: Env,
+  db: ReturnType<typeof createDb>,
+): Promise<Response> {
+  const url = new URL(request.url);
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  const secure = secureCookieAttribute(url);
+  if (url.searchParams.has("error")) throw new ApiError("Google sign in was cancelled or denied.", 400);
+  if (!code || !state || !env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !env.JWT_SECRET) {
+    throw new ApiError("Google sign in is not configured correctly.", 503);
+  }
+  if (!await verifyOAuthState(state, readOAuthStateCookie(request), env.JWT_SECRET)) {
+    throw new ApiError("Google sign in could not be verified. Please try again.", 400);
+  }
+
+  const redirectUri = new URL("/api/auth/callback/google", url.origin).toString();
+  const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code,
+      client_id: env.GOOGLE_CLIENT_ID,
+      client_secret: env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: redirectUri,
+      grant_type: "authorization_code",
+    }),
+  });
+  if (!tokenResponse.ok) {
+    console.error("Google token exchange failed:", tokenResponse.status, (await tokenResponse.text()).slice(0, 500));
+    throw new ApiError("Google sign in could not be completed. Please try again.", 502);
+  }
+  const tokenPayload: unknown = await tokenResponse.json();
+  if (!tokenPayload || typeof tokenPayload !== "object" || !("access_token" in tokenPayload)
+    || typeof tokenPayload.access_token !== "string") {
+    throw new ApiError("Google returned an invalid sign-in response.", 502);
+  }
+
+  const profileResponse = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+    headers: { Authorization: `Bearer ${tokenPayload.access_token}` },
+  });
+  if (!profileResponse.ok) {
+    console.error("Google profile request failed:", profileResponse.status);
+    throw new ApiError("Google profile could not be loaded. Please try again.", 502);
+  }
+  const profile: unknown = await profileResponse.json();
+  if (!profile || typeof profile !== "object" || !("id" in profile) || typeof profile.id !== "string"
+    || !("email" in profile) || typeof profile.email !== "string"
+    || !("verified_email" in profile) || profile.verified_email !== true) {
+    throw new ApiError("Google did not provide a verified email address.", 400);
+  }
+  const email = normalizeEmail(profile.email);
+  const fullName = "name" in profile && typeof profile.name === "string"
+    ? profile.name.trim().slice(0, 120) || null
+    : null;
+
+  let [user] = await db
+    .select({ id: users.id, email: users.email, role: users.role, fullName: users.fullName })
+    .from(users)
+    .where(eq(users.googleId, profile.id))
+    .limit(1);
+
+  if (!user) {
+    const [emailUser] = await db
+      .select({
+        id: users.id,
+        email: users.email,
+        role: users.role,
+        fullName: users.fullName,
+        googleId: users.googleId,
+      })
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+    if (emailUser?.googleId && emailUser.googleId !== profile.id) {
+      throw new ApiError("This email is linked to a different Google account.", 409);
+    }
+    if (emailUser) {
+      [user] = await db.update(users)
+        .set({ googleId: profile.id, fullName: fullName ?? emailUser.fullName })
+        .where(eq(users.id, emailUser.id))
+        .returning({ id: users.id, email: users.email, role: users.role, fullName: users.fullName });
+    } else {
+      [user] = await db.insert(users)
+        .values({
+          id: crypto.randomUUID(),
+          email,
+          passwordHash: null,
+          fullName,
+          googleId: profile.id,
+          role: "customer",
+        })
+        .onConflictDoNothing()
+        .returning({ id: users.id, email: users.email, role: users.role, fullName: users.fullName });
+    }
+  }
+
+  if (!user) {
+    [user] = await db
+      .select({ id: users.id, email: users.email, role: users.role, fullName: users.fullName })
+      .from(users)
+      .where(eq(users.googleId, profile.id))
+      .limit(1);
+  }
+  if (!user) throw new ApiError("Your Google account could not be created. Please try again.", 500);
+
+  const session = await createSession(db, user);
+  const headers = new Headers({
+    Location: new URL("/", url.origin).toString(),
+    "Cache-Control": "no-store",
+  });
+  headers.append("Set-Cookie", sessionCookie(session.token, session.maxAge, secure));
+  headers.append("Set-Cookie", clearedOAuthStateCookie(secure));
+  return new Response(null, { status: 302, headers });
 }
 
 function statusForStock(quantity: number) {
@@ -180,47 +376,81 @@ async function route(request: Request, env: Env, db: ReturnType<typeof createDb>
     return json({ ok: true, database: "connected" });
   }
 
-  if (path === "/auth/register" && method === "POST") {
+  if (path === "/auth/google" && method === "GET") {
+    if (!env.GOOGLE_CLIENT_ID || !env.JWT_SECRET) {
+      throw new ApiError("Google sign in is not configured for this deployment.", 503);
+    }
+    const state = randomOAuthState();
+    const signedState = await createOAuthState(state, env.JWT_SECRET);
+    const redirectUri = new URL("/api/auth/callback/google", url.origin).toString();
+    const authorizationUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    authorizationUrl.search = new URLSearchParams({
+      client_id: env.GOOGLE_CLIENT_ID,
+      redirect_uri: redirectUri,
+      response_type: "code",
+      scope: "openid email profile",
+      state,
+      prompt: "select_account",
+    }).toString();
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: authorizationUrl.toString(),
+        "Cache-Control": "no-store",
+        "Set-Cookie": oauthStateCookie(signedState, secureCookieAttribute(url)),
+      },
+    });
+  }
+
+  if (path === "/auth/callback/google" && method === "GET") {
+    return authenticateWithGoogle(request, env, db);
+  }
+
+  if ((path === "/auth/register" || path === "/auth/signup") && method === "POST") {
     const body = await bodyAsJson(request);
     const email = normalizeEmail(body.email);
-    const password = requiredString(body.password, "Password", 256);
+    const password = requiredPassword(body.password);
     if (password.length < 10) throw new ApiError("Password must be at least 10 characters.", 400);
+    const fullName = typeof body.fullName === "string" ? body.fullName.trim().slice(0, 120) || null : null;
     if (email === primaryAdminEmail) {
       throw new ApiError("This email is reserved for the primary administrator.", 409);
     }
     const passwordHash = await hashPassword(password);
     const rows = await db
       .insert(users)
-      .values({ id: crypto.randomUUID(), email, passwordHash, role: "customer" })
+      .values({ id: crypto.randomUUID(), email, passwordHash, fullName, role: "customer" })
       .onConflictDoNothing({ target: users.email })
-      .returning({ id: users.id, email: users.email, role: users.role });
+      .returning({ id: users.id, email: users.email, role: users.role, fullName: users.fullName });
     if (!rows[0]) throw new ApiError("An account with this email already exists.", 409);
-    const session = await createSession(db, rows[0]);
-    const secure = url.protocol === "https:" ? "; Secure" : "";
-    return json({ user: rows[0] }, 201, {
+    const [welcomeEmailSent, session] = await Promise.all([
+      sendWelcomeEmail(env, email, fullName),
+      createSession(db, rows[0]),
+    ]);
+    const secure = secureCookieAttribute(url);
+    return json({ user: rows[0], welcomeEmailSent }, 201, {
       "Set-Cookie": sessionCookie(session.token, session.maxAge, secure),
     });
   }
 
-  if (path === "/auth/login" && method === "POST") {
+  if ((path === "/auth/login" || path === "/auth/signin") && method === "POST") {
     const body = await bodyAsJson(request);
     const email = normalizeEmail(body.email);
-    const password = requiredString(body.password, "Password", 256);
+    const password = requiredPassword(body.password);
     const user = await authenticate(db, env, email, password);
     const session = await createSession(db, user);
-    const secure = url.protocol === "https:" ? "; Secure" : "";
+    const secure = secureCookieAttribute(url);
     return json({ user }, 200, {
       "Set-Cookie": sessionCookie(session.token, session.maxAge, secure),
     });
   }
 
-  if (path === "/auth/session" && method === "GET") {
+  if ((path === "/auth/session" || path === "/auth/me") && method === "GET") {
     return json({ user: await getSessionUser(db, request) });
   }
 
-  if (path === "/auth/logout" && method === "POST") {
+  if ((path === "/auth/logout" || path === "/auth/signout") && method === "POST") {
     await deleteSession(db, request);
-    const secure = url.protocol === "https:" ? "; Secure" : "";
+    const secure = secureCookieAttribute(url);
     return json({ ok: true }, 200, { "Set-Cookie": clearedSessionCookie(secure) });
   }
 

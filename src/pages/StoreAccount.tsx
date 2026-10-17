@@ -53,7 +53,8 @@ export function AccountPage() {
         {user ? (
           <section className="mt-8 max-w-xl rounded-3xl border border-neutral-200 bg-white p-7">
             <p className="text-sm text-neutral-500">Signed in as</p>
-            <p className="mt-1 text-lg font-semibold">{user.email}</p>
+            {user.fullName && <p className="mt-1 text-lg font-semibold">{user.fullName}</p>}
+            <p className={`${user.fullName ? "mt-1" : "mt-1 text-lg font-semibold"} text-sm text-neutral-600`}>{user.email}</p>
             <Link to="/orders" className="btn-secondary mt-6">View order history</Link>
           </section>
         ) : (

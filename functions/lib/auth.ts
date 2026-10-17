@@ -10,10 +10,21 @@ export type StoreUser = {
   id: string;
   email: string;
   role: "customer" | "admin";
+  fullName: string | null;
 };
+
+const sessionCookieName = "elovyn_session";
+const oauthStateCookieName = "elovyn_oauth_state";
 
 function randomToken(byteCount: number) {
   const bytes = crypto.getRandomValues(new Uint8Array(byteCount));
+  return btoa(String.fromCharCode(...bytes))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/, "");
+}
+
+function base64Url(bytes: Uint8Array) {
   return btoa(String.fromCharCode(...bytes))
     .replaceAll("+", "-")
     .replaceAll("/", "_")
@@ -79,14 +90,20 @@ export function readSessionToken(request: Request) {
   const token = cookie
     .split(";")
     .map((part) => part.trim())
-    .find((part) => part.startsWith("elovyn_session="))
-    ?.slice("elovyn_session=".length);
-  return token ? decodeURIComponent(token) : null;
+    .find((part) => part.startsWith(`${sessionCookieName}=`))
+    ?.slice(sessionCookieName.length + 1);
+  if (!token) return null;
+  try {
+    return decodeURIComponent(token);
+  } catch {
+    return null;
+  }
 }
 
 export async function createSession(db: StoreDb, user: StoreUser) {
   const token = randomToken(32);
   await db.insert(sessions).values({
+    id: crypto.randomUUID(),
     tokenHash: await digest(token),
     userId: user.id,
     expiresAt: Math.floor(Date.now() / 1000) + sessionLifetimeSeconds,
@@ -99,7 +116,7 @@ export async function getSessionUser(db: StoreDb, request: Request): Promise<Sto
   if (!token) return null;
   const tokenHash = await digest(token);
   const rows = await db
-    .select({ id: users.id, email: users.email, role: users.role })
+    .select({ id: users.id, email: users.email, role: users.role, fullName: users.fullName })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
     .where(and(eq(sessions.tokenHash, tokenHash), gt(sessions.expiresAt, sql`unixepoch()`)))
@@ -113,9 +130,62 @@ export async function deleteSession(db: StoreDb, request: Request) {
 }
 
 export function sessionCookie(token: string, maxAge: number, secure: string) {
-  return `elovyn_session=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secure}`;
+  return `${sessionCookieName}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secure}`;
 }
 
 export function clearedSessionCookie(secure: string) {
-  return `elovyn_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secure}`;
+  return `${sessionCookieName}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secure}`;
+}
+
+async function signOAuthState(state: string, secret: string) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(state));
+  return base64Url(new Uint8Array(signature));
+}
+
+export async function createOAuthState(state: string, secret: string) {
+  return `${state}.${await signOAuthState(state, secret)}`;
+}
+
+export async function verifyOAuthState(state: string, cookie: string | null, secret: string) {
+  if (!cookie) return false;
+  const separator = cookie.lastIndexOf(".");
+  if (separator < 1 || cookie.slice(0, separator) !== state) return false;
+  const expected = await signOAuthState(state, secret);
+  const actual = cookie.slice(separator + 1);
+  if (actual.length !== expected.length) return false;
+  let difference = 0;
+  for (let index = 0; index < expected.length; index += 1) {
+    difference |= expected.charCodeAt(index) ^ actual.charCodeAt(index);
+  }
+  return difference === 0;
+}
+
+export function readOAuthStateCookie(request: Request) {
+  const cookie = request.headers.get("cookie") ?? "";
+  const value = cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${oauthStateCookieName}=`))
+    ?.slice(oauthStateCookieName.length + 1);
+  if (!value) return null;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+}
+
+export function oauthStateCookie(value: string, secure: string) {
+  return `${oauthStateCookieName}=${encodeURIComponent(value)}; HttpOnly; SameSite=Lax; Path=/api/auth/callback/google; Max-Age=600${secure}`;
+}
+
+export function clearedOAuthStateCookie(secure: string) {
+  return `${oauthStateCookieName}=; HttpOnly; SameSite=Lax; Path=/api/auth/callback/google; Max-Age=0${secure}`;
 }
