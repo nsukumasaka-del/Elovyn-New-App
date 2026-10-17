@@ -19,7 +19,7 @@ import {
 } from "../lib/auth";
 
 export interface Env {
-  DB: D1Database;
+  DB?: D1Database;
   PRODUCT_ASSETS?: R2Bucket;
   ADMIN_PASSWORD_HASH: string;
   SUPPLIER_SECRET_ENCRYPTION_KEY: string;
@@ -81,6 +81,11 @@ async function bodyAsJson(request: Request) {
   } catch {
     throw new ApiError("Request body must be valid JSON.", 400);
   }
+}
+
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  return String(error);
 }
 
 function requiredString(value: unknown, label: string, maxLength = 200) {
@@ -189,11 +194,11 @@ function escapeHtml(value: string) {
 
 async function sendWelcomeEmail(env: Env, email: string, fullName: string | null) {
   if (!env.RESEND_API_KEY) {
-    console.error("Welcome email was not sent: RESEND_API_KEY is not configured.");
+    console.warn("Welcome email was not sent: RESEND_API_KEY is not configured.");
     return false;
   }
   if (!env.RESEND_FROM_EMAIL) {
-    console.error("Welcome email was not sent: RESEND_FROM_EMAIL is not configured.");
+    console.warn("Welcome email was not sent: RESEND_FROM_EMAIL is not configured.");
     return false;
   }
 
@@ -214,12 +219,12 @@ async function sendWelcomeEmail(env: Env, email: string, fullName: string | null
       }),
     });
     if (!response.ok) {
-      console.error("Welcome email delivery failed:", response.status, (await response.text()).slice(0, 500));
+      console.warn("Welcome email delivery failed:", response.status, (await response.text()).slice(0, 500));
       return false;
     }
     return true;
   } catch (error) {
-    console.error("Welcome email request failed:", error);
+    console.warn("Welcome email request failed:", error);
     return false;
   }
 }
@@ -372,6 +377,12 @@ async function route(request: Request, env: Env, db: ReturnType<typeof createDb>
   const method = request.method;
 
   if (path === "/health" && method === "GET") {
+    if (!env.DB) {
+      throw new ApiError(
+        "The Cloudflare Pages D1 binding DB is not configured. Connect the elovyn-store database to the DB binding and redeploy.",
+        503,
+      );
+    }
     await env.DB.prepare("SELECT 1").first();
     return json({ ok: true, database: "connected" });
   }
@@ -407,41 +418,53 @@ async function route(request: Request, env: Env, db: ReturnType<typeof createDb>
   }
 
   if ((path === "/auth/register" || path === "/auth/signup") && method === "POST") {
-    const body = await bodyAsJson(request);
-    const email = normalizeEmail(body.email);
-    const password = requiredPassword(body.password);
-    if (password.length < 10) throw new ApiError("Password must be at least 10 characters.", 400);
-    const fullName = typeof body.fullName === "string" ? body.fullName.trim().slice(0, 120) || null : null;
-    if (email === primaryAdminEmail) {
-      throw new ApiError("This email is reserved for the primary administrator.", 409);
+    try {
+      const body = await bodyAsJson(request);
+      const email = normalizeEmail(body.email);
+      const password = requiredPassword(body.password);
+      if (password.length < 10) throw new ApiError("Password must be at least 10 characters.", 400);
+      const fullName = typeof body.fullName === "string" ? body.fullName.trim().slice(0, 120) || null : null;
+      if (email === primaryAdminEmail) {
+        throw new ApiError("This email is reserved for the primary administrator.", 409);
+      }
+      const passwordHash = await hashPassword(password);
+      const rows = await db
+        .insert(users)
+        .values({ id: crypto.randomUUID(), email, passwordHash, fullName, role: "customer" })
+        .onConflictDoNothing({ target: users.email })
+        .returning({ id: users.id, email: users.email, role: users.role, fullName: users.fullName });
+      if (!rows[0]) throw new ApiError("An account with this email already exists.", 409);
+      const [welcomeEmailSent, session] = await Promise.all([
+        sendWelcomeEmail(env, email, fullName),
+        createSession(db, rows[0]),
+      ]);
+      const secure = secureCookieAttribute(url);
+      return json({ user: rows[0], welcomeEmailSent }, 201, {
+        "Set-Cookie": sessionCookie(session.token, session.maxAge, secure),
+      });
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      console.error("User signup failed:", error);
+      return json({ error: errorMessage(error) }, 500);
     }
-    const passwordHash = await hashPassword(password);
-    const rows = await db
-      .insert(users)
-      .values({ id: crypto.randomUUID(), email, passwordHash, fullName, role: "customer" })
-      .onConflictDoNothing({ target: users.email })
-      .returning({ id: users.id, email: users.email, role: users.role, fullName: users.fullName });
-    if (!rows[0]) throw new ApiError("An account with this email already exists.", 409);
-    const [welcomeEmailSent, session] = await Promise.all([
-      sendWelcomeEmail(env, email, fullName),
-      createSession(db, rows[0]),
-    ]);
-    const secure = secureCookieAttribute(url);
-    return json({ user: rows[0], welcomeEmailSent }, 201, {
-      "Set-Cookie": sessionCookie(session.token, session.maxAge, secure),
-    });
   }
 
   if ((path === "/auth/login" || path === "/auth/signin") && method === "POST") {
-    const body = await bodyAsJson(request);
-    const email = normalizeEmail(body.email);
-    const password = requiredPassword(body.password);
-    const user = await authenticate(db, env, email, password);
-    const session = await createSession(db, user);
-    const secure = secureCookieAttribute(url);
-    return json({ user }, 200, {
-      "Set-Cookie": sessionCookie(session.token, session.maxAge, secure),
-    });
+    try {
+      const body = await bodyAsJson(request);
+      const email = normalizeEmail(body.email);
+      const password = requiredPassword(body.password);
+      const user = await authenticate(db, env, email, password);
+      const session = await createSession(db, user);
+      const secure = secureCookieAttribute(url);
+      return json({ user }, 200, {
+        "Set-Cookie": sessionCookie(session.token, session.maxAge, secure),
+      });
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      console.error("User signin failed:", error);
+      return json({ error: errorMessage(error) }, 500);
+    }
   }
 
   if ((path === "/auth/session" || path === "/auth/me") && method === "GET") {
