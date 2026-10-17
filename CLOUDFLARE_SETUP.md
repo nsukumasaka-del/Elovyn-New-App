@@ -5,33 +5,7 @@ implemented as Pages Functions in `functions/`. D1 stores users, sessions,
 products, orders, supplier settings, and signed-in carts. R2 stores product
 image uploads.
 
-## Create and bind storage
-
-1. Create a D1 database:
-
-   ```sh
-   npx wrangler d1 create elovyn-store
-   ```
-
-   Replace the all-zero placeholder `database_id` in `wrangler.toml` with the
-   returned database ID.
-2. Create the R2 bucket:
-
-   ```sh
-   npx wrangler r2 bucket create elovyn-product-assets
-   ```
-
-3. Apply the schema and seed migrations:
-
-   ```sh
-   npx wrangler d1 migrations apply elovyn-store --remote
-   ```
-
-The `DB` D1 and `PRODUCT_ASSETS` R2 bindings are declared in `wrangler.toml`.
-The API initializes Drizzle from `env.DB` for each request; it does not depend
-on a process-global database connection.
-
-## Configure Pages
+## Import and deploy the site
 
 Create a Cloudflare Pages project connected to this repository and set:
 
@@ -39,10 +13,43 @@ Create a Cloudflare Pages project connected to this repository and set:
 - Build output directory: `dist`
 - Production branch: `main`
 
+The initial deployment can publish the storefront before its storage resources
+exist. The API will not be usable until the D1 and R2 resources are created and
+bound in the next section.
+
+`wrangler.toml` is intentionally limited to local development: it does not set
+`pages_build_output_dir`, so production Pages settings and bindings remain
+managed by the Cloudflare dashboard. Its all-zero D1 ID is only a local
+emulator placeholder and must not be used for a production binding.
+
 The repository uses `package-lock.json` and does not include a Bun lockfile, so
 Cloudflare's automatic dependency installation uses npm rather than Bun's
-frozen-lockfile mode. `wrangler.toml` provides the Pages output directory,
-compatibility date, and production storage bindings.
+frozen-lockfile mode.
+
+## Create and bind storage
+
+After the first deployment:
+
+1. Create a D1 database named `elovyn-store` in **Workers & Pages → D1** (or run
+   `npx wrangler d1 create elovyn-store` after authenticating Wrangler). Copy
+   its UUID into the local `database_id` field in `wrangler.toml`; this enables
+   the local D1 emulator and is not used as the production binding.
+2. Create an R2 bucket named `elovyn-product-assets` in **R2** (or run
+   `npx wrangler r2 bucket create elovyn-product-assets`).
+3. Apply the schema and seed migrations:
+
+   ```sh
+   npx wrangler d1 migrations apply elovyn-store --remote
+   ```
+
+4. In the Pages project, open **Settings → Bindings** and add:
+   - A D1 database binding named `DB`, connected to `elovyn-store`.
+   - An R2 bucket binding named `PRODUCT_ASSETS`, connected to
+     `elovyn-product-assets`.
+5. Redeploy the Pages project so the Functions receive the new bindings.
+
+The API initializes Drizzle from `env.DB` for each request; it does not depend
+on a process-global database connection.
 
 If using Cloudflare Workers Builds with a custom deploy command, set it to
 `npm run deploy:cloudflare`. This command builds the Vite site and deploys the
