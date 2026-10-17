@@ -13,15 +13,13 @@ Create a Cloudflare Pages project connected to this repository and set:
 - Build output directory: `dist`
 - Production branch: `main`
 
-The initial deployment can publish the storefront before its storage resources
-exist. The API will not be usable until the D1 and R2 resources are created and
-bound in the next section.
+The production API requires the D1 and R2 bindings described below.
 
 `wrangler.toml` sets `pages_build_output_dir = "./dist"` so Pages publishes the
-Vite production build rather than the uncompiled source files. It does not
-declare storage bindings until the real resources exist. `wrangler.local.toml`
-is used only for local development and contains an all-zero D1 ID for the local
-emulator; never use that ID for production.
+Vite production build rather than the uncompiled source files. It declares the
+production D1 and R2 bindings, while `wrangler.local.toml` is used only for
+local development and contains an all-zero D1 ID for the local emulator; never
+use that ID for production.
 
 The repository uses `package-lock.json` and does not include a Bun lockfile, so
 Cloudflare's automatic dependency installation uses npm rather than Bun's
@@ -42,7 +40,7 @@ After the first deployment:
    npx wrangler d1 migrations apply elovyn-store --remote
    ```
 
-4. Add the production bindings to `wrangler.toml`:
+4. Add the production D1 and R2 bindings to `wrangler.toml`:
 
    ```toml
    [[d1_databases]]
@@ -62,6 +60,7 @@ After the first deployment:
 
 The API initializes Drizzle from `env.DB` for each request; it does not depend
 on a process-global database connection.
+
 Until the production `DB` binding is configured, API requests return HTTP 503
 with a setup message instead of an opaque HTTP 500.
 

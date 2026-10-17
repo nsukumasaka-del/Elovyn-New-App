@@ -15,7 +15,7 @@ import {
 
 export interface Env {
   DB: D1Database;
-  PRODUCT_ASSETS: R2Bucket;
+  PRODUCT_ASSETS?: R2Bucket;
   ADMIN_PASSWORD_HASH: string;
   SUPPLIER_SECRET_ENCRYPTION_KEY: string;
 }
@@ -414,6 +414,9 @@ async function route(request: Request, env: Env, db: ReturnType<typeof createDb>
   }
 
   if (path.startsWith("/assets/") && method === "GET") {
+    if (!env.PRODUCT_ASSETS) {
+      throw new ApiError("Product image storage is not configured for this deployment.", 503);
+    }
     const key = decodeURIComponent(path.slice("/assets/".length));
     if (!key || key.includes("/") || key.includes("..")) throw new ApiError("Asset not found.", 404);
     const asset = await env.PRODUCT_ASSETS.get(key);
@@ -427,6 +430,9 @@ async function route(request: Request, env: Env, db: ReturnType<typeof createDb>
   }
 
   if (path === "/admin/assets" && method === "POST") {
+    if (!env.PRODUCT_ASSETS) {
+      throw new ApiError("Product image storage is not configured for this deployment.", 503);
+    }
     await requireAdmin(db, request);
     const form = await request.formData();
     const file = form.get("file");
