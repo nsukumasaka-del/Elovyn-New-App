@@ -3,7 +3,8 @@ import type { StoreDb } from "../../db";
 import { sessions, users } from "../../db/schema";
 
 const sessionLifetimeSeconds = 60 * 60 * 24 * 14;
-const passwordIterations = 600_000;
+const passwordIterationsPerRound = 100_000;
+const passwordHashRounds = 6;
 export const primaryAdminEmail = "nsukumasaka@gmail.com";
 
 export type StoreUser = {
@@ -48,10 +49,10 @@ async function digest(value: string) {
   return bytesToHex(new Uint8Array(bytes));
 }
 
-async function derivePassword(password: string, salt: Uint8Array, iterations: number) {
+async function derivePassword(password: string | Uint8Array, salt: Uint8Array, iterations: number) {
   const material = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(password),
+    typeof password === "string" ? new TextEncoder().encode(password) : password,
     "PBKDF2",
     false,
     ["deriveBits"],
@@ -64,21 +65,44 @@ async function derivePassword(password: string, salt: Uint8Array, iterations: nu
   return new Uint8Array(bits);
 }
 
+async function deriveChainedPassword(password: string, salt: Uint8Array, iterations: number, rounds: number) {
+  let derived = await derivePassword(password, salt, iterations);
+  for (let round = 1; round < rounds; round += 1) {
+    derived = await derivePassword(derived, salt, iterations);
+  }
+  return derived;
+}
+
 export async function hashPassword(password: string) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const hash = await derivePassword(password, salt, passwordIterations);
-  return `pbkdf2$${passwordIterations}$${bytesToHex(salt)}$${bytesToHex(hash)}`;
+  const hash = await deriveChainedPassword(
+    password,
+    salt,
+    passwordIterationsPerRound,
+    passwordHashRounds,
+  );
+  return `pbkdf2-chain$${passwordIterationsPerRound}$${passwordHashRounds}$${bytesToHex(salt)}$${bytesToHex(hash)}`;
 }
 
 export async function verifyPassword(password: string, encoded: string) {
-  const [algorithm, iterationsText, saltHex, hashHex] = encoded.split("$");
-  const iterations = Number(iterationsText);
+  const parts = encoded.split("$");
+  const algorithm = parts[0];
+  const iterations = Number(parts[1]);
+  const chained = algorithm === "pbkdf2-chain";
+  const rounds = chained ? Number(parts[2]) : 1;
+  const saltHex = chained ? parts[3] : parts[2];
+  const hashHex = chained ? parts[4] : parts[3];
   if (
-    algorithm !== "pbkdf2" || !Number.isInteger(iterations) || iterations < 600_000 || iterations > 1_000_000
+    (algorithm !== "pbkdf2" && !chained)
+    || !Number.isInteger(iterations) || iterations !== passwordIterationsPerRound
+    || !Number.isInteger(rounds) || rounds !== (chained ? passwordHashRounds : 1)
     || !/^[a-f\d]{32}$/i.test(saltHex ?? "") || !/^[a-f\d]{64}$/i.test(hashHex ?? "")
   ) return false;
 
-  const actual = await derivePassword(password, hexToBytes(saltHex), iterations);
+  const salt = hexToBytes(saltHex);
+  const actual = chained
+    ? await deriveChainedPassword(password, salt, iterations, rounds)
+    : await derivePassword(password, salt, iterations);
   const expected = hexToBytes(hashHex);
   let difference = 0;
   for (let index = 0; index < actual.length; index += 1) difference |= actual[index] ^ expected[index];

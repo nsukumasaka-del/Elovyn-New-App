@@ -151,7 +151,14 @@ Generate the administrator password hash in an interactive terminal:
 node scripts/hash-admin-password.mjs
 ```
 
-Store the returned `pbkdf2$...` value as the server-side
+The utility outputs a `pbkdf2-chain$...` hash. Cloudflare Workers limits each
+Web Crypto PBKDF2 operation to 100,000 iterations, so passwords are derived in
+six sequential 100,000-iteration operations to retain the intended work factor
+without exceeding the platform limit. Regenerate any existing administrator
+hash created with the older `pbkdf2$600000$...` format and replace the
+`ADMIN_PASSWORD_HASH` secret.
+
+Store the returned `pbkdf2-chain$...` value as the server-side
 `ADMIN_PASSWORD_HASH` secret:
 
 ```sh

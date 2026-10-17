@@ -139,7 +139,7 @@ async function authenticate(
     if (!adminPasswordHash) {
       throw new ApiError("Primary administrator credentials are not configured for this Cloudflare deployment.", 503);
     }
-    if (!/^pbkdf2\$\d{6,7}\$[a-f\d]{32}\$[a-f\d]{64}$/i.test(adminPasswordHash)) {
+    if (!/^(?:pbkdf2\$100000|pbkdf2-chain\$100000\$6)\$[a-f\d]{32}\$[a-f\d]{64}$/i.test(adminPasswordHash)) {
       throw new ApiError("ADMIN_PASSWORD_HASH is invalid. Regenerate it with the password setup utility.", 503);
     }
     if (!await verifyPassword(password, adminPasswordHash)) {
