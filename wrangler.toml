@@ -1,7 +1,13 @@
 name = "elovyn-new-app"
 compatibility_date = "2026-10-14"
 pages_build_output_dir = "./dist"
+
 [[d1_databases]]
-binding = "elovyn_store"
+binding = "DB"
 database_name = "elovyn-store"
 database_id = "87496028-6841-4e84-9cf4-9f40d57947be"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "PRODUCT_ASSETS"
+bucket_name = "elovyn-product-assets"
