@@ -21,7 +21,8 @@ import {
 export interface Env {
   DB?: D1Database;
   PRODUCT_ASSETS?: R2Bucket;
-  ADMIN_PASSWORD_HASH: string;
+  ADMIN_EMAIL?: string;
+  ADMIN_PASSWORD_HASH?: string;
   SUPPLIER_SECRET_ENCRYPTION_KEY: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
@@ -110,10 +111,17 @@ function requiredPassword(value: unknown) {
   return value;
 }
 
-function isPrimaryAdmin(user: StoreUser | null): user is StoreUser {
-  return !!user
-    && user.role === "admin"
-    && user.email.trim().toLowerCase() === primaryAdminEmail.toLowerCase();
+function configuredAdminEmail(env: Env) {
+  const email = env.ADMIN_EMAIL?.trim() || primaryAdminEmail;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new ApiError("ADMIN_EMAIL must be a valid email address.", 503);
+  }
+  return email.toLowerCase();
+}
+
+function isConfiguredAdmin(user: StoreUser | null, env: Env): user is StoreUser {
+  return !!user && user.role === "admin"
+    && user.email.trim().toLowerCase() === configuredAdminEmail(env);
 }
 
 async function requireUser(db: ReturnType<typeof createDb>, request: Request) {
@@ -122,9 +130,9 @@ async function requireUser(db: ReturnType<typeof createDb>, request: Request) {
   return user;
 }
 
-async function requireAdmin(db: ReturnType<typeof createDb>, request: Request) {
+async function requireAdmin(db: ReturnType<typeof createDb>, request: Request, env: Env) {
   const user = await getSessionUser(db, request);
-  if (!isPrimaryAdmin(user)) throw new ApiError("Administrator access is required.", 403);
+  if (!isConfiguredAdmin(user, env)) throw new ApiError("Administrator access is required.", 403);
   return user;
 }
 
@@ -134,7 +142,8 @@ async function authenticate(
   email: string,
   password: string,
 ): Promise<StoreUser> {
-  if (email === primaryAdminEmail) {
+  const adminEmail = configuredAdminEmail(env);
+  if (email === adminEmail) {
     const adminPasswordHash = env.ADMIN_PASSWORD_HASH;
     if (!adminPasswordHash) {
       throw new ApiError("Primary administrator credentials are not configured for this Cloudflare deployment.", 503);
@@ -147,7 +156,7 @@ async function authenticate(
     }
     const rows = await db
       .insert(users)
-      .values({ id: crypto.randomUUID(), email: primaryAdminEmail, passwordHash: adminPasswordHash, role: "admin" })
+      .values({ id: crypto.randomUUID(), email: adminEmail, passwordHash: adminPasswordHash, role: "admin" })
       .onConflictDoUpdate({
         target: users.email,
         set: { passwordHash: adminPasswordHash, role: "admin" },
@@ -424,7 +433,7 @@ async function route(request: Request, env: Env, db: ReturnType<typeof createDb>
       const password = requiredPassword(body.password);
       if (password.length < 10) throw new ApiError("Password must be at least 10 characters.", 400);
       const fullName = typeof body.fullName === "string" ? body.fullName.trim().slice(0, 120) || null : null;
-      if (email === primaryAdminEmail) {
+      if (email === configuredAdminEmail(env)) {
         throw new ApiError("This email is reserved for the primary administrator.", 409);
       }
       const passwordHash = await hashPassword(password);
@@ -548,7 +557,7 @@ async function route(request: Request, env: Env, db: ReturnType<typeof createDb>
   }
 
   if (path === "/admin/inventory" && method === "GET") {
-    await requireAdmin(db, request);
+    await requireAdmin(db, request, env);
     const rows = await db.select(productColumns).from(products).orderBy(asc(products.title));
     const [stats] = await db
       .select({
@@ -562,7 +571,7 @@ async function route(request: Request, env: Env, db: ReturnType<typeof createDb>
   }
 
   if (path === "/admin/inventory/stock" && method === "PATCH") {
-    await requireAdmin(db, request);
+    await requireAdmin(db, request, env);
     const body = await bodyAsJson(request);
     const id = requiredString(body.id, "Product id", 100);
     const change = Number(body.change);
@@ -586,7 +595,7 @@ async function route(request: Request, env: Env, db: ReturnType<typeof createDb>
   }
 
   if (path === "/admin/products" && method === "POST") {
-    await requireAdmin(db, request);
+    await requireAdmin(db, request, env);
     const body = await bodyAsJson(request);
     const title = requiredString(body.title, "Product title");
     const sku = requiredString(body.sku, "SKU", 100);
@@ -620,7 +629,7 @@ async function route(request: Request, env: Env, db: ReturnType<typeof createDb>
   }
 
   if (path === "/admin/suppliers" && method === "GET") {
-    await requireAdmin(db, request);
+    await requireAdmin(db, request, env);
     const suppliers = await db
       .select(supplierColumns)
       .from(supplierIntegrations)
@@ -629,7 +638,7 @@ async function route(request: Request, env: Env, db: ReturnType<typeof createDb>
   }
 
   if (path === "/admin/suppliers" && method === "PUT") {
-    await requireAdmin(db, request);
+    await requireAdmin(db, request, env);
     const body = await bodyAsJson(request);
     const name = requiredString(body.name, "Supplier name", 100);
     const id = typeof body.id === "string" && body.id.trim() ? body.id.trim() : crypto.randomUUID();
@@ -686,7 +695,7 @@ async function route(request: Request, env: Env, db: ReturnType<typeof createDb>
     if (!env.PRODUCT_ASSETS) {
       throw new ApiError("Product image storage is not configured for this deployment.", 503);
     }
-    await requireAdmin(db, request);
+    await requireAdmin(db, request, env);
     const form = await request.formData();
     const file = form.get("file");
     if (!file || typeof file === "string") throw new ApiError("Select an image to upload.", 400);

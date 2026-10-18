@@ -41,9 +41,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export { request as apiRequest };
 
 export function isPrimaryAdmin(user: StoreUser | null) {
-  return !!user
-    && user.role === "admin"
-    && user.email.trim().toLowerCase() === "nsukumasaka@gmail.com";
+  return user?.role === "admin";
 }
 
 export function readSavedProduct(id: string): CartProduct | null {
