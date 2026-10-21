@@ -1,0 +1,69 @@
+type UnknownRecord = Record<string, unknown>;
+
+function record(value: unknown): UnknownRecord {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as UnknownRecord : {};
+}
+
+function text(value: unknown) {
+  return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
+}
+
+function number(value: unknown, fallback = 0) {
+  const parsed = Number(typeof value === "string" ? value.split("-")[0] : value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function optionName(value: string, index: number) {
+  const normalized = value.replace(/[_-]+/g, " ").trim();
+  return normalized ? normalized.replace(/\b\w/g, (letter) => letter.toUpperCase()) : `Option ${index + 1}`;
+}
+
+export function cjImportProductFromDetail(listEntry: unknown, detailPayload: unknown) {
+  const list = record(listEntry);
+  const detail = record(record(detailPayload).data);
+  const rawVariants = Array.isArray(detail.stanProducts) ? detail.stanProducts.map(record) : [];
+  const inventoryByVariant = new Map<string, number>();
+  if (Array.isArray(detail.variantInventory)) {
+    for (const entry of detail.variantInventory.map(record)) {
+      const inventory = Array.isArray(entry.inventory) ? entry.inventory.map(record) : [];
+      inventoryByVariant.set(text(entry.vid), inventory.reduce((sum, warehouse) => sum + number(warehouse.totalInventory), 0));
+    }
+  }
+  const rawNames = text(detail.variantkeyen || detail.variantkey).split("-").filter(Boolean);
+  const maximumValues = rawVariants.reduce((maximum, variant) => Math.max(maximum, text(variant.variantkey).split("-").filter(Boolean).length), 0);
+  const names = Array.from({ length: Math.max(rawNames.length, maximumValues) }, (_, index) => optionName(rawNames[index] || "", index));
+  const valuesByOption = names.map(() => new Set<string>());
+  const variants = rawVariants.map((variant, variantIndex) => {
+    const values = text(variant.variantkey).split("-").filter(Boolean);
+    const optionValues = Object.fromEntries(names.map((name, index) => {
+      const value = values[index] || `Variant ${variantIndex + 1}`;
+      valuesByOption[index].add(value);
+      return [name, value];
+    }));
+    return {
+      sku: text(variant.sku) || `${text(detail.sku || list.sku)}-${variantIndex + 1}`,
+      price: number(variant.sellprice, number(detail.sellprice || list.sellPrice)),
+      compare_at_price: null,
+      inventory_quantity: inventoryByVariant.get(text(variant.id)) ?? number(variant.totalInventory),
+      barcode: text(variant.barcode) || null,
+      image_url: text(variant.img) || null,
+      option_values: optionValues,
+    };
+  });
+  const images = [detail.bigimg, list.bigImage, ...(Array.isArray(detail.newImgList) ? detail.newImgList : []), ...rawVariants.map((variant) => variant.img)]
+    .map(text).filter((value, index, entries) => /^https:\/\//i.test(value) && entries.indexOf(value) === index);
+  const variantStock = variants.reduce((sum, variant) => sum + variant.inventory_quantity, 0);
+  return {
+    title: text(detail.nameen || list.nameEn || detail.name),
+    sku: text(detail.sku || list.sku),
+    price: number(detail.sellprice || list.sellPrice),
+    description: text(detail.description || list.description),
+    category: text(detail.category || list.threeCategoryName),
+    brand: text(detail.supplierNameEn || detail.supplierName || list.supplierName) || "CJ Dropshipping",
+    stock_quantity: variantStock || number(detail.totalInventory || list.warehouseInventoryNum),
+    image_url: images[0] || "",
+    images,
+    options: names.map((name, index) => ({ name, values: [...valuesByOption[index]] })).filter((option) => option.values.length),
+    variants,
+  };
+}

@@ -310,7 +310,7 @@ export function AdminPage() {
             </div>
           )}
 
-          {tab === "imports" && <ImportProductsPanel onImported={() => void loadData()} />}
+          {tab === "imports" && <ImportProductsPanel suppliers={suppliers} onImported={() => void loadData()} />}
         </main>
       </div>
       {addOpen && <AddProductDialog onClose={() => setAddOpen(false)} onCreated={() => { setAddOpen(false); void Promise.all([loadData(), refreshProducts()]); }} />}
@@ -563,7 +563,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
 
 const importFields = importFieldDefinitions.map(([key, label]) => ({ key, label }));
 
-function ImportProductsPanel({ onImported }: { onImported: () => void }) {
+function ImportProductsPanel({ onImported, suppliers }: { onImported: () => void; suppliers: Supplier[] }) {
   const [source, setSource] = useState<"json" | "csv">("json");
   const [jsonText, setJsonText] = useState("");
   const [headers, setHeaders] = useState<string[]>([]);
@@ -571,9 +571,19 @@ function ImportProductsPanel({ onImported }: { onImported: () => void }) {
   const [mapping, setMapping] = useState<ImportMapping>(() => suggestedMapping(importFieldDefinitions.map(([key]) => key)));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [fetchingSupplier, setFetchingSupplier] = useState(false);
+  const [selectedSupplierId, setSelectedSupplierId] = useState("");
+  const [supplierNotice, setSupplierNotice] = useState("");
   const [jobId, setJobId] = useState("");
   const [jobStatus, setJobStatus] = useState("");
   const [result, setResult] = useState<{ imported_count: number; skipped_count: number; skipped: { title: string; sku: string; reason: string }[] } | null>(null);
+  const availableSuppliers = useMemo(() => suppliers.filter((supplier) => supplier.is_active && (supplier.adapter !== "cj" || supplier.has_api_key)), [suppliers]);
+
+  useEffect(() => {
+    if (!availableSuppliers.some((supplier) => supplier.id === selectedSupplierId)) {
+      setSelectedSupplierId(availableSuppliers[0]?.id || "");
+    }
+  }, [availableSuppliers, selectedSupplierId]);
 
   function loadRecords(nextRecords: Record<string, unknown>[], nextHeaders?: string[]) {
     if (nextRecords.length > 50) throw new Error("Imports are limited to 50 products per batch.");
@@ -627,6 +637,34 @@ function ImportProductsPanel({ onImported }: { onImported: () => void }) {
       setError("");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not parse CSV.");
+    }
+  }
+
+  async function fetchSupplierProducts() {
+    if (!selectedSupplierId) {
+      setError("Connect and enable a supplier before fetching products.");
+      return;
+    }
+    setFetchingSupplier(true);
+    setError("");
+    setSupplierNotice("");
+    try {
+      const response = await apiRequest<{
+        supplier: { id: string; name: string; adapter: Supplier["adapter"] };
+        products: Record<string, unknown>[];
+        warnings: string[];
+      }>(`/admin/suppliers/${encodeURIComponent(selectedSupplierId)}/fetch-products`, { method: "POST" });
+      if (!response.products.length) throw new Error(`${response.supplier.name} did not return any products.`);
+      setSource("json");
+      setJsonText(JSON.stringify(response.products, null, 2));
+      loadRecords(response.products);
+      const warning = response.warnings.length ? ` ${response.warnings.join(" ")}` : "";
+      setSupplierNotice(`${response.products.length} product${response.products.length === 1 ? "" : "s"} fetched from ${response.supplier.name} and mapped for import.${warning}`);
+      toast.success(`${response.products.length} supplier product${response.products.length === 1 ? " is" : "s are"} ready to import.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not fetch supplier products.");
+    } finally {
+      setFetchingSupplier(false);
     }
   }
 
@@ -713,10 +751,20 @@ function ImportProductsPanel({ onImported }: { onImported: () => void }) {
       <section className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
         <h2 className="font-semibold">Import products</h2>
         <p className="mt-1 text-sm text-neutral-500">Map a JSON or CSV feed into your Elovyn catalog. Batches are validated and duplicates are reported rather than overwritten.</p>
-        <div className="mt-5 flex gap-2">
+        <div className="mt-5 flex flex-wrap items-center gap-2">
           {(["json", "csv"] as const).map((format) => <button key={format} type="button" onClick={() => { setSource(format); setRecords([]); setResult(null); setError(""); }}
             className={`rounded-full px-4 py-2 text-sm font-medium ${source === format ? "bg-neutral-950 text-white" : "border border-neutral-300"}`}>{format.toUpperCase()}</button>)}
+          <select aria-label="Supplier to fetch products from" value={selectedSupplierId} onChange={(event) => setSelectedSupplierId(event.target.value)}
+            className="h-10 min-w-44 rounded-full border border-neutral-300 bg-white px-3 text-sm">
+            {!availableSuppliers.length && <option value="">No connected suppliers</option>}
+            {availableSuppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
+          </select>
+          <button type="button" disabled={!selectedSupplierId || fetchingSupplier || busy} onClick={() => void fetchSupplierProducts()}
+            className="inline-flex min-h-10 items-center gap-2 rounded-full border border-neutral-950 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50">
+            <ArrowDownToLine className="h-4 w-4" /> {fetchingSupplier ? "Fetching supplier products…" : "Fetch products from connected suppliers"}
+          </button>
         </div>
+        {!availableSuppliers.length && <p className="mt-2 text-xs text-amber-700">Add and enable a supplier in the Suppliers view before fetching products.</p>}
         {source === "json" ? <>
           <label htmlFor="import-json" className="mt-4 block text-sm font-medium">Product data (JSON)</label>
           <input type="file" accept=".json,application/json" onChange={(event) => void readJsonFile(event.target.files?.[0])} className="mt-2 block w-full text-sm file:mr-3 file:rounded-full file:border-0 file:bg-neutral-100 file:px-4 file:py-2" />
@@ -730,6 +778,7 @@ function ImportProductsPanel({ onImported }: { onImported: () => void }) {
             className="mt-2 block w-full text-sm file:mr-3 file:rounded-full file:border-0 file:bg-neutral-100 file:px-4 file:py-2" />
           <p className="mt-2 text-xs text-neutral-500">Maximum 2 MB and 50 products. CSV values for Options and Variants should be JSON arrays.</p>
         </>}
+        {supplierNotice && <p role="status" className="mt-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900">{supplierNotice}</p>}
         {error && <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
         {jobId && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-sky-50 p-4 text-sm text-sky-900">
           <p>Import {jobStatus || "pending"} · <span className="font-mono text-xs">{jobId}</span></p>

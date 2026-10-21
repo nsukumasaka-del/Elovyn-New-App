@@ -32,6 +32,7 @@ import {
 } from "../lib/auth";
 import { readSupplierJsonResponse, supplierUrlValidationError, SUPPLIER_AUTHENTICATION_ERROR } from "../../src/lib/supplier-validation";
 import { cjAccessTokenFromPayload, cjProductRecordsFromPayload } from "../../src/lib/cj-auth";
+import { cjImportProductFromDetail } from "../../src/lib/cj-import";
 import { normalizeDeliveryAddress } from "../../src/lib/delivery-address";
 import { createYocoCheckout, registerYocoWebhook, verifyYocoWebhookSignature } from "../lib/yoco";
 
@@ -849,6 +850,52 @@ function safeSupplierUrl(value: string, storeHostname = "") {
   return new URL(value);
 }
 
+function checkedCjPayload(payload: unknown) {
+  if (!payload || typeof payload !== "object" || ((payload as { result?: boolean }).result === false) || ((payload as { success?: boolean }).success === false)) {
+    const cjError = payload && typeof payload === "object" ? payload as { code?: unknown; message?: unknown } : {};
+    const authenticationFailure = /^160000[1-7]$/.test(String(cjError.code ?? "")) || /auth|token|api\s*key/i.test(String(cjError.message ?? ""));
+    throw new ApiError(authenticationFailure ? SUPPLIER_AUTHENTICATION_ERROR : `CJ rejected the request: ${String(cjError.message || "unknown supplier error")}`, 400);
+  }
+  return payload;
+}
+
+async function cjAccessTokenForSupplier(supplier: SupplierRecord, apiKey: string, storeHostname: string, signal: AbortSignal) {
+  const authUrl = new URL(CJ_AUTHENTICATION_URL);
+  const response = await fetch(authUrl, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ apiKey, ...(supplier.accountEmail ? { email: supplier.accountEmail } : {}) }),
+    redirect: "manual",
+    signal,
+  });
+  const redirectedUrlError = supplierUrlValidationError(response.url || authUrl.toString(), storeHostname);
+  if (redirectedUrlError) throw new ApiError(`CJ authentication was redirected to an invalid destination. ${redirectedUrlError}`, 400);
+  const result = await readSupplierJsonResponse(response);
+  if (!result.ok) throw new ApiError(result.error === SUPPLIER_AUTHENTICATION_ERROR ? result.error : SUPPLIER_AUTHENTICATION_ERROR, 400);
+  const accessToken = cjAccessTokenFromPayload(checkedCjPayload(result.payload));
+  if (!accessToken.ok) throw new ApiError(accessToken.error, 400);
+  return accessToken.accessToken;
+}
+
+async function cjJsonRequest(url: URL, accessToken: string, storeHostname: string, signal: AbortSignal, init: RequestInit = {}) {
+  const response = await fetch(url, {
+    ...init,
+    headers: {
+      Accept: "application/json",
+      "CJ-Access-Token": accessToken,
+      ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...(init.headers || {}),
+    },
+    redirect: "manual",
+    signal,
+  });
+  const redirectedUrlError = supplierUrlValidationError(response.url || url.toString(), storeHostname);
+  if (redirectedUrlError) throw new ApiError(`Supplier request was redirected to an invalid destination. ${redirectedUrlError}`, 400);
+  const result = await readSupplierJsonResponse(response);
+  if (!result.ok) throw new ApiError(result.error, 400);
+  return checkedCjPayload(result.payload);
+}
+
 async function supplierFetch(supplier: SupplierRecord, token: string, validateOnly = false, storeHostname = "") {
   const base = safeSupplierUrl(supplier.apiBaseUrl || (supplier.adapter === "cj" ? "https://developers.cjdropshipping.com/api2.0/v1" : ""), storeHostname);
   const url = supplier.adapter === "cj"
@@ -859,22 +906,7 @@ async function supplierFetch(supplier: SupplierRecord, token: string, validateOn
   try {
     let requestToken = token;
     if (supplier.adapter === "cj") {
-      const authUrl = new URL(CJ_AUTHENTICATION_URL);
-      const authResponse = await fetch(authUrl, {
-        method: "POST",
-        headers: { Accept: "application/json", "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey: token, ...(supplier.accountEmail ? { email: supplier.accountEmail } : {}) }),
-        redirect: "manual",
-        signal: controller.signal,
-      });
-      const redirectedAuthUrlError = supplierUrlValidationError(authResponse.url || authUrl.toString(), storeHostname);
-      if (redirectedAuthUrlError) throw new ApiError(`CJ authentication was redirected to an invalid destination. ${redirectedAuthUrlError}`, 400);
-      if (!authResponse.ok) throw new ApiError(SUPPLIER_AUTHENTICATION_ERROR, 400);
-      const authResult = await readSupplierJsonResponse(authResponse);
-      if (!authResult.ok) throw new ApiError(SUPPLIER_AUTHENTICATION_ERROR, 400);
-      const accessToken = cjAccessTokenFromPayload(authResult.payload);
-      if (!accessToken.ok) throw new ApiError(accessToken.error, 400);
-      requestToken = accessToken.accessToken;
+      requestToken = await cjAccessTokenForSupplier(supplier, token, storeHostname, controller.signal);
     }
     const response = await fetch(url, { headers: requestToken ? { [supplier.adapter === "cj" ? "CJ-Access-Token" : "Authorization"]: supplier.adapter === "cj" ? requestToken : `Bearer ${requestToken}`, Accept: "application/json" } : { Accept: "application/json" }, redirect: "manual", signal: controller.signal });
     const redirectedUrlError = supplierUrlValidationError(response.url || url.toString(), storeHostname);
@@ -882,15 +914,48 @@ async function supplierFetch(supplier: SupplierRecord, token: string, validateOn
     const result = await readSupplierJsonResponse(response);
     if (!result.ok) throw new ApiError(result.error, 400);
     const payload = result.payload;
-    if (supplier.adapter === "cj" && (!payload || typeof payload !== "object" || ((payload as { result?: boolean }).result === false) || ((payload as { success?: boolean }).success === false))) {
-      const cjError = payload && typeof payload === "object" ? payload as { code?: unknown; message?: unknown } : {};
-      const authenticationFailure = /^160000[1-7]$/.test(String(cjError.code ?? "")) || /auth|token|api\s*key/i.test(String(cjError.message ?? ""));
-      throw new ApiError(authenticationFailure ? SUPPLIER_AUTHENTICATION_ERROR : `CJ rejected the request: ${String(cjError.message || "unknown supplier error")}`, 400);
-    }
-    return payload;
+    return supplier.adapter === "cj" ? checkedCjPayload(payload) : payload;
   } catch (error) {
     if (error instanceof ApiError) throw error;
     throw new ApiError(error instanceof Error && error.name === "AbortError" ? "Supplier request timed out." : `Could not reach supplier: ${errorMessage(error)}`, 400);
+  } finally { clearTimeout(timer); }
+}
+
+async function supplierImportPreview(supplier: SupplierRecord, token: string, storeHostname = "") {
+  if (supplier.adapter !== "cj") {
+    return { products: supplierProducts(await supplierFetch(supplier, token, false, storeHostname), supplier).map((item) => item.product), warnings: [] as string[] };
+  }
+  const base = safeSupplierUrl(supplier.apiBaseUrl || "https://developers.cjdropshipping.com/api2.0/v1", storeHostname);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  try {
+    const accessToken = await cjAccessTokenForSupplier(supplier, token, storeHostname, controller.signal);
+    const listUrl = new URL("product/listV2?page=1&size=10", `${base.toString().replace(/\/$/, "")}/`);
+    const listPayload = await cjJsonRequest(listUrl, accessToken, storeHostname, controller.signal);
+    const records = cjProductRecordsFromPayload(listPayload);
+    if (!records?.length) throw new ApiError("CJ did not return any available products.", 400);
+    const products: ReturnType<typeof cjImportProductFromDetail>[] = [];
+    const warnings: string[] = [];
+    for (const entry of records.slice(0, 10)) {
+      const product = entry && typeof entry === "object" ? entry as Record<string, unknown> : {};
+      const productId = String(product.id || "").trim();
+      if (!productId) continue;
+      await new Promise((resolve) => setTimeout(resolve, 550));
+      try {
+        const detailUrl = new URL("product/productDetail/query", `${base.toString().replace(/\/$/, "")}/`);
+        const detailPayload = await cjJsonRequest(detailUrl, accessToken, storeHostname, controller.signal, { method: "POST", body: JSON.stringify({ id: productId }) });
+        products.push(cjImportProductFromDetail(product, detailPayload));
+      } catch (error) {
+        if (errorMessage(error) === SUPPLIER_AUTHENTICATION_ERROR) throw error;
+        products.push(cjImportProductFromDetail(product, { data: {} }));
+        warnings.push(`Variants could not be loaded for ${String(product.nameEn || product.sku || productId)}.`);
+      }
+    }
+    if (!products.length) throw new ApiError("CJ returned products without usable product identifiers.", 400);
+    return { products, warnings };
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(error instanceof Error && error.name === "AbortError" ? "CJ product fetch timed out. Please try again." : `Could not fetch CJ products: ${errorMessage(error)}`, 400);
   } finally { clearTimeout(timer); }
 }
 
@@ -926,7 +991,8 @@ async function syncSupplier(env: Env, db: ReturnType<typeof createDb>, supplier:
       if (existing?.supplier_id && existing.supplier_id !== supplier.id) throw new ApiError(`SKU ${item.product.sku} is already managed by another supplier.`, 409);
       const productId = existing?.id || crypto.randomUUID();
       await env.DB!.batch(productInsertStatements(env, item.product, productId, Boolean(existing), { supplierId: supplier.id, externalId: item.externalId }));
-      existing ? updated += 1 : imported += 1;
+      if (existing) updated += 1;
+      else imported += 1;
     }
     await db.update(supplierIntegrations).set({ connectionStatus: "connected", lastSyncAt: sql`CURRENT_TIMESTAMP`, lastSyncError: null, updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(supplierIntegrations.id, supplier.id));
     await db.update(supplierSyncHistory).set({ status: "success", importedCount: imported, updatedCount: updated, totalCount: total, finishedAt: sql`CURRENT_TIMESTAMP` }).where(eq(supplierSyncHistory.id, historyId));
@@ -1577,6 +1643,18 @@ async function route(
     const sync = await syncSupplier(env, db, supplier, token, url.hostname);
     const refreshed = await db.select(supplierColumns).from(supplierIntegrations).where(eq(supplierIntegrations.id, id)).limit(1);
     return json({ supplier: refreshed[0], sync });
+  }
+
+  if (path.startsWith("/admin/suppliers/") && path.endsWith("/fetch-products") && method === "POST") {
+    await requireAdmin(db, request, env);
+    const id = decodeURIComponent(path.slice("/admin/suppliers/".length, -"/fetch-products".length));
+    const [supplier] = await db.select().from(supplierIntegrations).where(eq(supplierIntegrations.id, id)).limit(1);
+    if (!supplier) throw new ApiError("Supplier was not found.", 404);
+    if (!supplier.isActive) throw new ApiError("This supplier is inactive. Enable it before fetching products.", 400);
+    if (!supplier.encryptedApiKey && supplier.adapter === "cj") throw new ApiError("Supplier credentials are not configured.", 400);
+    const token = supplier.encryptedApiKey ? await decryptSecret(supplier.encryptedApiKey, env.SUPPLIER_SECRET_ENCRYPTION_KEY) : "";
+    const preview = await supplierImportPreview(supplier, token, url.hostname);
+    return json({ supplier: { id: supplier.id, name: supplier.name, adapter: supplier.adapter }, ...preview });
   }
 
   if (path.startsWith("/admin/suppliers/") && method === "PATCH") {
