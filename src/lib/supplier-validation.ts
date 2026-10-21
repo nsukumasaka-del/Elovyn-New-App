@@ -28,6 +28,9 @@ export function supplierUrlValidationError(value: string, currentStoreHost = "")
 }
 
 export async function readSupplierJsonResponse(response: Response) {
+  if (response.status === 401 || response.status === 403) {
+    return { ok: false as const, error: "Authentication failed: Please check that your API key is correct and active." };
+  }
   if (!response.ok) {
     return { ok: false as const, error: `Supplier returned HTTP ${response.status}. Check the URL and credentials.` };
   }

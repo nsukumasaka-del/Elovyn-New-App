@@ -17,6 +17,11 @@ describe("supplier feed safeguards", () => {
 
     const missing = await readSupplierJsonResponse(new Response("not found", { status: 404, headers: { "Content-Type": "text/html" } }));
     expect(missing).toEqual(expect.objectContaining({ ok: false, error: expect.stringMatching(/HTTP 404/i) }));
+
+    for (const status of [401, 403]) {
+      const authentication = await readSupplierJsonResponse(new Response("unauthorized", { status, headers: { "Content-Type": "text/html" } }));
+      expect(authentication).toEqual({ ok: false, error: "Authentication failed: Please check that your API key is correct and active." });
+    }
   });
 
   it("reports malformed declared JSON and accepts valid JSON", async () => {

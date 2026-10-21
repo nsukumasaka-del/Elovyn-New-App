@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Navigate, Link } from "react-router-dom";
-import { ArrowDownToLine, ArrowUpFromLine, Boxes, LayoutDashboard, PackagePlus, Pencil, Settings2, Upload, X } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, Boxes, LayoutDashboard, PackagePlus, Pencil, Plus, Settings2, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest, isPrimaryAdmin, type StoreUser } from "@/lib/store-api";
 import { useStore } from "@/lib/store";
@@ -64,6 +64,7 @@ export function AdminPage() {
   const [fieldMapping, setFieldMapping] = useState("{}");
   const [savingSupplier, setSavingSupplier] = useState(false);
   const [syncingSupplierIds, setSyncingSupplierIds] = useState<Set<string>>(() => new Set());
+  const [deletingSupplierId, setDeletingSupplierId] = useState("");
 
   function resetSupplierForm() {
     setSupplierId("");
@@ -75,6 +76,11 @@ export function AdminPage() {
     setSupplierActive(true);
     setSupplierAdapter("cj");
     setFieldMapping("{}");
+  }
+
+  function beginNewSupplier() {
+    resetSupplierForm();
+    window.setTimeout(() => document.getElementById("supplier-editor")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   }
 
   useEffect(() => {
@@ -179,6 +185,18 @@ export function AdminPage() {
     } catch (error) { toast.error(error instanceof Error ? error.message : "Could not update supplier status."); }
   }
 
+  async function deleteSupplier(supplier: Supplier) {
+    if (!window.confirm(`Delete ${supplier.name}? Imported products will remain in your catalog, but this supplier's connection and sync history will be removed.`)) return;
+    setDeletingSupplierId(supplier.id);
+    try {
+      await apiRequest(`/admin/suppliers/${encodeURIComponent(supplier.id)}`, { method: "DELETE" });
+      if (supplierId === supplier.id) resetSupplierForm();
+      await loadData();
+      toast.success(`${supplier.name} was deleted.`);
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not delete supplier."); }
+    finally { setDeletingSupplierId(""); }
+  }
+
   const stockCount = products.reduce((total, product) => total + product.stock_quantity, 0);
   const lowStockCount = products.filter((product) => product.status !== "In Stock").length;
 
@@ -203,6 +221,7 @@ export function AdminPage() {
           <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
             <div><p className="eyebrow">Store administration</p><h1 className="mt-2 text-3xl font-bold tracking-tight">{tabs.find((item) => item.id === tab)?.label}</h1></div>
             {tab === "inventory" && <button onClick={() => setAddOpen(true)} className="btn-primary"><PackagePlus className="mr-2 h-4 w-4" />Add product</button>}
+            {tab === "suppliers" && <button onClick={beginNewSupplier} className="btn-primary"><Plus className="mr-2 h-4 w-4" />Add new supplier</button>}
           </div>
           <nav aria-label="Admin sections" className="mb-6 flex gap-2 overflow-x-auto md:hidden">
             {tabs.map(({ id, label }) => <button key={id} onClick={() => setTab(id)} className={`whitespace-nowrap rounded-full px-4 py-2 text-sm ${tab === id ? "bg-neutral-950 text-white" : "border border-neutral-300 bg-white"}`}>{label}</button>)}
@@ -253,13 +272,13 @@ export function AdminPage() {
 
           {tab === "suppliers" && (
             <div className="grid items-start gap-6 xl:grid-cols-[1fr_1.1fr]">
-              <section className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-                <div className="flex items-center justify-between gap-3"><h2 className="font-semibold">{supplierId ? "Edit supplier" : "Connect a supplier"}</h2>{supplierId && <button type="button" onClick={resetSupplierForm} className="text-sm font-medium underline">Add another</button>}</div>
+              <section id="supplier-editor" className="scroll-mt-6 rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+                <div className="flex items-center justify-between gap-3"><h2 className="font-semibold">{supplierId ? "Edit supplier" : "Add a new supplier"}</h2>{supplierId && <button type="button" onClick={beginNewSupplier} className="text-sm font-medium underline">Add another</button>}</div>
                 <p className="mt-1 text-sm text-neutral-500">Supplier credentials are encrypted at rest and never returned to the browser.</p>
                 <form onSubmit={(event) => void saveSupplier(event)} className="mt-5 space-y-4">
-                  <label className="block text-sm font-medium">Integration type<select value={supplierAdapter} onChange={(event) => setSupplierAdapter(event.target.value as typeof supplierAdapter)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 bg-white px-3"><option value="cj">CJ Dropshipping</option><option value="generic_json">JSON product feed</option></select></label>
+                  <label className="block text-sm font-medium">Integration type<select value={supplierAdapter} onChange={(event) => setSupplierAdapter(event.target.value as typeof supplierAdapter)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 bg-white px-3"><option value="cj">CJ Dropshipping</option><option value="generic_json">Custom or ZA supplier (JSON/API feed)</option></select><span className="mt-1 block text-xs font-normal text-neutral-500">Choose the custom option for ZA Dropshipping or any supplier that provides a JSON product API/feed.</span></label>
                   <label className="block text-sm font-medium">Supplier name<input required value={supplierName} onChange={(event) => setSupplierName(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
-                  <label className="block text-sm font-medium">{supplierAdapter === "cj" ? "API base URL (optional)" : "JSON feed URL"}<input type="url" value={apiBaseUrl} onChange={(event) => setApiBaseUrl(event.target.value)} placeholder={supplierAdapter === "cj" ? "https://developers.cjdropshipping.com/api2.0/v1" : "https://supplier.example/products.json"} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
+                  <label className="block text-sm font-medium">{supplierAdapter === "cj" ? "API base URL (optional)" : "Product API / JSON feed URL"}<input type="url" value={apiBaseUrl} onChange={(event) => setApiBaseUrl(event.target.value)} placeholder={supplierAdapter === "cj" ? "https://developers.cjdropshipping.com/api2.0/v1" : "https://supplier.example/products.json"} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
                   <label className="block text-sm font-medium">API key{supplierAdapter === "generic_json" ? " (optional)" : ""}<input type="password" autoComplete="new-password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={supplierId ? "Leave blank to keep the saved key" : supplierAdapter === "cj" ? "Enter API key" : "Only needed for protected feeds"} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
                   <label className="block text-sm font-medium">Webhook URL<input type="url" value={webhookUrl} onChange={(event) => setWebhookUrl(event.target.value)} placeholder="https://your-store.com/api/supplier-webhook" className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
                   {supplierAdapter === "generic_json" && <label className="block text-sm font-medium">Field mapping (JSON)<textarea value={fieldMapping} onChange={(event) => setFieldMapping(event.target.value)} rows={5} placeholder={'{"title":"name","sku":"code","price":"retailPrice","stock_quantity":"inventory"}'} className="mt-1.5 w-full rounded-xl border border-neutral-300 p-3 font-mono text-xs" /><span className="mt-1 block text-xs font-normal text-neutral-500">Map Elovyn fields to dot-separated paths in each feed item.</span></label>}
@@ -277,7 +296,7 @@ export function AdminPage() {
                   <article key={supplier.id} className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
                     <div className="flex items-start justify-between gap-4"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold">{supplier.name}</h3><span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-600">{supplier.adapter === "cj" ? "CJ Dropshipping" : "JSON feed"}</span></div><p className="mt-1 break-all text-sm text-neutral-500">{supplier.api_base_url || "CJ default API endpoint"}</p></div><span className={`shrink-0 rounded-full px-2.5 py-1 text-xs ${!supplier.is_active ? "bg-neutral-100 text-neutral-500" : supplier.connection_status === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>{!supplier.is_active ? "Inactive" : supplier.connection_status === "syncing" ? "Syncing" : supplier.connection_status === "connected" ? "Connected" : supplier.connection_status === "error" ? "Error" : "Pending"}</span></div>
                     {supplier.last_sync_error && <p className="mt-3 rounded-lg bg-red-50 p-2 text-xs text-red-700">{supplier.last_sync_error}</p>}
-                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 pt-4"><span className="text-sm text-neutral-600">{supplier.last_sync_at ? `Last synced ${new Date(supplier.last_sync_at).toLocaleString()}` : "Not synced yet"}</span><div className="flex gap-3"><button disabled={!supplier.is_active || syncingSupplierIds.has(supplier.id)} onClick={() => void syncSupplier(supplier.id)} className="text-sm font-medium underline disabled:opacity-40">{syncingSupplierIds.has(supplier.id) ? "Syncing…" : "Sync now"}</button><button onClick={() => editSupplier(supplier)} className="text-sm font-medium underline">Edit</button><button onClick={() => void setSupplierEnabled(supplier, !supplier.is_active)} className="text-sm font-medium underline">{supplier.is_active ? "Disable" : "Enable"}</button></div></div>
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 pt-4"><span className="text-sm text-neutral-600">{supplier.last_sync_at ? `Last synced ${new Date(supplier.last_sync_at).toLocaleString()}` : "Not synced yet"}</span><div className="flex flex-wrap gap-3"><button disabled={!supplier.is_active || syncingSupplierIds.has(supplier.id)} onClick={() => void syncSupplier(supplier.id)} className="text-sm font-medium underline disabled:opacity-40">{syncingSupplierIds.has(supplier.id) ? "Syncing…" : "Sync now"}</button><button onClick={() => editSupplier(supplier)} className="text-sm font-medium underline">Edit</button><button onClick={() => void setSupplierEnabled(supplier, !supplier.is_active)} className="text-sm font-medium underline">{supplier.is_active ? "Disable" : "Enable"}</button><button disabled={deletingSupplierId === supplier.id} onClick={() => void deleteSupplier(supplier)} className="inline-flex items-center gap-1 text-sm font-medium text-red-700 underline disabled:opacity-40"><Trash2 className="h-3.5 w-3.5" />{deletingSupplierId === supplier.id ? "Deleting…" : "Delete"}</button></div></div>
                     <details className="mt-4 border-t border-neutral-100 pt-3"><summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-neutral-500">Sync history ({supplier.sync_history.length})</summary>{supplier.sync_history.length ? <div className="mt-3 space-y-2">{supplier.sync_history.map((entry) => <div key={entry.id} className="flex items-start justify-between gap-3 rounded-lg bg-neutral-50 p-2.5 text-xs"><div><p className="font-medium">{entry.status === "success" ? `${entry.imported_count} added · ${entry.updated_count} updated` : entry.status === "running" ? "Sync in progress" : entry.error_message || "Sync failed"}</p><p className="mt-1 text-neutral-500">{new Date(entry.started_at).toLocaleString()}</p></div><span className={`rounded-full px-2 py-0.5 capitalize ${entry.status === "success" ? "bg-emerald-100 text-emerald-700" : entry.status === "error" ? "bg-red-100 text-red-700" : "bg-sky-100 text-sky-700"}`}>{entry.status}</span></div>)}</div> : <p className="mt-2 text-xs text-neutral-500">No sync attempts recorded yet.</p>}</details>
                   </article>
                 ))}

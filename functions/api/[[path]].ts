@@ -1556,6 +1556,16 @@ async function route(
     return json({ supplier });
   }
 
+  if (path.startsWith("/admin/suppliers/") && method === "DELETE") {
+    await requireAdmin(db, request, env);
+    const id = decodeURIComponent(path.slice("/admin/suppliers/".length));
+    if (!id || id.includes("/")) throw new ApiError("Supplier id is invalid.", 400);
+    const [supplier] = await db.select({ id: supplierIntegrations.id, name: supplierIntegrations.name }).from(supplierIntegrations).where(eq(supplierIntegrations.id, id)).limit(1);
+    if (!supplier) throw new ApiError("Supplier was not found.", 404);
+    await db.delete(supplierIntegrations).where(eq(supplierIntegrations.id, id));
+    return json({ deleted: true, supplier });
+  }
+
   if (path.startsWith("/assets/") && method === "GET") {
     if (!env.PRODUCT_ASSETS) {
       throw new ApiError("Product image storage is not configured for this deployment.", 503);
