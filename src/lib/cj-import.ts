@@ -1,5 +1,17 @@
 type UnknownRecord = Record<string, unknown>;
 
+export type SupplierProductSearchResult = {
+  id: string;
+  sku: string;
+  title: string;
+  image_url: string;
+  price: number;
+  category: string;
+  currency: string;
+};
+
+export type SupplierCategory = { id: string; name: string; group: string };
+
 function record(value: unknown): UnknownRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as UnknownRecord : {};
 }
@@ -66,4 +78,42 @@ export function cjImportProductFromDetail(listEntry: unknown, detailPayload: unk
     options: names.map((name, index) => ({ name, values: [...valuesByOption[index]] })).filter((option) => option.values.length),
     variants,
   };
+}
+
+export function cjSearchResultsFromPayload(payload: unknown): SupplierProductSearchResult[] {
+  const data = record(record(payload).data);
+  const groups = Array.isArray(data.content) ? data.content.map(record) : [];
+  return groups.flatMap((group) => Array.isArray(group.productList) ? group.productList.map(record) : [])
+    .map((product) => ({
+      id: text(product.id),
+      sku: text(product.sku || product.spu),
+      title: text(product.nameEn),
+      image_url: text(product.bigImage),
+      price: number(product.nowPrice || product.discountPrice || product.sellPrice),
+      category: text(product.threeCategoryName || product.twoCategoryName),
+      currency: "USD",
+    }))
+    .filter((product) => product.id && product.title);
+}
+
+export function cjCategoriesFromPayload(payload: unknown): SupplierCategory[] {
+  const data = Array.isArray(record(payload).data) ? record(payload).data as unknown[] : [];
+  const categories: SupplierCategory[] = [];
+  for (const firstValue of data) {
+    const first = record(firstValue);
+    const firstName = text(first.categoryFirstName);
+    const secondLevels = Array.isArray(first.categoryFirstList) ? first.categoryFirstList : [];
+    for (const secondValue of secondLevels) {
+      const second = record(secondValue);
+      const secondName = text(second.categorySecondName);
+      const thirdLevels = Array.isArray(second.categorySecondList) ? second.categorySecondList : [];
+      for (const thirdValue of thirdLevels) {
+        const third = record(thirdValue);
+        const id = text(third.categoryId);
+        const name = text(third.categoryName);
+        if (id && name) categories.push({ id, name, group: [firstName, secondName].filter(Boolean).join(" / ") });
+      }
+    }
+  }
+  return categories;
 }

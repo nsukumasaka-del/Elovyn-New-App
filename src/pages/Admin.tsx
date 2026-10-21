@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Navigate, Link } from "react-router-dom";
-import { ArrowDownToLine, ArrowUpFromLine, Boxes, LayoutDashboard, PackagePlus, Pencil, Plus, Settings2, Trash2, Upload, X } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, Boxes, LayoutDashboard, PackagePlus, Pencil, Plus, Search, Settings2, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest, isPrimaryAdmin, type StoreUser } from "@/lib/store-api";
 import { useStore } from "@/lib/store";
@@ -35,6 +35,8 @@ type Supplier = {
   sync_history: { id: string; status: "running" | "success" | "error"; imported_count: number; updated_count: number; total_count: number; error_message: string | null; started_at: string; finished_at: string | null }[];
 };
 type VariantFields = { sku: string; price: string; compareAt: string; barcode: string; stock: string };
+type SupplierSearchProduct = { id: string; sku: string; title: string; image_url: string; price: number; category: string; currency: string };
+type SupplierCategory = { id: string; name: string; group: string };
 
 const tabs = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -574,16 +576,45 @@ function ImportProductsPanel({ onImported, suppliers }: { onImported: () => void
   const [fetchingSupplier, setFetchingSupplier] = useState(false);
   const [selectedSupplierId, setSelectedSupplierId] = useState("");
   const [supplierNotice, setSupplierNotice] = useState("");
+  const [searchKeyword, setSearchKeyword] = useState("");
+  const [selectedCategoryId, setSelectedCategoryId] = useState("");
+  const [supplierCategories, setSupplierCategories] = useState<SupplierCategory[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
+  const [categoryError, setCategoryError] = useState("");
+  const [searchResults, setSearchResults] = useState<SupplierSearchProduct[]>([]);
+  const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(() => new Set());
+  const [selectionOpen, setSelectionOpen] = useState(false);
+  const [loadingSelected, setLoadingSelected] = useState(false);
+  const [directQuery, setDirectQuery] = useState("");
+  const [directLoading, setDirectLoading] = useState(false);
   const [jobId, setJobId] = useState("");
   const [jobStatus, setJobStatus] = useState("");
   const [result, setResult] = useState<{ imported_count: number; skipped_count: number; skipped: { title: string; sku: string; reason: string }[] } | null>(null);
   const availableSuppliers = useMemo(() => suppliers.filter((supplier) => supplier.is_active && (supplier.adapter !== "cj" || supplier.has_api_key)), [suppliers]);
+  const selectedSupplier = useMemo(() => availableSuppliers.find((supplier) => supplier.id === selectedSupplierId), [availableSuppliers, selectedSupplierId]);
 
   useEffect(() => {
     if (!availableSuppliers.some((supplier) => supplier.id === selectedSupplierId)) {
       setSelectedSupplierId(availableSuppliers[0]?.id || "");
     }
   }, [availableSuppliers, selectedSupplierId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSelectedCategoryId("");
+    setSupplierCategories([]);
+    setCategoryError("");
+    if (!selectedSupplierId) {
+      setCategoriesLoading(false);
+      return () => { cancelled = true; };
+    }
+    setCategoriesLoading(true);
+    apiRequest<{ categories: SupplierCategory[] }>(`/admin/suppliers/${encodeURIComponent(selectedSupplierId)}/categories`)
+      .then(({ categories }) => { if (!cancelled) setSupplierCategories(categories); })
+      .catch((reason: Error) => { if (!cancelled) setCategoryError(reason.message || "Categories could not be loaded."); })
+      .finally(() => { if (!cancelled) setCategoriesLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedSupplierId]);
 
   function loadRecords(nextRecords: Record<string, unknown>[], nextHeaders?: string[]) {
     if (nextRecords.length > 50) throw new Error("Imports are limited to 50 products per batch.");
@@ -651,21 +682,87 @@ function ImportProductsPanel({ onImported, suppliers }: { onImported: () => void
     try {
       const response = await apiRequest<{
         supplier: { id: string; name: string; adapter: Supplier["adapter"] };
-        products: Record<string, unknown>[];
-        warnings: string[];
-      }>(`/admin/suppliers/${encodeURIComponent(selectedSupplierId)}/fetch-products`, { method: "POST" });
-      if (!response.products.length) throw new Error(`${response.supplier.name} did not return any products.`);
-      setSource("json");
-      setJsonText(JSON.stringify(response.products, null, 2));
-      loadRecords(response.products);
-      const warning = response.warnings.length ? ` ${response.warnings.join(" ")}` : "";
-      setSupplierNotice(`${response.products.length} product${response.products.length === 1 ? "" : "s"} fetched from ${response.supplier.name} and mapped for import.${warning}`);
-      toast.success(`${response.products.length} supplier product${response.products.length === 1 ? " is" : "s are"} ready to import.`);
+        products: SupplierSearchProduct[];
+      }>(`/admin/suppliers/${encodeURIComponent(selectedSupplierId)}/fetch-products`, {
+        method: "POST",
+        body: JSON.stringify({ action: "search", keyword: searchKeyword.trim(), category_id: selectedCategoryId }),
+      });
+      if (!response.products.length) throw new Error(`No products from ${response.supplier.name} matched those filters.`);
+      setSearchResults(response.products);
+      setSelectedProductIds(new Set());
+      setSelectionOpen(true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not fetch supplier products.");
     } finally {
       setFetchingSupplier(false);
     }
+  }
+
+  function populateSupplierFeed(products: Record<string, unknown>[], supplierName: string, warnings: string[] = []) {
+    setSource("json");
+    setJsonText(JSON.stringify(products, null, 2));
+    loadRecords(products);
+    setSelectionOpen(false);
+    const warning = warnings.length ? ` ${warnings.join(" ")}` : "";
+    setSupplierNotice(`${products.length} selected product${products.length === 1 ? "" : "s"} from ${supplierName} added to the JSON feed and mapped for import.${warning}`);
+    toast.success(`${products.length} supplier product${products.length === 1 ? " is" : "s are"} ready to import.`);
+  }
+
+  async function addSelectedToJsonFeed() {
+    if (!selectedSupplierId || !selectedProductIds.size) return;
+    setLoadingSelected(true);
+    setError("");
+    try {
+      const response = await apiRequest<{
+        supplier: { name: string };
+        products: Record<string, unknown>[];
+        warnings: string[];
+      }>(`/admin/suppliers/${encodeURIComponent(selectedSupplierId)}/fetch-products`, {
+        method: "POST",
+        body: JSON.stringify({ action: "details", product_ids: [...selectedProductIds] }),
+      });
+      populateSupplierFeed(response.products, response.supplier.name, response.warnings);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not load the selected products.");
+      setSelectionOpen(false);
+    } finally {
+      setLoadingSelected(false);
+    }
+  }
+
+  async function importDirectProduct() {
+    if (!selectedSupplierId || !directQuery.trim()) {
+      setError("Enter a CJ Product ID or SKU.");
+      return;
+    }
+    setDirectLoading(true);
+    setError("");
+    setSupplierNotice("");
+    try {
+      const response = await apiRequest<{
+        supplier: { name: string };
+        products: Record<string, unknown>[];
+        warnings: string[];
+      }>(`/admin/suppliers/${encodeURIComponent(selectedSupplierId)}/fetch-products`, {
+        method: "POST",
+        body: JSON.stringify({ action: "direct", query: directQuery.trim() }),
+      });
+      populateSupplierFeed(response.products, response.supplier.name, response.warnings);
+      setDirectQuery("");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not fetch that CJ product.");
+    } finally {
+      setDirectLoading(false);
+    }
+  }
+
+  function toggleSelectedProduct(productId: string) {
+    setSelectedProductIds((current) => {
+      const next = new Set(current);
+      if (next.has(productId)) next.delete(productId);
+      else next.add(productId);
+      return next;
+    });
   }
 
   async function importRecords() {
@@ -746,7 +843,7 @@ function ImportProductsPanel({ onImported, suppliers }: { onImported: () => void
     }
   }
 
-  return (
+  return (<>
     <div className="grid items-start gap-6 xl:grid-cols-[0.9fr_1.1fr]">
       <section className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
         <h2 className="font-semibold">Import products</h2>
@@ -754,17 +851,46 @@ function ImportProductsPanel({ onImported, suppliers }: { onImported: () => void
         <div className="mt-5 flex flex-wrap items-center gap-2">
           {(["json", "csv"] as const).map((format) => <button key={format} type="button" onClick={() => { setSource(format); setRecords([]); setResult(null); setError(""); }}
             className={`rounded-full px-4 py-2 text-sm font-medium ${source === format ? "bg-neutral-950 text-white" : "border border-neutral-300"}`}>{format.toUpperCase()}</button>)}
-          <select aria-label="Supplier to fetch products from" value={selectedSupplierId} onChange={(event) => setSelectedSupplierId(event.target.value)}
-            className="h-10 min-w-44 rounded-full border border-neutral-300 bg-white px-3 text-sm">
-            {!availableSuppliers.length && <option value="">No connected suppliers</option>}
-            {availableSuppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
-          </select>
-          <button type="button" disabled={!selectedSupplierId || fetchingSupplier || busy} onClick={() => void fetchSupplierProducts()}
-            className="inline-flex min-h-10 items-center gap-2 rounded-full border border-neutral-950 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50">
-            <ArrowDownToLine className="h-4 w-4" /> {fetchingSupplier ? "Fetching supplier products…" : "Fetch products from connected suppliers"}
-          </button>
         </div>
         {!availableSuppliers.length && <p className="mt-2 text-xs text-amber-700">Add and enable a supplier in the Suppliers view before fetching products.</p>}
+        <section className="mt-4 rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+          <div className="flex items-start gap-3">
+            <span className="rounded-full bg-white p-2 shadow-sm"><Search className="h-4 w-4" /></span>
+            <div><h3 className="text-sm font-semibold">Search connected supplier products</h3><p className="mt-0.5 text-xs text-neutral-500">Search first, choose exact products, then add only your selections to the JSON feed.</p></div>
+          </div>
+          <form onSubmit={(event) => { event.preventDefault(); void fetchSupplierProducts(); }} className="mt-4 grid gap-3 sm:grid-cols-2">
+            <label className="text-xs font-medium text-neutral-600">Supplier
+              <select aria-label="Supplier to search" value={selectedSupplierId} onChange={(event) => setSelectedSupplierId(event.target.value)}
+                className="mt-1 h-11 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm text-neutral-950">
+                {!availableSuppliers.length && <option value="">No connected suppliers</option>}
+                {availableSuppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
+              </select>
+            </label>
+            <label className="text-xs font-medium text-neutral-600">Search keywords / Product SKU
+              <input value={searchKeyword} maxLength={200} onChange={(event) => setSearchKeyword(event.target.value)} placeholder="hoodie, sneakers, or CJ SKU"
+                className="mt-1 h-11 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm text-neutral-950" />
+            </label>
+            <label className="text-xs font-medium text-neutral-600">Category
+              <select value={selectedCategoryId} onChange={(event) => setSelectedCategoryId(event.target.value)} disabled={!selectedSupplierId || categoriesLoading}
+                className="mt-1 h-11 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm text-neutral-950 disabled:bg-neutral-100">
+                <option value="">{categoriesLoading ? "Loading categories…" : "All categories"}</option>
+                {supplierCategories.map((category) => <option key={category.id} value={category.id}>{category.group ? `${category.group} — ` : ""}{category.name}</option>)}
+              </select>
+            </label>
+            <button disabled={!selectedSupplierId || fetchingSupplier || busy} className="btn-primary mt-auto inline-flex h-11 items-center justify-center gap-2 disabled:opacity-50">
+              <ArrowDownToLine className="h-4 w-4" /> {fetchingSupplier ? "Searching supplier…" : "Fetch products from connected suppliers"}
+            </button>
+          </form>
+          {categoryError && <p className="mt-2 text-xs text-amber-700">Categories unavailable: {categoryError} You can still search by keyword or SKU.</p>}
+          {selectedSupplier?.adapter === "cj" && <form onSubmit={(event) => { event.preventDefault(); void importDirectProduct(); }} className="mt-4 border-t border-neutral-200 pt-4">
+            <label className="text-xs font-medium text-neutral-600">Quick import by exact CJ Product ID or SKU</label>
+            <div className="mt-1 flex flex-col gap-2 sm:flex-row">
+              <input value={directQuery} maxLength={200} onChange={(event) => setDirectQuery(event.target.value)} placeholder="Paste a CJ Product ID or SKU"
+                className="h-11 min-w-0 flex-1 rounded-xl border border-neutral-300 bg-white px-3 text-sm text-neutral-950" />
+              <button disabled={!directQuery.trim() || directLoading} className="btn-secondary h-11 whitespace-nowrap disabled:opacity-50">{directLoading ? "Loading exact product…" : "Add exact product to JSON"}</button>
+            </div>
+          </form>}
+        </section>
         {source === "json" ? <>
           <label htmlFor="import-json" className="mt-4 block text-sm font-medium">Product data (JSON)</label>
           <input type="file" accept=".json,application/json" onChange={(event) => void readJsonFile(event.target.files?.[0])} className="mt-2 block w-full text-sm file:mr-3 file:rounded-full file:border-0 file:bg-neutral-100 file:px-4 file:py-2" />
@@ -808,5 +934,48 @@ function ImportProductsPanel({ onImported, suppliers }: { onImported: () => void
         </div>
       </section>
     </div>
-  );
+    {selectionOpen && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-3 sm:p-6" onMouseDown={(event) => { if (event.currentTarget === event.target && !loadingSelected) setSelectionOpen(false); }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="supplier-results-title" className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <header className="flex items-start justify-between gap-4 border-b border-neutral-200 px-5 py-4 sm:px-7">
+          <div>
+            <h2 id="supplier-results-title" className="text-lg font-semibold">Choose products to import</h2>
+            <p className="mt-1 text-sm text-neutral-500">{searchResults.length} matching products · {selectedProductIds.size} selected · prices supplied by CJ in USD</p>
+          </div>
+          <button type="button" disabled={loadingSelected} onClick={() => setSelectionOpen(false)} aria-label="Close product selection" className="rounded-full border border-neutral-200 p-2 disabled:opacity-50"><X className="h-5 w-5" /></button>
+        </header>
+        <div className="flex items-center justify-between gap-3 border-b border-neutral-100 px-5 py-3 text-sm sm:px-7">
+          <button type="button" onClick={() => setSelectedProductIds(selectedProductIds.size === searchResults.length ? new Set() : new Set(searchResults.map((product) => product.id)))} className="font-semibold underline underline-offset-4">
+            {selectedProductIds.size === searchResults.length ? "Clear selection" : "Select all results"}
+          </button>
+          <span className="text-neutral-500">Select up to 20 products</span>
+        </div>
+        <div className="grid flex-1 gap-4 overflow-y-auto p-5 sm:grid-cols-2 sm:p-7 lg:grid-cols-3 xl:grid-cols-4">
+          {searchResults.map((product) => {
+            const selected = selectedProductIds.has(product.id);
+            const selectionLimitReached = selectedProductIds.size >= 20 && !selected;
+            return <label key={product.id} className={`relative cursor-pointer overflow-hidden rounded-2xl border bg-white transition ${selected ? "border-neutral-950 ring-2 ring-neutral-950" : "border-neutral-200 hover:border-neutral-400"} ${selectionLimitReached ? "cursor-not-allowed opacity-50" : ""}`}>
+              <input type="checkbox" checked={selected} disabled={selectionLimitReached || loadingSelected} onChange={() => toggleSelectedProduct(product.id)} className="absolute right-3 top-3 z-10 h-5 w-5 accent-black" aria-label={`Select ${product.title}`} />
+              <div className="aspect-square bg-neutral-100">
+                {product.image_url ? <img src={product.image_url} alt="" loading="lazy" className="h-full w-full object-contain" /> : <div className="flex h-full items-center justify-center text-neutral-400"><PackagePlus className="h-8 w-8" /></div>}
+              </div>
+              <div className="p-4">
+                <p className="line-clamp-2 min-h-10 text-sm font-semibold">{product.title}</p>
+                <p className="mt-1 truncate text-xs text-neutral-500">{product.sku}</p>
+                <div className="mt-3 flex items-end justify-between gap-2">
+                  <span className="text-sm font-semibold">{product.currency ? `${product.currency} ` : ""}{Number(product.price).toFixed(2)}</span>
+                  {product.category && <span className="max-w-28 truncate text-[11px] text-neutral-500">{product.category}</span>}
+                </div>
+              </div>
+            </label>;
+          })}
+        </div>
+        <footer className="flex flex-col-reverse gap-3 border-t border-neutral-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-end sm:px-7">
+          <button type="button" disabled={loadingSelected} onClick={() => setSelectionOpen(false)} className="btn-secondary disabled:opacity-50">Cancel</button>
+          <button type="button" disabled={!selectedProductIds.size || loadingSelected} onClick={() => void addSelectedToJsonFeed()} className="btn-primary disabled:opacity-50">
+            {loadingSelected ? "Loading variants and inventory…" : `Import ${selectedProductIds.size || ""} Selected to JSON Feed`}
+          </button>
+        </footer>
+      </section>
+    </div>}
+  </>);
 }

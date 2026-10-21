@@ -32,7 +32,7 @@ import {
 } from "../lib/auth";
 import { readSupplierJsonResponse, supplierUrlValidationError, SUPPLIER_AUTHENTICATION_ERROR } from "../../src/lib/supplier-validation";
 import { cjAccessTokenFromPayload, cjProductRecordsFromPayload } from "../../src/lib/cj-auth";
-import { cjImportProductFromDetail } from "../../src/lib/cj-import";
+import { cjCategoriesFromPayload, cjImportProductFromDetail, cjSearchResultsFromPayload, type SupplierCategory, type SupplierProductSearchResult } from "../../src/lib/cj-import";
 import { normalizeDeliveryAddress } from "../../src/lib/delivery-address";
 import { createYocoCheckout, registerYocoWebhook, verifyYocoWebhookSignature } from "../lib/yoco";
 
@@ -921,42 +921,102 @@ async function supplierFetch(supplier: SupplierRecord, token: string, validateOn
   } finally { clearTimeout(timer); }
 }
 
-async function supplierImportPreview(supplier: SupplierRecord, token: string, storeHostname = "") {
-  if (supplier.adapter !== "cj") {
-    return { products: supplierProducts(await supplierFetch(supplier, token, false, storeHostname), supplier).map((item) => item.product), warnings: [] as string[] };
-  }
+async function withCjSession<T>(supplier: SupplierRecord, token: string, storeHostname: string, work: (base: URL, accessToken: string, signal: AbortSignal) => Promise<T>, timeout = 30000) {
   const base = safeSupplierUrl(supplier.apiBaseUrl || "https://developers.cjdropshipping.com/api2.0/v1", storeHostname);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30000);
+  const timer = setTimeout(() => controller.abort(), timeout);
   try {
     const accessToken = await cjAccessTokenForSupplier(supplier, token, storeHostname, controller.signal);
-    const listUrl = new URL("product/listV2?page=1&size=10", `${base.toString().replace(/\/$/, "")}/`);
-    const listPayload = await cjJsonRequest(listUrl, accessToken, storeHostname, controller.signal);
-    const records = cjProductRecordsFromPayload(listPayload);
-    if (!records?.length) throw new ApiError("CJ did not return any available products.", 400);
+    return await work(base, accessToken, controller.signal);
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(error instanceof Error && error.name === "AbortError" ? "CJ product request timed out. Please try again." : `Could not fetch CJ products: ${errorMessage(error)}`, 400);
+  } finally { clearTimeout(timer); }
+}
+
+async function supplierProductSearch(supplier: SupplierRecord, token: string, storeHostname: string, keyword = "", categoryId = "") {
+  if (supplier.adapter !== "cj") {
+    const incoming = supplierProducts(await supplierFetch(supplier, token, false, storeHostname), supplier);
+    const normalizedKeyword = keyword.toLowerCase();
+    return incoming.filter(({ product }) => (!normalizedKeyword || `${product.title} ${product.sku}`.toLowerCase().includes(normalizedKeyword)) && (!categoryId || product.category === categoryId))
+      .map(({ externalId, product }): SupplierProductSearchResult => ({ id: externalId, sku: product.sku, title: product.title, image_url: product.image_url || "", price: product.price, category: product.category || "", currency: "" }));
+  }
+  return withCjSession(supplier, token, storeHostname, async (base, accessToken, signal) => {
+    const listUrl = new URL("product/listV2", `${base.toString().replace(/\/$/, "")}/`);
+    listUrl.searchParams.set("page", "1");
+    listUrl.searchParams.set("size", "24");
+    listUrl.searchParams.append("features", "enable_category");
+    if (keyword) listUrl.searchParams.set("keyWord", keyword);
+    if (categoryId) listUrl.searchParams.set("categoryId", categoryId);
+    return cjSearchResultsFromPayload(await cjJsonRequest(listUrl, accessToken, storeHostname, signal));
+  });
+}
+
+async function supplierCategoryOptions(supplier: SupplierRecord, token: string, storeHostname: string) {
+  if (supplier.adapter !== "cj") {
+    const names = [...new Set(supplierProducts(await supplierFetch(supplier, token, false, storeHostname), supplier).map(({ product }) => product.category).filter(Boolean))] as string[];
+    return names.map((name): SupplierCategory => ({ id: name, name, group: "Supplier categories" }));
+  }
+  return withCjSession(supplier, token, storeHostname, async (base, accessToken, signal) => {
+    const categoryUrl = new URL("product/getCategory", `${base.toString().replace(/\/$/, "")}/`);
+    return cjCategoriesFromPayload(await cjJsonRequest(categoryUrl, accessToken, storeHostname, signal));
+  });
+}
+
+async function supplierProductDetails(supplier: SupplierRecord, token: string, storeHostname: string, productIds: string[]) {
+  if (supplier.adapter !== "cj") {
+    const selected = new Set(productIds);
+    return { products: supplierProducts(await supplierFetch(supplier, token, false, storeHostname), supplier).filter(({ externalId }) => selected.has(externalId)).map(({ product }) => product), warnings: [] as string[] };
+  }
+  return withCjSession(supplier, token, storeHostname, async (base, accessToken, signal) => {
     const products: ReturnType<typeof cjImportProductFromDetail>[] = [];
     const warnings: string[] = [];
-    for (const entry of records.slice(0, 10)) {
-      const product = entry && typeof entry === "object" ? entry as Record<string, unknown> : {};
-      const productId = String(product.id || "").trim();
-      if (!productId) continue;
+    for (const productId of productIds) {
       await new Promise((resolve) => setTimeout(resolve, 550));
       try {
         const detailUrl = new URL("product/productDetail/query", `${base.toString().replace(/\/$/, "")}/`);
-        const detailPayload = await cjJsonRequest(detailUrl, accessToken, storeHostname, controller.signal, { method: "POST", body: JSON.stringify({ id: productId }) });
-        products.push(cjImportProductFromDetail(product, detailPayload));
+        const detailPayload = await cjJsonRequest(detailUrl, accessToken, storeHostname, signal, { method: "POST", body: JSON.stringify({ id: productId }) });
+        products.push(cjImportProductFromDetail({ id: productId }, detailPayload));
       } catch (error) {
         if (errorMessage(error) === SUPPLIER_AUTHENTICATION_ERROR) throw error;
-        products.push(cjImportProductFromDetail(product, { data: {} }));
-        warnings.push(`Variants could not be loaded for ${String(product.nameEn || product.sku || productId)}.`);
+        warnings.push(`Product details could not be loaded for ${productId}.`);
       }
     }
-    if (!products.length) throw new ApiError("CJ returned products without usable product identifiers.", 400);
+    if (!products.length) throw new ApiError("CJ could not load details for the selected products.", 400);
     return { products, warnings };
-  } catch (error) {
-    if (error instanceof ApiError) throw error;
-    throw new ApiError(error instanceof Error && error.name === "AbortError" ? "CJ product fetch timed out. Please try again." : `Could not fetch CJ products: ${errorMessage(error)}`, 400);
-  } finally { clearTimeout(timer); }
+  }, 45000);
+}
+
+async function supplierDirectProduct(supplier: SupplierRecord, token: string, storeHostname: string, query: string) {
+  if (supplier.adapter !== "cj") {
+    const incoming = supplierProducts(await supplierFetch(supplier, token, false, storeHostname), supplier);
+    const match = incoming.find(({ externalId, product }) => externalId.toLowerCase() === query.toLowerCase() || product.sku.toLowerCase() === query.toLowerCase());
+    if (!match) throw new ApiError("No exact product matched that supplier product ID or SKU.", 404);
+    return { products: [match.product], warnings: [] as string[] };
+  }
+  return withCjSession(supplier, token, storeHostname, async (base, accessToken, signal) => {
+    let productData: Record<string, unknown> | null = null;
+    for (const parameter of ["pid", "productSku"] as const) {
+      try {
+        const queryUrl = new URL("product/query", `${base.toString().replace(/\/$/, "")}/`);
+        queryUrl.searchParams.set(parameter, query);
+        const payload = await cjJsonRequest(queryUrl, accessToken, storeHostname, signal);
+        const data = payload && typeof payload === "object" ? (payload as { data?: unknown }).data : null;
+        if (data && typeof data === "object" && !Array.isArray(data)) {
+          productData = data as Record<string, unknown>;
+          break;
+        }
+      } catch (error) {
+        if (errorMessage(error) === SUPPLIER_AUTHENTICATION_ERROR) throw error;
+      }
+    }
+    const productId = String(productData?.pid || productData?.id || "").trim();
+    if (!productId) throw new ApiError("No exact CJ product matched that Product ID or SKU.", 404);
+    const detailUrl = new URL("product/productDetail/query", `${base.toString().replace(/\/$/, "")}/`);
+    const detailPayload = await cjJsonRequest(detailUrl, accessToken, storeHostname, signal, { method: "POST", body: JSON.stringify({ id: productId }) });
+    const listEntry = { id: productId, nameEn: productData?.productNameEn, sku: productData?.productSku, bigImage: productData?.bigImage, threeCategoryName: productData?.categoryName };
+    return { products: [cjImportProductFromDetail(listEntry, detailPayload)], warnings: [] as string[] };
+  });
 }
 
 function pathValue(record: unknown, path: string) {
@@ -1645,6 +1705,17 @@ async function route(
     return json({ supplier: refreshed[0], sync });
   }
 
+  if (path.startsWith("/admin/suppliers/") && path.endsWith("/categories") && method === "GET") {
+    await requireAdmin(db, request, env);
+    const id = decodeURIComponent(path.slice("/admin/suppliers/".length, -"/categories".length));
+    const [supplier] = await db.select().from(supplierIntegrations).where(eq(supplierIntegrations.id, id)).limit(1);
+    if (!supplier) throw new ApiError("Supplier was not found.", 404);
+    if (!supplier.isActive) throw new ApiError("This supplier is inactive. Enable it before loading categories.", 400);
+    if (!supplier.encryptedApiKey && supplier.adapter === "cj") throw new ApiError("Supplier credentials are not configured.", 400);
+    const token = supplier.encryptedApiKey ? await decryptSecret(supplier.encryptedApiKey, env.SUPPLIER_SECRET_ENCRYPTION_KEY) : "";
+    return json({ categories: await supplierCategoryOptions(supplier, token, url.hostname) });
+  }
+
   if (path.startsWith("/admin/suppliers/") && path.endsWith("/fetch-products") && method === "POST") {
     await requireAdmin(db, request, env);
     const id = decodeURIComponent(path.slice("/admin/suppliers/".length, -"/fetch-products".length));
@@ -1653,8 +1724,25 @@ async function route(
     if (!supplier.isActive) throw new ApiError("This supplier is inactive. Enable it before fetching products.", 400);
     if (!supplier.encryptedApiKey && supplier.adapter === "cj") throw new ApiError("Supplier credentials are not configured.", 400);
     const token = supplier.encryptedApiKey ? await decryptSecret(supplier.encryptedApiKey, env.SUPPLIER_SECRET_ENCRYPTION_KEY) : "";
-    const preview = await supplierImportPreview(supplier, token, url.hostname);
-    return json({ supplier: { id: supplier.id, name: supplier.name, adapter: supplier.adapter }, ...preview });
+    const body = await bodyAsJson(request);
+    const action = typeof body.action === "string" ? body.action : "search";
+    const supplierSummary = { id: supplier.id, name: supplier.name, adapter: supplier.adapter };
+    if (action === "search") {
+      const keyword = typeof body.keyword === "string" ? body.keyword.trim().slice(0, 200) : "";
+      const categoryId = typeof body.category_id === "string" ? body.category_id.trim().slice(0, 200) : "";
+      return json({ supplier: supplierSummary, products: await supplierProductSearch(supplier, token, url.hostname, keyword, categoryId) });
+    }
+    if (action === "details") {
+      if (!Array.isArray(body.product_ids) || !body.product_ids.length || body.product_ids.length > 20) throw new ApiError("Select between 1 and 20 products to import.", 400);
+      const productIds = [...new Set(body.product_ids.map((value) => typeof value === "string" ? value.trim() : "").filter(Boolean))];
+      if (!productIds.length) throw new ApiError("Selected product IDs are invalid.", 400);
+      return json({ supplier: supplierSummary, ...await supplierProductDetails(supplier, token, url.hostname, productIds) });
+    }
+    if (action === "direct") {
+      const query = requiredString(body.query, "CJ Product ID or SKU", 200);
+      return json({ supplier: supplierSummary, ...await supplierDirectProduct(supplier, token, url.hostname, query) });
+    }
+    throw new ApiError("Supplier product action is invalid.", 400);
   }
 
   if (path.startsWith("/admin/suppliers/") && method === "PATCH") {
