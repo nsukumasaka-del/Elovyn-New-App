@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -28,15 +28,79 @@ export const products = sqliteTable("products", {
   title: text("title").notNull(),
   sku: text("sku").notNull().unique(),
   price: real("price").notNull(),
+  compareAtPrice: real("compare_at_price"),
   stockQuantity: integer("stock_quantity").notNull().default(0),
   status: text("status").notNull().default("In Stock"),
   category: text("category"),
+  brand: text("brand"),
+  description: text("description"),
+  handle: text("handle"),
   imageUrl: text("image_url"),
+  imagesJson: text("images_json").notNull().default("[]"),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   check("products_price_check", sql`${table.price} >= 0`),
   check("products_stock_quantity_check", sql`${table.stockQuantity} >= 0`),
   check("products_status_check", sql`${table.status} IN ('In Stock', 'Low Stock', 'Out of Stock')`),
+  uniqueIndex("products_handle_idx").on(table.handle),
+]);
+
+export const options = sqliteTable("options", {
+  id: text("id").primaryKey(),
+  productId: text("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  valuesJson: text("values_json").notNull(),
+  position: integer("position").notNull().default(0),
+}, (table) => [
+  uniqueIndex("options_product_name_idx").on(table.productId, table.name),
+]);
+
+export const variants = sqliteTable("variants", {
+  id: text("id").primaryKey(),
+  productId: text("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  sku: text("sku").notNull().unique(),
+  price: real("price").notNull(),
+  compareAtPrice: real("compare_at_price"),
+  barcode: text("barcode"),
+  optionsJson: text("options_json").notNull().default("{}"),
+  imageUrl: text("image_url"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("variants_product_id_idx").on(table.productId),
+  check("variants_price_check", sql`${table.price} >= 0`),
+]);
+
+export const variantOptionValues = sqliteTable("variant_option_values", {
+  variantId: text("variant_id").notNull().references(() => variants.id, { onDelete: "cascade" }),
+  optionId: text("option_id").notNull().references(() => options.id, { onDelete: "cascade" }),
+  value: text("value").notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.variantId, table.optionId] }),
+]);
+
+export const inventoryItems = sqliteTable("inventory_items", {
+  id: text("id").primaryKey(),
+  variantId: text("variant_id").notNull().references(() => variants.id, { onDelete: "cascade" }),
+  quantity: integer("quantity").notNull().default(0),
+  trackQuantity: integer("track_quantity", { mode: "boolean" }).notNull().default(true),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  check("inventory_items_quantity_check", sql`${table.quantity} >= 0`),
+  uniqueIndex("inventory_items_variant_id_idx").on(table.variantId),
+]);
+
+export const productImportJobs = sqliteTable("product_import_jobs", {
+  id: text("id").primaryKey(),
+  status: text("status").notNull().default("pending"),
+  payloadJson: text("payload_json").notNull(),
+  resultJson: text("result_json"),
+  error: text("error"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("product_import_jobs_created_at_idx").on(table.createdAt),
 ]);
 
 export const orders = sqliteTable("orders", {

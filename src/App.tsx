@@ -7,6 +7,7 @@ import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import { StoreProvider } from "@/lib/store";
 import { AdminPage } from "./pages/Admin";
+import { ProductDetailPage } from "./pages/ProductDetail";
 import { AccountPage, LoginPage, OrdersPage, WishlistPage } from "./pages/StoreAccount";
 
 const queryClient = new QueryClient();
@@ -20,6 +21,7 @@ const App = () => (
         <StoreProvider>
           <Routes>
             <Route path="/" element={<Index />} />
+            <Route path="/products/:productKey" element={<ProductDetailPage />} />
             <Route path="/admin" element={<AdminPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/wishlist" element={<WishlistPage />} />

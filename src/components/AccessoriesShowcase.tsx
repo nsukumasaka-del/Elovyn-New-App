@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { useInView } from "framer-motion";
 import { useRef } from "react";
+import { Link } from "react-router-dom";
 import { useStore } from "@/lib/store";
 
 const accessories = [
@@ -71,13 +72,15 @@ export const AccessoriesShowcase = () => {
               className="product-card group"
             >
               <div className="relative aspect-[4/5] overflow-hidden">
-                <img src={item.image} alt={item.name} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                <Link to={`/products/${["leather-crossbody", "structured-cap", "layered-chains", "everyday-tote"][item.id - 1]}`} aria-label={`View ${item.name}`} className="block h-full w-full">
+                  <img src={item.image} alt={item.name} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                </Link>
               </div>
               <div className="space-y-4 p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-neutral-500">{item.category}</p>
-                    <h3 className="mt-2 text-xl font-semibold tracking-[-0.05em] text-neutral-950">{item.name}</h3>
+                    <h3 className="mt-2 text-xl font-semibold tracking-[-0.05em] text-neutral-950"><Link to={`/products/${["leather-crossbody", "structured-cap", "layered-chains", "everyday-tote"][item.id - 1]} className="hover:underline">{item.name}</Link></h3>
                   </div>
                   <button aria-label={`Save ${item.name}`} aria-pressed={wishlist.includes(["leather-crossbody", "structured-cap", "layered-chains", "everyday-tote"][item.id - 1])} onClick={() => toggleWishlist(
                     ["leather-crossbody", "structured-cap", "layered-chains", "everyday-tote"][item.id - 1],

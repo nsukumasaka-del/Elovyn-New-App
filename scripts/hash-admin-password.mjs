@@ -6,18 +6,26 @@ if (!stdin.isTTY || !stdout.isTTY) {
   process.exit(1);
 }
 
-stdout.write("Admin password: ");
+stdout.write("Admin password (input hidden): ");
 stdin.setRawMode(true);
 stdin.resume();
 stdin.setEncoding("utf8");
 
 let password = "";
 stdin.on("data", (character) => {
-  if (character === "\u0003") process.exit(1);
+  if (character === "\u0003") {
+    stdin.setRawMode(false);
+    process.exit(1);
+  }
   if (character === "\r" || character === "\n") {
     stdin.setRawMode(false);
     stdin.pause();
     stdout.write("\n");
+    if (!password) {
+      console.error("Password cannot be empty.");
+      process.exitCode = 1;
+      return;
+    }
     const iterations = 100_000;
     const rounds = 6;
     const salt = randomBytes(16).toString("hex");
@@ -29,9 +37,11 @@ stdin.on("data", (character) => {
     console.log(`pbkdf2-chain$${iterations}$${rounds}$${salt}$${derived.toString("hex")}`);
     return;
   }
-  if (character === "\u007f") {
+  if (character === "\u007f" || character === "\b") {
     password = password.slice(0, -1);
+    stdout.write("\b \b");
     return;
   }
   password += character;
+  stdout.write("*");
 });

@@ -4,7 +4,7 @@ export type StoreUser = {
   role: "customer" | "admin";
   fullName: string | null;
 };
-export type CartProduct = { id: string; title: string; price: number; imageUrl: string };
+export type CartProduct = { id: string; title: string; price: number; imageUrl: string; quantity?: number };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;

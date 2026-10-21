@@ -7,6 +7,7 @@ import { AccessoriesShowcase } from "@/components/AccessoriesShowcase";
 import { Community } from "@/components/Community";
 import { CTA } from "@/components/CTA";
 import { Footer } from "@/components/Footer";
+import { Link } from "react-router-dom";
 import clothingImage from "@/assets/CLOTHING.jpg";
 import hoodieImage from "@/assets/Hoodie.png";
 import bagImage from "@/assets/HAND BAG COMBO.jpg";
@@ -144,10 +145,12 @@ const Index = () => {
               <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
                 {newProducts.map((product) => (
                   <article key={product.id} id={`product-${product.id}`} className="product-card overflow-hidden">
-                    <img src={product.image_url || clothingImage} alt={product.title} className="aspect-[4/5] w-full object-cover" />
+                    <Link to={`/products/${product.id}`} aria-label={`View ${product.title}`} className="block">
+                      <img src={product.image_url || clothingImage} alt={product.title} className="aspect-[4/5] w-full object-cover" />
+                    </Link>
                     <div className="space-y-3 p-5">
                       <p className="text-xs uppercase tracking-wider text-neutral-500">{product.category}</p>
-                      <h3 className="font-semibold">{product.title}</h3>
+                      <h3 className="font-semibold"><Link to={`/products/${product.id}`} className="hover:underline">{product.title}</Link></h3>
                       <div className="flex items-center justify-between"><span>R {Number(product.price).toFixed(2)}</span><span className="text-xs text-neutral-500">{product.stock_quantity > 0 ? "In stock" : "Sold out"}</span></div>
                       <button
                         disabled={product.stock_quantity <= 0}

@@ -144,12 +144,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [retryCount]);
 
   const addToCart = useCallback((product: CartProduct) => {
+    const requestedQuantity = product.quantity ?? 1;
+    const quantity = Number.isInteger(requestedQuantity)
+      ? Math.max(1, Math.min(99, requestedQuantity))
+      : 1;
+    const cartProduct = { ...product };
+    delete cartProduct.quantity;
     const current = readStoredCart();
     const existing = current.find((item) => item.id === product.id);
     const next = existing
-      ? current.map((item) => item.id === product.id ? { ...item, quantity: Math.min(99, item.quantity + 1) } : item)
-      : [...current, { ...product, quantity: 1 }];
-    localStorage.setItem(`${cartStorageKey}:${product.id}`, JSON.stringify(product));
+      ? current.map((item) => item.id === product.id ? { ...item, quantity: Math.min(99, item.quantity + quantity) } : item)
+      : [...current, { ...cartProduct, quantity }];
+    localStorage.setItem(`${cartStorageKey}:${product.id}`, JSON.stringify(cartProduct));
     persistCart(next);
     toast.success(`${product.title} added to your bag`);
   }, [persistCart]);

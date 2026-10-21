@@ -1,6 +1,16 @@
-import { asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import { createDb } from "../../db";
-import { carts, orders, products, supplierIntegrations, users } from "../../db/schema";
+import {
+  carts,
+  inventoryItems,
+  options,
+  orders,
+  products,
+  supplierIntegrations,
+  users,
+  variantOptionValues,
+  variants,
+} from "../../db/schema";
 import {
   clearedSessionCookie,
   clearedOAuthStateCookie,
@@ -34,6 +44,7 @@ export interface Env {
 interface PagesContext {
   request: Request;
   env: Env;
+  waitUntil: (promise: Promise<unknown>) => void;
 }
 
 const productColumns = {
@@ -41,12 +52,17 @@ const productColumns = {
   title: products.title,
   sku: products.sku,
   price: products.price,
+  compare_at_price: products.compareAtPrice,
   stock_quantity: products.stockQuantity,
   status: sql<string>`CASE WHEN ${products.stockQuantity} <= 0 THEN 'Out of Stock'
     WHEN ${products.stockQuantity} <= 5 THEN 'Low Stock'
     ELSE 'In Stock' END`.as("status"),
   category: products.category,
+  brand: products.brand,
+  description: products.description,
+  handle: products.handle,
   image_url: products.imageUrl,
+  images_json: products.imagesJson,
   updated_at: products.updatedAt,
 };
 
@@ -77,11 +93,24 @@ function json(data: unknown, status = 200, headers: HeadersInit = {}) {
 }
 
 async function bodyAsJson(request: Request) {
+  const contentLength = Number(request.headers.get("content-length") || 0);
+  if (contentLength > 2 * 1024 * 1024) {
+    throw new ApiError("JSON request bodies must be 2 MB or smaller.", 413);
+  }
+  const text = await request.text();
+  if (new TextEncoder().encode(text).byteLength > 2 * 1024 * 1024) {
+    throw new ApiError("JSON request bodies must be 2 MB or smaller.", 413);
+  }
+  let body: unknown;
   try {
-    return await request.json() as Record<string, unknown>;
+    body = JSON.parse(text);
   } catch {
     throw new ApiError("Request body must be valid JSON.", 400);
   }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new ApiError("Request body must be a JSON object.", 400);
+  }
+  return body as Record<string, unknown>;
 }
 
 function errorMessage(error: unknown) {
@@ -361,6 +390,332 @@ function statusForStock(quantity: number) {
   return "In Stock";
 }
 
+type ProductOptionInput = { name: string; values: string[] };
+type ProductVariantInput = {
+  sku: string;
+  price: number;
+  compare_at_price: number | null;
+  barcode: string | null;
+  inventory_quantity: number;
+  option_values: Record<string, string>;
+  image_url: string | null;
+};
+type ProductInput = {
+  title: string;
+  sku: string;
+  price: number;
+  compare_at_price: number | null;
+  stock_quantity: number;
+  category: string | null;
+  brand: string | null;
+  description: string | null;
+  handle: string;
+  image_url: string | null;
+  images: string[];
+  options: ProductOptionInput[];
+  variants: ProductVariantInput[];
+};
+
+function normalizedHandle(value: string) {
+  return value.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
+}
+
+function optionalText(value: unknown, label: string, maxLength = 5000): string | null {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value !== "string" || value.length > maxLength) {
+    throw new ApiError(`${label} must be text no longer than ${maxLength} characters.`, 400);
+  }
+  return value.trim() || null;
+}
+
+function nonNegativeAmount(value: unknown, label: string, fallback: number | null = null) {
+  if (value === undefined || value === null || value === "") return fallback;
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new ApiError(`${label} must be a non-negative number.`, 400);
+  }
+  return amount;
+}
+
+function normalizeProductInput(value: unknown): ProductInput {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ApiError("Each imported product must be an object.", 400);
+  }
+  const body = value as Record<string, unknown>;
+  const title = requiredString(body.title, "Product title", 200);
+  const sku = requiredString(body.sku, "SKU", 100);
+  const rawOptions = body.options === undefined ? [] : body.options;
+  if (!Array.isArray(rawOptions) || rawOptions.length > 3) {
+    throw new ApiError(`${title}: provide no more than three product options.`, 400);
+  }
+  const optionNames = new Set<string>();
+  const productOptions = rawOptions.map((entry): ProductOptionInput => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new ApiError(`${title}: each option must include a name and values.`, 400);
+    }
+    const option = entry as Record<string, unknown>;
+    const name = requiredString(option.name, "Option name", 50);
+    if (optionNames.has(name.toLowerCase())) throw new ApiError(`${title}: option names must be unique.`, 400);
+    optionNames.add(name.toLowerCase());
+    if (!Array.isArray(option.values) || option.values.length < 1 || option.values.length > 100) {
+      throw new ApiError(`${title}: each option must have between 1 and 100 values.`, 400);
+    }
+    const values = option.values.map((item) => requiredString(item, `${name} value`, 100));
+    if (new Set(values.map((item) => item.toLowerCase())).size !== values.length) {
+      throw new ApiError(`${title}: ${name} values must be unique.`, 400);
+    }
+    return { name, values };
+  });
+  const rawVariants = body.variants === undefined || body.variants === null ? [] : body.variants;
+  if (!Array.isArray(rawVariants) || rawVariants.length > 100) {
+    throw new ApiError(`${title}: provide no more than 100 variants.`, 400);
+  }
+  const variantInputs = rawVariants.map((entry): ProductVariantInput => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new ApiError(`${title}: each variant must be an object.`, 400);
+    }
+    const variant = entry as Record<string, unknown>;
+    const variantSku = requiredString(variant.sku, "Variant SKU", 100);
+    const variantPrice = nonNegativeAmount(variant.price, "Variant price");
+    const inventory = Number(variant.inventory_quantity ?? 0);
+    if (variantPrice === null || !Number.isInteger(inventory) || inventory < 0 || inventory > 10000000) {
+      throw new ApiError(`${title}: variant price and inventory must be valid non-negative numbers.`, 400);
+    }
+    const optionValues = variant.option_values ?? {};
+    if (!optionValues || typeof optionValues !== "object" || Array.isArray(optionValues)) {
+      throw new ApiError(`${title}: variant option values must be an object.`, 400);
+    }
+    const normalizedValues: Record<string, string> = {};
+    for (const option of productOptions) {
+      const selected = requiredString((optionValues as Record<string, unknown>)[option.name], `${option.name} value`, 100);
+      if (!option.values.includes(selected)) throw new ApiError(`${title}: unknown ${option.name} value "${selected}".`, 400);
+      normalizedValues[option.name] = selected;
+    }
+    if (Object.keys(optionValues).length !== productOptions.length) {
+      throw new ApiError(`${title}: variant option values must match the product options.`, 400);
+    }
+    return {
+      sku: variantSku,
+      price: variantPrice,
+      compare_at_price: nonNegativeAmount(variant.compare_at_price, "Compare-at price"),
+      barcode: optionalText(variant.barcode, "Barcode", 100),
+      inventory_quantity: inventory,
+      option_values: normalizedValues,
+      image_url: optionalText(variant.image_url, "Variant image URL", 500),
+    };
+  });
+  if (productOptions.length && !variantInputs.length) {
+    throw new ApiError(`${title}: add at least one variant for the selected options.`, 400);
+  }
+  if (!productOptions.length && variantInputs.length > 1) {
+    throw new ApiError(`${title}: define product options before adding multiple variants.`, 400);
+  }
+  const variantSkus = variantInputs.map((variant) => variant.sku.toLowerCase());
+  if (new Set(variantSkus).size !== variantSkus.length) {
+    throw new ApiError(`${title}: variant SKUs must be unique.`, 400);
+  }
+  if (productOptions.length && variantSkus.includes(sku.toLowerCase())) {
+    throw new ApiError(`${title}: the product SKU must not match an option variant SKU.`, 400);
+  }
+  const basePrice = nonNegativeAmount(body.price, "Price", variantInputs[0]?.price ?? null);
+  if (basePrice === null) throw new ApiError(`${title}: price is required.`, 400);
+  const rawImages = body.images ?? [];
+  if (!Array.isArray(rawImages) || rawImages.length > 20
+    || rawImages.some((image) => typeof image !== "string" || image.length > 1000)) {
+    throw new ApiError(`${title}: provide no more than 20 valid image URLs.`, 400);
+  }
+  const imageUrl = optionalText(body.image_url ?? rawImages[0], "Image URL", 1000);
+  const images = [...new Set([imageUrl, ...rawImages].filter((image): image is string =>
+    typeof image === "string" && image.trim().length > 0,
+  ))];
+  const handle = normalizedHandle(optionalText(body.handle, "Product handle", 100) ?? title)
+    || crypto.randomUUID().slice(0, 8);
+  const stockQuantity = variantInputs.length
+    ? variantInputs.reduce((total, variant) => total + variant.inventory_quantity, 0)
+    : Number(body.stock_quantity ?? 0);
+  if (!Number.isInteger(stockQuantity) || stockQuantity < 0) {
+    throw new ApiError(`${title}: stock quantity must be a non-negative integer.`, 400);
+  }
+  return {
+    title,
+    sku,
+    price: basePrice,
+    compare_at_price: nonNegativeAmount(body.compare_at_price, "Compare-at price"),
+    stock_quantity: stockQuantity,
+    category: optionalText(body.category, "Category", 100),
+    brand: optionalText(body.brand, "Brand", 100),
+    description: optionalText(body.description, "Description", 10000),
+    handle,
+    image_url: imageUrl,
+    images,
+    options: productOptions,
+    variants: variantInputs.length ? variantInputs : [{
+      sku,
+      price: basePrice,
+      compare_at_price: nonNegativeAmount(body.compare_at_price, "Compare-at price"),
+      barcode: null,
+      inventory_quantity: stockQuantity,
+      option_values: {},
+      image_url: imageUrl,
+    }],
+  };
+}
+
+function productInsertStatements(env: Env, product: ProductInput, productId: string, updateExisting = false) {
+  if (!env.DB) throw new ApiError("The D1 database is unavailable.", 503);
+  const productValues = [
+    product.title,
+    product.sku,
+    product.price,
+    product.compare_at_price,
+    product.stock_quantity,
+    statusForStock(product.stock_quantity),
+    product.category,
+    product.brand,
+    product.description,
+    product.handle,
+    product.image_url,
+    JSON.stringify(product.images),
+  ];
+  const statements: D1PreparedStatement[] = [
+    env.DB.prepare(updateExisting ? `UPDATE products SET
+      title = ?, sku = ?, price = ?, compare_at_price = ?, stock_quantity = ?, status = ?, category = ?,
+      brand = ?, description = ?, handle = ?, image_url = ?, images_json = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?` : `INSERT INTO products
+      (id, title, sku, price, compare_at_price, stock_quantity, status, category, brand, description, handle, image_url, images_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(...(updateExisting ? [...productValues, productId] : [productId, ...productValues])),
+  ];
+  if (updateExisting) {
+    statements.push(env.DB.prepare("DELETE FROM variants WHERE product_id = ?").bind(productId));
+    statements.push(env.DB.prepare("DELETE FROM options WHERE product_id = ?").bind(productId));
+  }
+  const optionIds = new Map<string, string>();
+  product.options.forEach((option, index) => {
+    const optionId = crypto.randomUUID();
+    optionIds.set(option.name, optionId);
+    statements.push(env.DB!.prepare(
+      "INSERT INTO options (id, product_id, name, values_json, position) VALUES (?, ?, ?, ?, ?)",
+    ).bind(optionId, productId, option.name, JSON.stringify(option.values), index));
+  });
+  for (const variant of product.variants) {
+    const variantId = crypto.randomUUID();
+    const title = Object.values(variant.option_values).join(" / ") || "Default";
+    statements.push(env.DB.prepare(`INSERT INTO variants
+      (id, product_id, title, sku, price, compare_at_price, barcode, options_json, image_url)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(
+        variantId,
+        productId,
+        title,
+        variant.sku,
+        variant.price,
+        variant.compare_at_price,
+        variant.barcode,
+        JSON.stringify(variant.option_values),
+        variant.image_url,
+      ));
+    statements.push(env.DB.prepare(
+      "INSERT INTO inventory_items (id, variant_id, quantity) VALUES (?, ?, ?)",
+    ).bind(crypto.randomUUID(), variantId, variant.inventory_quantity));
+    for (const [name, selectedValue] of Object.entries(variant.option_values)) {
+      const optionId = optionIds.get(name);
+      if (optionId) {
+        statements.push(env.DB.prepare(
+          "INSERT INTO variant_option_values (variant_id, option_id, value) VALUES (?, ?, ?)",
+        ).bind(variantId, optionId, selectedValue));
+      }
+    }
+  }
+  if (statements.length > 900) {
+    throw new ApiError(`${product.title}: this variant matrix is too large to import in one operation.`, 400);
+  }
+  return statements;
+}
+
+type ProductImportResult = {
+  imported: { id: string; title: string; sku: string }[];
+  skipped: { title: string; sku: string; reason: string }[];
+};
+
+async function processProductImport(env: Env, jobId: string) {
+  if (!env.DB) throw new ApiError("The D1 database is unavailable.", 503);
+  try {
+    const job = await env.DB.prepare("SELECT payload_json FROM product_import_jobs WHERE id = ?")
+      .bind(jobId)
+      .first<{ payload_json: string }>();
+    if (!job) throw new Error("Import job payload was not found.");
+    await env.DB.prepare("UPDATE product_import_jobs SET status = 'processing', updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+      .bind(jobId)
+      .run();
+
+    let payload: unknown;
+    try {
+      payload = JSON.parse(job.payload_json);
+    } catch {
+      throw new Error("Saved import job payload is invalid.");
+    }
+    if (!Array.isArray(payload)) throw new Error("Saved import job payload must be a product list.");
+    const importedProducts = payload.map(normalizeProductInput);
+    const allProductSkus = importedProducts.map((product) => product.sku.toLowerCase());
+    const allHandles = importedProducts.map((product) => product.handle.toLowerCase());
+    const allVariantSkus = importedProducts.flatMap((product) => product.variants.map((variant) => variant.sku.toLowerCase()));
+    const allCheckedSkus = [...new Set([...allProductSkus, ...allVariantSkus])];
+    const db = createDb(env.DB);
+    const [existingProducts, existingVariants] = await Promise.all([
+      db.select({ sku: products.sku, handle: products.handle }).from(products).where(or(
+        inArray(sql`lower(${products.sku})`, allProductSkus),
+        inArray(sql`lower(${products.handle})`, allHandles),
+      )),
+      db.select({ sku: variants.sku }).from(variants).where(inArray(sql`lower(${variants.sku})`, allCheckedSkus)),
+    ]);
+    const productSkuSet = new Set(existingProducts.map((product) => product.sku.toLowerCase()));
+    const handleSet = new Set(existingProducts.map((product) => product.handle?.toLowerCase()).filter((handle): handle is string => !!handle));
+    const occupiedSkuSet = new Set([
+      ...productSkuSet,
+      ...existingVariants.map((variant) => variant.sku.toLowerCase()),
+    ]);
+    const result: ProductImportResult = { imported: [], skipped: [] };
+    const insertStatements: D1PreparedStatement[] = [];
+    for (const product of importedProducts) {
+      const duplicateVariantSku = product.variants.find((variant) => occupiedSkuSet.has(variant.sku.toLowerCase()));
+      const duplicateProductSku = occupiedSkuSet.has(product.sku.toLowerCase());
+      const duplicateHandle = handleSet.has(product.handle.toLowerCase());
+      if (duplicateProductSku || duplicateHandle || duplicateVariantSku) {
+        result.skipped.push({
+          title: product.title,
+          sku: product.sku,
+          reason: duplicateProductSku
+            ? "Product or variant SKU already exists."
+            : duplicateHandle
+              ? "Product handle already exists."
+              : `Variant SKU ${duplicateVariantSku?.sku} already exists.`,
+        });
+        continue;
+      }
+      const id = crypto.randomUUID();
+      insertStatements.push(...productInsertStatements(env, product, id));
+      occupiedSkuSet.add(product.sku.toLowerCase());
+      handleSet.add(product.handle.toLowerCase());
+      for (const variant of product.variants) occupiedSkuSet.add(variant.sku.toLowerCase());
+      result.imported.push({ id, title: product.title, sku: product.sku });
+    }
+    if (insertStatements.length) await env.DB.batch(insertStatements);
+    await env.DB.prepare(`UPDATE product_import_jobs SET status = 'completed', result_json = ?,
+      updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+      .bind(JSON.stringify(result), jobId)
+      .run();
+  } catch (error) {
+    const message = errorMessage(error).slice(0, 1000);
+    console.error(`Product import job ${jobId} failed:`, error);
+    await env.DB.prepare(`UPDATE product_import_jobs SET status = 'failed', error = ?,
+      updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+      .bind(message, jobId)
+      .run();
+  }
+}
+
 function bytesToHex(bytes: Uint8Array) {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
@@ -380,7 +735,12 @@ async function encryptSecret(value: string, secret: string) {
   return `${bytesToHex(iv)}.${bytesToHex(new Uint8Array(encrypted))}`;
 }
 
-async function route(request: Request, env: Env, db: ReturnType<typeof createDb>) {
+async function route(
+  request: Request,
+  env: Env,
+  db: ReturnType<typeof createDb>,
+  waitUntil: PagesContext["waitUntil"],
+) {
   const url = new URL(request.url);
   const path = `/${url.pathname.replace(/^\/api\/?/, "").replace(/\/+$/, "")}`;
   const method = request.method;
@@ -491,6 +851,48 @@ async function route(request: Request, env: Env, db: ReturnType<typeof createDb>
     return json({ products: rows });
   }
 
+  if (path.startsWith("/products/") && method === "GET") {
+    let productKey: string;
+    try {
+      productKey = decodeURIComponent(path.slice("/products/".length));
+    } catch {
+      throw new ApiError("Product was not found.", 404);
+    }
+    if (!productKey || productKey.length > 120 || productKey.includes("/")) {
+      throw new ApiError("Product was not found.", 404);
+    }
+    const [product] = await db.select(productColumns)
+      .from(products)
+      .where(or(eq(products.id, productKey), eq(products.handle, productKey)))
+      .limit(1);
+    if (!product) throw new ApiError("Product was not found.", 404);
+    const [productOptions, productVariants] = await Promise.all([
+      db.select({
+        id: options.id,
+        name: options.name,
+        values_json: options.valuesJson,
+        position: options.position,
+      }).from(options).where(eq(options.productId, product.id)).orderBy(asc(options.position)),
+      db.select({
+        id: variants.id,
+        title: variants.title,
+        sku: variants.sku,
+        price: variants.price,
+        compare_at_price: variants.compareAtPrice,
+        barcode: variants.barcode,
+        options_json: variants.optionsJson,
+        image_url: variants.imageUrl,
+        inventory_quantity: sql<number>`COALESCE(${inventoryItems.quantity}, 0)`,
+        track_quantity: inventoryItems.trackQuantity,
+      })
+        .from(variants)
+        .leftJoin(inventoryItems, eq(inventoryItems.variantId, variants.id))
+        .where(eq(variants.productId, product.id))
+        .orderBy(asc(variants.createdAt)),
+    ]);
+    return json({ product, options: productOptions, variants: productVariants });
+  }
+
   if (path === "/cart" && (method === "GET" || method === "PUT")) {
     const user = await requireUser(db, request);
     if (method === "GET") {
@@ -578,54 +980,183 @@ async function route(request: Request, env: Env, db: ReturnType<typeof createDb>
     if (!Number.isInteger(change) || change === 0 || Math.abs(change) > 9999) {
       throw new ApiError("Stock change must be a non-zero integer.", 400);
     }
-    const newStock = sql`MAX(0, ${products.stockQuantity} + ${change})`;
-    const updated = await db
-      .update(products)
-      .set({
-        stockQuantity: newStock,
-        status: sql`CASE WHEN ${newStock} <= 0 THEN 'Out of Stock'
-                         WHEN ${newStock} <= 5 THEN 'Low Stock'
-                         ELSE 'In Stock' END`,
-        updatedAt: sql`CURRENT_TIMESTAMP`,
-      })
-      .where(eq(products.id, id))
-      .returning({ id: products.id, stock_quantity: products.stockQuantity, status: products.status });
-    if (!updated[0]) throw new ApiError("Product not found.", 404);
-    return json({ product: updated[0] });
+    const [product] = await db.select({ id: products.id }).from(products).where(eq(products.id, id)).limit(1);
+    if (!product) throw new ApiError("Product not found.", 404);
+    const [variant] = await db.select({ id: variants.id })
+      .from(variants)
+      .innerJoin(inventoryItems, eq(inventoryItems.variantId, variants.id))
+      .where(eq(variants.productId, id))
+      .orderBy(change < 0 ? desc(inventoryItems.quantity) : asc(variants.createdAt))
+      .limit(1);
+    if (variant && env.DB) {
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE inventory_items SET quantity = MAX(0, quantity + ?), updated_at = CURRENT_TIMESTAMP
+          WHERE variant_id = ?`).bind(change, variant.id),
+        env.DB.prepare(`UPDATE products SET
+          stock_quantity = (SELECT COALESCE(SUM(inventory_items.quantity), 0)
+            FROM inventory_items INNER JOIN variants ON variants.id = inventory_items.variant_id
+            WHERE variants.product_id = ?),
+          status = CASE
+            WHEN (SELECT COALESCE(SUM(inventory_items.quantity), 0)
+              FROM inventory_items INNER JOIN variants ON variants.id = inventory_items.variant_id
+              WHERE variants.product_id = ?) <= 0 THEN 'Out of Stock'
+            WHEN (SELECT COALESCE(SUM(inventory_items.quantity), 0)
+              FROM inventory_items INNER JOIN variants ON variants.id = inventory_items.variant_id
+              WHERE variants.product_id = ?) <= 5 THEN 'Low Stock'
+            ELSE 'In Stock' END,
+          updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+          .bind(id, id, id, id),
+      ]);
+    } else {
+      const newStock = sql`MAX(0, ${products.stockQuantity} + ${change})`;
+      await db.update(products)
+        .set({
+          stockQuantity: newStock,
+          status: sql`CASE WHEN ${newStock} <= 0 THEN 'Out of Stock'
+                           WHEN ${newStock} <= 5 THEN 'Low Stock'
+                           ELSE 'In Stock' END`,
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(products.id, id));
+    }
+    const [updated] = await db.select({
+      id: products.id,
+      stock_quantity: products.stockQuantity,
+      status: products.status,
+    }).from(products).where(eq(products.id, id)).limit(1);
+    return json({ product: updated });
   }
 
   if (path === "/admin/products" && method === "POST") {
     await requireAdmin(db, request, env);
     const body = await bodyAsJson(request);
-    const title = requiredString(body.title, "Product title");
-    const sku = requiredString(body.sku, "SKU", 100);
-    const price = Number(body.price);
-    const stock = Number(body.stock_quantity);
-    if (!Number.isFinite(price) || price < 0 || !Number.isInteger(stock) || stock < 0) {
-      throw new ApiError("Price and stock quantity must be valid non-negative numbers.", 400);
+    const product = normalizeProductInput(body);
+    const incomingSkus = product.variants.map((variant) => variant.sku);
+    const allSkus = [...new Set([product.sku, ...incomingSkus].map((sku) => sku.toLowerCase()))];
+    const [existingSku] = await db.select({ id: products.id }).from(products)
+      .where(or(
+        inArray(sql`lower(${products.sku})`, allSkus),
+        sql`lower(${products.handle}) = ${product.handle.toLowerCase()}`,
+      )).limit(1);
+    const [existingVariant] = await db.select({ sku: variants.sku }).from(variants)
+      .where(inArray(sql`lower(${variants.sku})`, allSkus)).limit(1);
+    if (existingSku || existingVariant) {
+      throw new ApiError("A product with this SKU or handle, or a variant with one of these SKUs, already exists.", 409);
     }
-    const category = requiredString(body.category, "Category", 100);
-    const imageUrl = typeof body.image_url === "string" ? body.image_url.slice(0, 500) : null;
-    const status = statusForStock(stock);
-    const rows = await db
-      .insert(products)
-      .values({
-        id: crypto.randomUUID(), title, sku, price, stockQuantity: stock, status, category, imageUrl,
-      })
-      .onConflictDoNothing({ target: products.sku })
-      .returning({
-        id: products.id,
-        title: products.title,
-        sku: products.sku,
-        price: products.price,
-        stock_quantity: products.stockQuantity,
-        status: products.status,
-        category: products.category,
-        image_url: products.imageUrl,
-        updated_at: products.updatedAt,
-      });
-    if (!rows[0]) throw new ApiError("A product with this SKU already exists.", 409);
-    return json({ product: rows[0] }, 201);
+    const productId = crypto.randomUUID();
+    await env.DB!.batch(productInsertStatements(env, product, productId));
+    return json({ product: { id: productId, title: product.title, sku: product.sku, handle: product.handle } }, 201);
+  }
+
+  if (path.startsWith("/admin/products/") && method === "PUT") {
+    await requireAdmin(db, request, env);
+    let productId: string;
+    try {
+      productId = decodeURIComponent(path.slice("/admin/products/".length));
+    } catch {
+      throw new ApiError("Product was not found.", 404);
+    }
+    if (!productId || productId.includes("/") || productId.length > 100) {
+      throw new ApiError("Product was not found.", 404);
+    }
+    const [currentProduct] = await db.select({ id: products.id }).from(products).where(eq(products.id, productId)).limit(1);
+    if (!currentProduct) throw new ApiError("Product was not found.", 404);
+    const product = normalizeProductInput(await bodyAsJson(request));
+    const allSkus = [...new Set([product.sku, ...product.variants.map((variant) => variant.sku)].map((sku) => sku.toLowerCase()))];
+    const [duplicateProduct] = await db.select({ id: products.id }).from(products).where(and(
+      ne(products.id, productId),
+      or(
+        inArray(sql`lower(${products.sku})`, allSkus),
+        sql`lower(${products.handle}) = ${product.handle.toLowerCase()}`,
+      ),
+    )).limit(1);
+    const [duplicateVariant] = await db.select({ sku: variants.sku }).from(variants).where(and(
+      ne(variants.productId, productId),
+      inArray(sql`lower(${variants.sku})`, allSkus),
+    )).limit(1);
+    if (duplicateProduct || duplicateVariant) {
+      throw new ApiError("A product with this SKU or handle, or a variant with one of these SKUs, already exists.", 409);
+    }
+    await env.DB!.batch(productInsertStatements(env, product, productId, true));
+    return json({ product: { id: productId, title: product.title, sku: product.sku, handle: product.handle } });
+  }
+
+  if (path.startsWith("/admin/products/import/") && method === "GET") {
+    await requireAdmin(db, request, env);
+    const jobId = path.slice("/admin/products/import/".length);
+    if (!jobId || jobId.includes("/") || jobId.length > 100) throw new ApiError("Import job was not found.", 404);
+    const job = await env.DB!.prepare(`SELECT id, status, result_json, error, created_at, updated_at
+      FROM product_import_jobs WHERE id = ?`).bind(jobId).first<{
+        id: string;
+        status: "pending" | "processing" | "completed" | "failed";
+        result_json: string | null;
+        error: string | null;
+        created_at: string;
+        updated_at: string;
+      }>();
+    if (!job) throw new ApiError("Import job was not found.", 404);
+    let result: ProductImportResult | null = null;
+    if (job.status === "completed" && !job.result_json) {
+      throw new ApiError("Completed import job is missing its result.", 500);
+    }
+    if (job.result_json) {
+      try {
+        result = JSON.parse(job.result_json) as ProductImportResult;
+      } catch {
+        throw new ApiError("Saved import result is invalid.", 500);
+      }
+    }
+    return json({
+      job_id: job.id,
+      status: job.status,
+      result,
+      error: job.error,
+      created_at: job.created_at,
+      updated_at: job.updated_at,
+    });
+  }
+
+  if (path === "/admin/products/import" && method === "POST") {
+    await requireAdmin(db, request, env);
+    const body = await bodyAsJson(request);
+    if (!Array.isArray(body.products) || body.products.length < 1 || body.products.length > 50) {
+      throw new ApiError("Import must contain between 1 and 50 products.", 400);
+    }
+    const importedProducts = body.products.map(normalizeProductInput);
+    const statementCount = importedProducts.reduce((total, product) =>
+      total + 1 + product.options.length + product.variants.length * (2 + product.options.length), 0);
+    if (statementCount > 900) throw new ApiError("Import is too large. Split it into smaller batches.", 413);
+    const importedSkuSet = new Set<string>();
+    const importedHandleSet = new Set<string>();
+    const importedVariantSkuSet = new Set<string>();
+    for (const product of importedProducts) {
+      const productSku = product.sku.toLowerCase();
+      if (importedSkuSet.has(productSku)) throw new ApiError(`Duplicate product SKU in import: ${product.sku}.`, 400);
+      importedSkuSet.add(productSku);
+      if (importedHandleSet.has(product.handle)) throw new ApiError(`Duplicate product handle in import: ${product.handle}.`, 400);
+      importedHandleSet.add(product.handle);
+      for (const variant of product.variants) {
+        const variantSku = variant.sku.toLowerCase();
+        const isDefaultVariant = !product.options.length && variantSku === productSku;
+        if (importedVariantSkuSet.has(variantSku) || (importedSkuSet.has(variantSku) && !isDefaultVariant)) {
+          throw new ApiError(`Duplicate SKU in import: ${variant.sku}.`, 400);
+        }
+        importedVariantSkuSet.add(variantSku);
+      }
+    }
+    for (const product of importedProducts) {
+      for (const variant of product.variants) {
+        const variantSku = variant.sku.toLowerCase();
+        if (importedSkuSet.has(variantSku) && (product.options.length || product.sku.toLowerCase() !== variantSku)) {
+          throw new ApiError(`Variant SKU ${variant.sku} conflicts with a product SKU in this import.`, 400);
+        }
+      }
+    }
+    const jobId = crypto.randomUUID();
+    await env.DB!.prepare(`INSERT INTO product_import_jobs (id, status, payload_json)
+      VALUES (?, 'pending', ?)`).bind(jobId, JSON.stringify(importedProducts)).run();
+    waitUntil(processProductImport(env, jobId));
+    return json({ job_id: jobId, status: "pending" }, 202);
   }
 
   if (path === "/admin/suppliers" && method === "GET") {
@@ -716,16 +1247,16 @@ async function route(request: Request, env: Env, db: ReturnType<typeof createDb>
   throw new ApiError("API route not found.", 404);
 }
 
-export async function onRequest({ request, env }: PagesContext) {
+export async function onRequest(context: PagesContext) {
   try {
-    if (!env.DB) {
+    if (!context.env.DB) {
       throw new ApiError(
         "The Cloudflare Pages D1 binding DB is not configured. Connect the elovyn-store database to the DB binding and redeploy.",
         503,
       );
     }
-    const db = createDb(env.DB);
-    return await route(request, env, db);
+    const db = createDb(context.env.DB);
+    return await route(context.request, context.env, db, (promise) => context.waitUntil(promise));
   } catch (error) {
     if (error instanceof ApiError) return json({ error: error.message }, error.status);
     console.error("Store API request failed:", error);

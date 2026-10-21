@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { useInView } from "framer-motion";
 import { useRef } from "react";
+import { Link } from "react-router-dom";
 import clothingImage1 from "../assets/CLOTHING.jpg";
 import shirtImage from "../assets/Shirt 1.jpg";
 import shirt2Image from "../assets/Shirt 2.jpg";
@@ -81,14 +82,16 @@ export const ClothingShowcase = () => {
               className="product-card group"
             >
               <div className="relative aspect-[4/5] overflow-hidden">
-                <img src={item.image} alt={item.name} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                <Link to={`/products/${["essential-box-tee", "everyday-overshirt", "layered-set", "signature-hoodie"][item.id - 1]}`} aria-label={`View ${item.name}`} className="block h-full w-full">
+                  <img src={item.image} alt={item.name} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                </Link>
                 <span className="absolute left-4 top-4 rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-900">New</span>
               </div>
               <div className="space-y-4 p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-neutral-500">{item.category}</p>
-                    <h3 className="mt-2 text-xl font-semibold tracking-[-0.05em] text-neutral-950">{item.name}</h3>
+                    <h3 className="mt-2 text-xl font-semibold tracking-[-0.05em] text-neutral-950"><Link to={`/products/${["essential-box-tee", "everyday-overshirt", "layered-set", "signature-hoodie"][item.id - 1]} className="hover:underline">{item.name}</Link></h3>
                   </div>
                   <button aria-label={`Save ${item.name}`} aria-pressed={wishlist.includes(["essential-box-tee", "everyday-overshirt", "layered-set", "signature-hoodie"][item.id - 1])} onClick={() => toggleWishlist(
                     ["essential-box-tee", "everyday-overshirt", "layered-set", "signature-hoodie"][item.id - 1],
