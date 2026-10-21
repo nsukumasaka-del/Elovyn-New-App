@@ -7,21 +7,21 @@ import { useStore } from "@/lib/store";
 import { isPrimaryAdmin } from "@/lib/store-api";
 
 const navItems = [
-  { label: "New Arrivals", href: "#new-arrivals" },
-  { label: "Streetwear", href: "#streetwear" },
-  { label: "T-Shirts", href: "#new-arrivals" },
-  { label: "Hoodies", href: "#hoodies" },
-  { label: "Accessories", href: "#accessories" },
+  { label: "New Arrivals", href: "/categories/new-arrivals" },
+  { label: "Streetwear", href: "/categories/streetwear" },
+  { label: "T-Shirts", href: "/categories/t-shirts" },
+  { label: "Hoodies", href: "/categories/hoodies" },
+  { label: "Accessories", href: "/categories/accessories" },
 ];
 
 const collectionSearchItems = [
-  { title: "New Arrivals", href: "#new-arrivals" },
-  { title: "Streetwear", href: "#streetwear" },
-  { title: "T-Shirts", href: "#new-arrivals" },
-  { title: "Hoodies", href: "#hoodies" },
-  { title: "Accessories", href: "#accessories" },
-  { title: "Wigs", href: "#wigs" },
-  { title: "Best Sellers", href: "#sale" },
+  { title: "New Arrivals", href: "/categories/new-arrivals" },
+  { title: "Streetwear", href: "/categories/streetwear" },
+  { title: "T-Shirts", href: "/categories/t-shirts" },
+  { title: "Hoodies", href: "/categories/hoodies" },
+  { title: "Accessories", href: "/categories/accessories" },
+  { title: "Wigs", href: "/categories/wigs" },
+  { title: "Best Sellers", href: "/categories/best-sellers" },
 ];
 
 function AuthDialog({ onClose }: { onClose: () => void }) {
@@ -245,7 +245,7 @@ export const Header = () => {
       .map((item) => ({ ...item, kind: "collection" as const }));
     const productResults = products
       .filter((product) => product.title.toLowerCase().includes(query))
-      .map((product) => ({ title: product.title, href: `#product-${product.id}`, kind: "product" as const }));
+      .map((product) => ({ title: product.title, href: `/products/${product.id}`, kind: "product" as const }));
     return [...productResults, ...collections];
   }, [products, searchQuery]);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -266,9 +266,9 @@ export const Header = () => {
             </Link>
             <nav aria-label="Shop categories" className="header-nav">
               {navItems.map((item) => (
-                <a key={item.label} href={`/${item.href}`} className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.13em] text-neutral-700 transition-colors hover:text-black">
+                <Link key={item.label} to={item.href} className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.13em] text-neutral-700 transition-colors hover:text-black">
                   {item.label}
-                </a>
+                </Link>
               ))}
             </nav>
           </div>
@@ -329,7 +329,7 @@ export const Header = () => {
             </label>
             {matches.length > 0 && (
               <nav aria-label="Search results" className="mx-auto mt-3 max-w-3xl">
-                {matches.map((item) => <a key={`${item.kind}-${item.title}`} href={`/${item.href}`} onClick={() => setSearchOpen(false)} className="flex items-center justify-between rounded-lg px-4 py-2 text-sm hover:bg-neutral-100"><span>{item.title}</span>{item.kind === "product" && <span className="text-xs text-neutral-400">Product</span>}</a>)}
+                {matches.map((item) => <Link key={`${item.kind}-${item.title}`} to={item.href} onClick={() => setSearchOpen(false)} className="flex items-center justify-between rounded-lg px-4 py-2 text-sm hover:bg-neutral-100"><span>{item.title}</span>{item.kind === "product" && <span className="text-xs text-neutral-400">Product</span>}</Link>)}
               </nav>
             )}
           </div>
@@ -345,7 +345,7 @@ export const Header = () => {
                 <button aria-label="Close menu" onClick={() => setMobileOpen(false)} className="rounded-full p-2 hover:bg-neutral-100"><X className="h-5 w-5" /></button>
               </div>
               <nav className="space-y-1">
-                {navItems.map((item) => <a key={item.label} href={`/${item.href}`} onClick={() => setMobileOpen(false)} className="block border-b border-neutral-200 py-4 text-sm font-semibold uppercase tracking-widest">{item.label}</a>)}
+                {navItems.map((item) => <Link key={item.label} to={item.href} onClick={() => setMobileOpen(false)} className="block border-b border-neutral-200 py-4 text-sm font-semibold uppercase tracking-widest">{item.label}</Link>)}
               </nav>
               <div className="mt-auto space-y-3">
                 {user && (

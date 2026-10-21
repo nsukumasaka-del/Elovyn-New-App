@@ -37,12 +37,15 @@ export const products = sqliteTable("products", {
   handle: text("handle"),
   imageUrl: text("image_url"),
   imagesJson: text("images_json").notNull().default("[]"),
+  supplierId: text("supplier_id"),
+  supplierProductId: text("supplier_product_id"),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   check("products_price_check", sql`${table.price} >= 0`),
   check("products_stock_quantity_check", sql`${table.stockQuantity} >= 0`),
   check("products_status_check", sql`${table.status} IN ('In Stock', 'Low Stock', 'Out of Stock')`),
   uniqueIndex("products_handle_idx").on(table.handle),
+  uniqueIndex("products_supplier_external_idx").on(table.supplierId, table.supplierProductId),
 ]);
 
 export const options = sqliteTable("options", {
@@ -121,7 +124,12 @@ export const supplierIntegrations = sqliteTable("supplier_integrations", {
   apiBaseUrl: text("api_base_url"),
   webhookUrl: text("webhook_url"),
   encryptedApiKey: text("encrypted_api_key"),
+  adapter: text("adapter").notNull().default("generic_json"),
+  fieldMappingJson: text("field_mapping_json").notNull().default("{}"),
   autoSync: integer("auto_sync", { mode: "boolean" }).notNull().default(false),
+  connectionStatus: text("connection_status").notNull().default("pending"),
+  lastSyncAt: text("last_sync_at"),
+  lastSyncError: text("last_sync_error"),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 

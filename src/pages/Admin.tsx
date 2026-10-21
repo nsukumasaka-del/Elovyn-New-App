@@ -4,6 +4,7 @@ import { ArrowDownToLine, ArrowUpFromLine, Boxes, LayoutDashboard, PackagePlus, 
 import { toast } from "sonner";
 import { apiRequest, isPrimaryAdmin, type StoreUser } from "@/lib/store-api";
 import { useStore } from "@/lib/store";
+import { buildImportProducts, importFieldDefinitions, parseCsv, suggestedMapping, type ImportField, type ImportMapping } from "@/lib/product-import";
 
 type Product = {
   id: string;
@@ -23,6 +24,11 @@ type Supplier = {
   webhook_url: string | null;
   auto_sync: boolean;
   has_api_key: boolean;
+  adapter: "cj" | "generic_json";
+  field_mapping_json: string;
+  connection_status: "pending" | "connected" | "error";
+  last_sync_at: string | null;
+  last_sync_error: string | null;
 };
 type VariantFields = { sku: string; price: string; compareAt: string; barcode: string; stock: string };
 
@@ -50,6 +56,10 @@ export function AdminPage() {
   const [webhookUrl, setWebhookUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [autoSync, setAutoSync] = useState(false);
+  const [supplierAdapter, setSupplierAdapter] = useState<"cj" | "generic_json">("cj");
+  const [fieldMapping, setFieldMapping] = useState("{}");
+  const [savingSupplier, setSavingSupplier] = useState(false);
+  const [syncingSupplierId, setSyncingSupplierId] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -91,8 +101,11 @@ export function AdminPage() {
 
   async function saveSupplier(event: FormEvent) {
     event.preventDefault();
+    setSavingSupplier(true);
     try {
-      await apiRequest("/admin/suppliers", {
+      let parsedMapping: unknown;
+      try { parsedMapping = JSON.parse(fieldMapping); } catch { throw new Error("Field mapping must be valid JSON."); }
+      const response = await apiRequest<{ sync: { imported: number; updated: number } }>("/admin/suppliers", {
         method: "PUT",
         body: JSON.stringify({
           id: supplierId || undefined,
@@ -101,6 +114,8 @@ export function AdminPage() {
           webhook_url: webhookUrl,
           api_key: apiKey,
           auto_sync: autoSync,
+          adapter: supplierAdapter,
+          field_mapping: parsedMapping,
         }),
       });
       setSupplierId("");
@@ -109,11 +124,13 @@ export function AdminPage() {
       setWebhookUrl("");
       setApiKey("");
       setAutoSync(false);
+      setSupplierAdapter("cj");
+      setFieldMapping("{}");
       await loadData();
-      toast.success("Supplier configuration saved.");
+      toast.success(`Supplier saved and synchronized: ${response.sync.imported} added, ${response.sync.updated} updated.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not save supplier.");
-    }
+    } finally { setSavingSupplier(false); }
   }
 
   function editSupplier(supplier: Supplier) {
@@ -123,6 +140,18 @@ export function AdminPage() {
     setWebhookUrl(supplier.webhook_url ?? "");
     setApiKey("");
     setAutoSync(supplier.auto_sync);
+    setSupplierAdapter(supplier.adapter);
+    setFieldMapping(supplier.field_mapping_json || "{}");
+  }
+
+  async function syncSupplier(id: string) {
+    setSyncingSupplierId(id);
+    try {
+      const response = await apiRequest<{ sync: { imported: number; updated: number } }>(`/admin/suppliers/${encodeURIComponent(id)}/sync`, { method: "POST" });
+      await loadData();
+      toast.success(`Supplier sync complete: ${response.sync.imported} added, ${response.sync.updated} updated.`);
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Supplier sync failed."); }
+    finally { setSyncingSupplierId(""); }
   }
 
   const stockCount = products.reduce((total, product) => total + product.stock_quantity, 0);
@@ -203,23 +232,26 @@ export function AdminPage() {
                 <h2 className="font-semibold">{supplierId ? "Edit supplier" : "Connect a supplier"}</h2>
                 <p className="mt-1 text-sm text-neutral-500">Supplier credentials are encrypted at rest and never returned to the browser.</p>
                 <form onSubmit={(event) => void saveSupplier(event)} className="mt-5 space-y-4">
+                  <label className="block text-sm font-medium">Integration type<select value={supplierAdapter} onChange={(event) => setSupplierAdapter(event.target.value as typeof supplierAdapter)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 bg-white px-3"><option value="cj">CJ Dropshipping</option><option value="generic_json">JSON product feed</option></select></label>
                   <label className="block text-sm font-medium">Supplier name<input required value={supplierName} onChange={(event) => setSupplierName(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
-                  <label className="block text-sm font-medium">API base URL<input type="url" value={apiBaseUrl} onChange={(event) => setApiBaseUrl(event.target.value)} placeholder="https://api.supplier.com" className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
+                  <label className="block text-sm font-medium">{supplierAdapter === "cj" ? "API base URL (optional)" : "JSON feed URL"}<input type="url" value={apiBaseUrl} onChange={(event) => setApiBaseUrl(event.target.value)} placeholder={supplierAdapter === "cj" ? "https://developers.cjdropshipping.com/api2.0/v1" : "https://supplier.example/products.json"} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
                   <label className="block text-sm font-medium">API key<input type="password" autoComplete="new-password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={supplierId ? "Leave blank to keep the saved key" : "Enter API key"} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
                   <label className="block text-sm font-medium">Webhook URL<input type="url" value={webhookUrl} onChange={(event) => setWebhookUrl(event.target.value)} placeholder="https://your-store.com/api/supplier-webhook" className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
+                  {supplierAdapter === "generic_json" && <label className="block text-sm font-medium">Field mapping (JSON)<textarea value={fieldMapping} onChange={(event) => setFieldMapping(event.target.value)} rows={5} placeholder={'{"title":"name","sku":"code","price":"retailPrice","stock_quantity":"inventory"}'} className="mt-1.5 w-full rounded-xl border border-neutral-300 p-3 font-mono text-xs" /><span className="mt-1 block text-xs font-normal text-neutral-500">Map Elovyn fields to dot-separated paths in each feed item.</span></label>}
                   <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={autoSync} onChange={(event) => setAutoSync(event.target.checked)} className="h-4 w-4 accent-neutral-950" />Enable automatic stock sync</label>
-                  <button className="btn-primary w-full">Save configuration</button>
+                  <button disabled={savingSupplier} className="btn-primary w-full disabled:opacity-60">{savingSupplier ? "Validating and syncing…" : "Save, validate & sync"}</button>
                 </form>
               </section>
               <section className="space-y-3">
                 <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
-                  Saving a connection stores its settings only. A supplier-specific adapter, credential verification and scheduled sync function must be configured before inventory can sync automatically.
+                  Saving validates the credentials and immediately imports or updates up to 50 products. Use Sync now whenever you need a fresh inventory push.
                 </div>
                 {suppliers.length === 0 && <div className="rounded-2xl border border-neutral-200 bg-white p-6 text-sm text-neutral-500">No supplier integrations configured.</div>}
                 {suppliers.map((supplier) => (
                   <article key={supplier.id} className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
                     <div className="flex items-start justify-between gap-4"><div><h3 className="font-semibold">{supplier.name}</h3><p className="mt-1 text-sm text-neutral-500">{supplier.api_base_url || "No API URL configured"}</p></div><span className={`rounded-full px-2.5 py-1 text-xs ${supplier.has_api_key ? "bg-emerald-50 text-emerald-700" : "bg-neutral-100 text-neutral-600"}`}>{supplier.has_api_key ? "Configured" : "Disconnected"}</span></div>
-                    <div className="mt-4 flex items-center justify-between border-t border-neutral-100 pt-4"><span className="text-sm text-neutral-600">Auto-sync {supplier.auto_sync ? "enabled" : "disabled"}</span><button onClick={() => editSupplier(supplier)} className="text-sm font-medium underline">Edit</button></div>
+                    {supplier.last_sync_error && <p className="mt-3 rounded-lg bg-red-50 p-2 text-xs text-red-700">{supplier.last_sync_error}</p>}
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 pt-4"><span className="text-sm text-neutral-600">{supplier.connection_status} · {supplier.last_sync_at ? `last synced ${new Date(supplier.last_sync_at).toLocaleString()}` : "not synced"}</span><div className="flex gap-3"><button disabled={syncingSupplierId === supplier.id} onClick={() => void syncSupplier(supplier.id)} className="text-sm font-medium underline disabled:opacity-50">{syncingSupplierId === supplier.id ? "Syncing…" : "Sync now"}</button><button onClick={() => editSupplier(supplier)} className="text-sm font-medium underline">Edit</button></div></div>
                   </article>
                 ))}
               </section>
@@ -436,67 +468,14 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
   );
 }
 
-type ImportField = "title" | "sku" | "price" | "description" | "category" | "brand" | "stock_quantity" | "image_url" | "handle" | "options" | "variants";
-const importFields: { key: ImportField; label: string }[] = [
-  { key: "title", label: "Title" },
-  { key: "sku", label: "Product SKU" },
-  { key: "price", label: "Price" },
-  { key: "description", label: "Description / features" },
-  { key: "category", label: "Category" },
-  { key: "brand", label: "Brand" },
-  { key: "stock_quantity", label: "Inventory quantity" },
-  { key: "image_url", label: "Main image URL" },
-  { key: "handle", label: "Product handle" },
-  { key: "options", label: "Options (JSON)" },
-  { key: "variants", label: "Variants (JSON)" },
-];
-
-function parseCsv(text: string) {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = "";
-  let quoted = false;
-  for (let index = 0; index < text.length; index += 1) {
-    const character = text[index];
-    if (character === '"' && quoted && text[index + 1] === '"') {
-      cell += '"';
-      index += 1;
-    } else if (character === '"') {
-      quoted = !quoted;
-    } else if (character === "," && !quoted) {
-      row.push(cell);
-      cell = "";
-    } else if ((character === "\n" || character === "\r") && !quoted) {
-      if (character === "\r" && text[index + 1] === "\n") index += 1;
-      row.push(cell);
-      if (row.some((entry) => entry.trim())) rows.push(row);
-      row = [];
-      cell = "";
-    } else {
-      cell += character;
-    }
-  }
-  if (quoted) throw new Error("The CSV has an unclosed quoted field.");
-  row.push(cell);
-  if (row.some((entry) => entry.trim())) rows.push(row);
-  if (!rows.length) throw new Error("The selected file is empty.");
-  const headers = rows[0].map((header) => header.trim());
-  if (headers.some((header) => !header) || new Set(headers).size !== headers.length) {
-    throw new Error("CSV headers must be non-empty and unique.");
-  }
-  return { headers, rows: rows.slice(1).map((values) => Object.fromEntries(headers.map((header, index) => [header, values[index]?.trim() ?? ""]))) };
-}
+const importFields = importFieldDefinitions.map(([key, label]) => ({ key, label }));
 
 function ImportProductsPanel({ onImported }: { onImported: () => void }) {
   const [source, setSource] = useState<"json" | "csv">("json");
   const [jsonText, setJsonText] = useState("");
   const [headers, setHeaders] = useState<string[]>([]);
   const [records, setRecords] = useState<Record<string, unknown>[]>([]);
-  const [mapping, setMapping] = useState<Record<ImportField, string>>({
-    title: "title", sku: "sku", price: "price", description: "description", category: "category",
-    brand: "brand", stock_quantity: "stock_quantity", image_url: "image_url", handle: "handle",
-    options: "options", variants: "variants",
-  });
+  const [mapping, setMapping] = useState<ImportMapping>(() => suggestedMapping(importFieldDefinitions.map(([key]) => key)));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [jobId, setJobId] = useState("");
@@ -512,10 +491,10 @@ function ImportProductsPanel({ onImported }: { onImported: () => void }) {
     if (!available.length) throw new Error("No fields were found in this import.");
     setRecords(nextRecords);
     setHeaders(available);
-    setMapping((current) => Object.fromEntries(importFields.map(({ key }) => [
-      key,
-      available.includes(current[key]) ? current[key] : available.find((header) => header.toLowerCase() === key.toLowerCase()) ?? "",
-    ])) as Record<ImportField, string>);
+    setMapping((current) => {
+      const suggested = suggestedMapping(available);
+      return Object.fromEntries(importFields.map(({ key }) => [key, available.includes(current[key]) ? current[key] : suggested[key]])) as ImportMapping;
+    });
     setResult(null);
   }
 
@@ -530,6 +509,20 @@ function ImportProductsPanel({ onImported }: { onImported: () => void }) {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not parse product JSON.");
     }
+  }
+
+  async function readJsonFile(file: File | undefined) {
+    if (!file) return;
+    try {
+      if (file.size > 2 * 1024 * 1024) throw new Error("JSON files must be 2 MB or smaller.");
+      const text = await file.text();
+      setJsonText(text);
+      const parsed: unknown = JSON.parse(text.replace(/^\uFEFF/, ""));
+      const items = Array.isArray(parsed) ? parsed : parsed && typeof parsed === "object" && Array.isArray((parsed as { products?: unknown }).products) ? (parsed as { products: unknown[] }).products : null;
+      if (!items) throw new Error("Provide a JSON array of products or an object with a products array.");
+      loadRecords(items as Record<string, unknown>[]);
+      setError("");
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not parse product JSON."); }
   }
 
   async function readCsv(file: File | undefined) {
@@ -548,27 +541,7 @@ function ImportProductsPanel({ onImported }: { onImported: () => void }) {
     setBusy(true);
     setError("");
     try {
-      const products = records.map((record) => {
-        const product: Record<string, unknown> = {};
-        for (const { key } of importFields) {
-          const sourceKey = mapping[key];
-          if (!sourceKey) continue;
-          const value = record[sourceKey];
-          if (value === undefined || value === "") continue;
-          if ((key === "options" || key === "variants") && typeof value === "string") {
-            try {
-              product[key] = JSON.parse(value);
-            } catch {
-              throw new Error(`${sourceKey} must contain valid JSON.`);
-            }
-          } else if (key === "stock_quantity" || key === "price") {
-            product[key] = Number(value);
-          } else {
-            product[key] = value;
-          }
-        }
-        return product;
-      });
+      const products = buildImportProducts(records, mapping);
       const response = await apiRequest<{ job_id: string; status: string }>("/admin/products/import", {
         method: "POST",
         body: JSON.stringify({ products }),
@@ -653,6 +626,7 @@ function ImportProductsPanel({ onImported }: { onImported: () => void }) {
         </div>
         {source === "json" ? <>
           <label htmlFor="import-json" className="mt-4 block text-sm font-medium">Product data (JSON)</label>
+          <input type="file" accept=".json,application/json" onChange={(event) => void readJsonFile(event.target.files?.[0])} className="mt-2 block w-full text-sm file:mr-3 file:rounded-full file:border-0 file:bg-neutral-100 file:px-4 file:py-2" />
           <textarea id="import-json" value={jsonText} onChange={(event) => setJsonText(event.target.value)} rows={9}
             placeholder={'[{"title":"Everyday Tee","sku":"TEE-001","price":299,"stock_quantity":12}]'}
             className="mt-2 w-full rounded-xl border border-neutral-300 p-3 font-mono text-xs" />

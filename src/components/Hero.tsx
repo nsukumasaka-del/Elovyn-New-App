@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import heroImage from "@/assets/Front Page.png";
+import { Link } from "react-router-dom";
 
 export const Hero = () => {
   return (
@@ -28,12 +29,12 @@ export const Hero = () => {
             Streetwear made to stand out. Clean silhouettes, premium essentials, and effortless everyday pieces.
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <a href="#new-arrivals" className="btn-primary bg-white text-neutral-950 hover:bg-neutral-200">
+            <Link to="/categories/new-arrivals" className="btn-primary bg-white text-neutral-950 hover:bg-neutral-200">
               Shop new arrivals
-            </a>
-            <a href="#streetwear" className="btn-secondary border-white/30 bg-transparent text-white hover:bg-white/10 hover:text-white">
+            </Link>
+            <Link to="/categories/streetwear" className="btn-secondary border-white/30 bg-transparent text-white hover:bg-white/10 hover:text-white">
               Shop streetwear
-            </a>
+            </Link>
           </div>
         </motion.div>
       </div>

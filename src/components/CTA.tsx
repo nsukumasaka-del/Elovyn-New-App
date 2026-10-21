@@ -1,6 +1,7 @@
 import { motion, useInView } from "framer-motion";
 import { useRef } from "react";
 import { ArrowRight } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export const CTA = () => {
   const ref = useRef(null);
@@ -24,13 +25,13 @@ export const CTA = () => {
             Discover effortless layers and polished accessories that carry your look from weekday comfort to after-hours edge.
           </p>
           <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-            <motion.a href="#new-arrivals" className="btn-primary bg-white text-neutral-950 hover:bg-neutral-200" whileHover={{ y: -1 }}>
+            <motion.div whileHover={{ y: -1 }}><Link to="/categories/new-arrivals" className="btn-primary bg-white text-neutral-950 hover:bg-neutral-200">
               Shop the edit
               <ArrowRight className="ml-2 h-4 w-4" />
-            </motion.a>
-            <motion.a href="#streetwear" className="btn-secondary border-white/25 bg-transparent text-white hover:border-white/50 hover:bg-white/5">
+            </Link></motion.div>
+            <Link to="/categories/streetwear" className="btn-secondary border-white/25 bg-transparent text-white hover:border-white/50 hover:bg-white/5">
               View categories
-            </motion.a>
+            </Link>
           </div>
         </motion.div>
       </div>

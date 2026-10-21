@@ -15,11 +15,11 @@ import wigImage from "@/assets/WEAVE 1.jpg";
 import shirtImage from "@/assets/Shirt 1.jpg";
 
 const categoryTiles = [
-  { title: "Streetwear", subtitle: "Shop collection", image: clothingImage, href: "#streetwear" },
-  { title: "T-Shirts", subtitle: "Shop essentials", image: shirtImage, href: "#new-arrivals" },
-  { title: "Hoodies", subtitle: "Layer up", image: hoodieImage, href: "#hoodies" },
-  { title: "Accessories", subtitle: "Complete the look", image: bagImage, href: "#accessories" },
-  { title: "Wigs", subtitle: "Elevate your style", image: wigImage, href: "#wigs" },
+  { title: "Streetwear", subtitle: "Shop collection", image: clothingImage, href: "/categories/streetwear" },
+  { title: "T-Shirts", subtitle: "Shop essentials", image: shirtImage, href: "/categories/t-shirts" },
+  { title: "Hoodies", subtitle: "Layer up", image: hoodieImage, href: "/categories/hoodies" },
+  { title: "Accessories", subtitle: "Complete the look", image: bagImage, href: "/categories/accessories" },
+  { title: "Wigs", subtitle: "Elevate your style", image: wigImage, href: "/categories/wigs" },
 ];
 
 const Index = () => {
@@ -50,7 +50,7 @@ const Index = () => {
 
             <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-5">
               {categoryTiles.map((tile) => (
-                <a key={tile.title} href={tile.href} className="category-card group overflow-hidden">
+                <Link key={tile.title} to={tile.href} className="category-card group overflow-hidden">
                   <div className="relative aspect-[4/5] overflow-hidden">
                     <img
                       src={tile.image}
@@ -66,7 +66,7 @@ const Index = () => {
                       </span>
                     </div>
                   </div>
-                </a>
+                </Link>
               ))}
             </div>
           </div>
@@ -89,9 +89,9 @@ const Index = () => {
                   <p className="mt-4 max-w-lg text-base text-white/70">
                     Thoughtful layers, sharp silhouettes, and textures that transition from laid-back to standout in seconds.
                   </p>
-                  <a href="#new-arrivals" className="btn-primary mt-8 bg-white text-neutral-950 hover:bg-neutral-200">
+                  <Link to="/categories/streetwear" className="btn-primary mt-8 bg-white text-neutral-950 hover:bg-neutral-200">
                     Explore the collection
-                  </a>
+                  </Link>
                 </div>
               </div>
             </div>
@@ -112,7 +112,7 @@ const Index = () => {
                     <p className="eyebrow">Hoodies</p>
                     <h3 className="mt-3 text-3xl font-black tracking-[-0.06em]">Essential layers for every rotation.</h3>
                     <p className="mt-4 text-sm text-neutral-600">Modern fits, premium weight, and all-day comfort for the pieces you reach for most.</p>
-                    <a href="#new-arrivals" className="btn-secondary mt-6">Shop hoodies</a>
+                    <Link to="/categories/hoodies" className="btn-secondary mt-6">Shop hoodies</Link>
                   </div>
                 </div>
               </div>
@@ -126,7 +126,7 @@ const Index = () => {
                     <p className="eyebrow">Wigs</p>
                     <h3 className="mt-3 text-3xl font-black tracking-[-0.06em]">Complete the look.</h3>
                     <p className="mt-4 text-sm text-neutral-600">Polished textures and styling that finish the outfit with ease.</p>
-                    <a href="#sale" className="btn-secondary mt-6">Shop wigs</a>
+                    <Link to="/categories/wigs" className="btn-secondary mt-6">Shop wigs</Link>
                   </div>
                 </div>
               </div>
