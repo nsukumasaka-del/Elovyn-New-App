@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { apiRequest, isPrimaryAdmin, type StoreUser } from "@/lib/store-api";
 import { useStore } from "@/lib/store";
 import { buildImportProducts, importFieldDefinitions, parseCsv, suggestedMapping, type ImportField, type ImportMapping } from "@/lib/product-import";
+import { supplierUrlValidationError } from "@/lib/supplier-validation";
 
 type Product = {
   id: string;
@@ -23,12 +24,14 @@ type Supplier = {
   api_base_url: string | null;
   webhook_url: string | null;
   auto_sync: boolean;
+  is_active: boolean;
   has_api_key: boolean;
   adapter: "cj" | "generic_json";
   field_mapping_json: string;
-  connection_status: "pending" | "connected" | "error";
+  connection_status: "pending" | "syncing" | "connected" | "error";
   last_sync_at: string | null;
   last_sync_error: string | null;
+  sync_history: { id: string; status: "running" | "success" | "error"; imported_count: number; updated_count: number; total_count: number; error_message: string | null; started_at: string; finished_at: string | null }[];
 };
 type VariantFields = { sku: string; price: string; compareAt: string; barcode: string; stock: string };
 
@@ -56,10 +59,23 @@ export function AdminPage() {
   const [webhookUrl, setWebhookUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [autoSync, setAutoSync] = useState(false);
+  const [supplierActive, setSupplierActive] = useState(true);
   const [supplierAdapter, setSupplierAdapter] = useState<"cj" | "generic_json">("cj");
   const [fieldMapping, setFieldMapping] = useState("{}");
   const [savingSupplier, setSavingSupplier] = useState(false);
-  const [syncingSupplierId, setSyncingSupplierId] = useState("");
+  const [syncingSupplierIds, setSyncingSupplierIds] = useState<Set<string>>(() => new Set());
+
+  function resetSupplierForm() {
+    setSupplierId("");
+    setSupplierName("");
+    setApiBaseUrl("");
+    setWebhookUrl("");
+    setApiKey("");
+    setAutoSync(false);
+    setSupplierActive(true);
+    setSupplierAdapter("cj");
+    setFieldMapping("{}");
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -103,6 +119,11 @@ export function AdminPage() {
     event.preventDefault();
     setSavingSupplier(true);
     try {
+      if (apiBaseUrl) {
+        const urlError = supplierUrlValidationError(apiBaseUrl, window.location.hostname);
+        if (urlError) throw new Error(urlError);
+      }
+      if (!apiBaseUrl && supplierAdapter === "generic_json") throw new Error("A product feed URL is required.");
       let parsedMapping: unknown;
       try { parsedMapping = JSON.parse(fieldMapping); } catch { throw new Error("Field mapping must be valid JSON."); }
       const response = await apiRequest<{ sync: { imported: number; updated: number } }>("/admin/suppliers", {
@@ -114,22 +135,17 @@ export function AdminPage() {
           webhook_url: webhookUrl,
           api_key: apiKey,
           auto_sync: autoSync,
+          is_active: supplierActive,
           adapter: supplierAdapter,
           field_mapping: parsedMapping,
         }),
       });
-      setSupplierId("");
-      setSupplierName("");
-      setApiBaseUrl("");
-      setWebhookUrl("");
-      setApiKey("");
-      setAutoSync(false);
-      setSupplierAdapter("cj");
-      setFieldMapping("{}");
+      resetSupplierForm();
       await loadData();
-      toast.success(`Supplier saved and synchronized: ${response.sync.imported} added, ${response.sync.updated} updated.`);
+      toast.success(supplierActive ? `Supplier saved and synchronized: ${response.sync.imported} added, ${response.sync.updated} updated.` : "Supplier saved and validated. Enable it when you are ready to synchronize.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not save supplier.");
+      await loadData().catch(() => undefined);
     } finally { setSavingSupplier(false); }
   }
 
@@ -140,18 +156,27 @@ export function AdminPage() {
     setWebhookUrl(supplier.webhook_url ?? "");
     setApiKey("");
     setAutoSync(supplier.auto_sync);
+    setSupplierActive(supplier.is_active);
     setSupplierAdapter(supplier.adapter);
     setFieldMapping(supplier.field_mapping_json || "{}");
   }
 
   async function syncSupplier(id: string) {
-    setSyncingSupplierId(id);
+    setSyncingSupplierIds((current) => new Set(current).add(id));
     try {
       const response = await apiRequest<{ sync: { imported: number; updated: number } }>(`/admin/suppliers/${encodeURIComponent(id)}/sync`, { method: "POST" });
       await loadData();
       toast.success(`Supplier sync complete: ${response.sync.imported} added, ${response.sync.updated} updated.`);
     } catch (error) { toast.error(error instanceof Error ? error.message : "Supplier sync failed."); }
-    finally { setSyncingSupplierId(""); }
+    finally { setSyncingSupplierIds((current) => { const next = new Set(current); next.delete(id); return next; }); }
+  }
+
+  async function setSupplierEnabled(supplier: Supplier, isActive: boolean) {
+    try {
+      await apiRequest(`/admin/suppliers/${encodeURIComponent(supplier.id)}`, { method: "PATCH", body: JSON.stringify({ is_active: isActive }) });
+      await loadData();
+      toast.success(`${supplier.name} ${isActive ? "enabled" : "disabled"}.`);
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not update supplier status."); }
   }
 
   const stockCount = products.reduce((total, product) => total + product.stock_quantity, 0);
@@ -190,7 +215,7 @@ export function AdminPage() {
                   { label: "Total sales", value: `R ${Number(stats.total_sales).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}`, sub: "Orders placed" },
                   { label: "Orders", value: Number(stats.order_count).toLocaleString(), sub: "All order statuses" },
                   { label: "Products", value: Number(stats.product_count).toLocaleString(), sub: `${stockCount} units in stock` },
-                  { label: "Supplier sync", value: suppliers.some((item) => item.auto_sync && item.has_api_key) ? "Configured" : "Not configured", sub: "Supplier adapter required" },
+                  { label: "Supplier sync", value: suppliers.filter((item) => item.is_active).length.toLocaleString(), sub: `${suppliers.length} configured supplier${suppliers.length === 1 ? "" : "s"}` },
                 ].map((kpi) => <article key={kpi.label} className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"><p className="text-sm text-neutral-500">{kpi.label}</p><p className="mt-3 text-2xl font-bold">{kpi.value}</p><p className="mt-1 text-xs text-neutral-400">{kpi.sub}</p></article>)}
               </div>
               <section className="mt-6 rounded-2xl border border-neutral-200 bg-white p-6">
@@ -229,17 +254,18 @@ export function AdminPage() {
           {tab === "suppliers" && (
             <div className="grid items-start gap-6 xl:grid-cols-[1fr_1.1fr]">
               <section className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-                <h2 className="font-semibold">{supplierId ? "Edit supplier" : "Connect a supplier"}</h2>
+                <div className="flex items-center justify-between gap-3"><h2 className="font-semibold">{supplierId ? "Edit supplier" : "Connect a supplier"}</h2>{supplierId && <button type="button" onClick={resetSupplierForm} className="text-sm font-medium underline">Add another</button>}</div>
                 <p className="mt-1 text-sm text-neutral-500">Supplier credentials are encrypted at rest and never returned to the browser.</p>
                 <form onSubmit={(event) => void saveSupplier(event)} className="mt-5 space-y-4">
                   <label className="block text-sm font-medium">Integration type<select value={supplierAdapter} onChange={(event) => setSupplierAdapter(event.target.value as typeof supplierAdapter)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 bg-white px-3"><option value="cj">CJ Dropshipping</option><option value="generic_json">JSON product feed</option></select></label>
                   <label className="block text-sm font-medium">Supplier name<input required value={supplierName} onChange={(event) => setSupplierName(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
                   <label className="block text-sm font-medium">{supplierAdapter === "cj" ? "API base URL (optional)" : "JSON feed URL"}<input type="url" value={apiBaseUrl} onChange={(event) => setApiBaseUrl(event.target.value)} placeholder={supplierAdapter === "cj" ? "https://developers.cjdropshipping.com/api2.0/v1" : "https://supplier.example/products.json"} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
-                  <label className="block text-sm font-medium">API key<input type="password" autoComplete="new-password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={supplierId ? "Leave blank to keep the saved key" : "Enter API key"} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
+                  <label className="block text-sm font-medium">API key{supplierAdapter === "generic_json" ? " (optional)" : ""}<input type="password" autoComplete="new-password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={supplierId ? "Leave blank to keep the saved key" : supplierAdapter === "cj" ? "Enter API key" : "Only needed for protected feeds"} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
                   <label className="block text-sm font-medium">Webhook URL<input type="url" value={webhookUrl} onChange={(event) => setWebhookUrl(event.target.value)} placeholder="https://your-store.com/api/supplier-webhook" className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
                   {supplierAdapter === "generic_json" && <label className="block text-sm font-medium">Field mapping (JSON)<textarea value={fieldMapping} onChange={(event) => setFieldMapping(event.target.value)} rows={5} placeholder={'{"title":"name","sku":"code","price":"retailPrice","stock_quantity":"inventory"}'} className="mt-1.5 w-full rounded-xl border border-neutral-300 p-3 font-mono text-xs" /><span className="mt-1 block text-xs font-normal text-neutral-500">Map Elovyn fields to dot-separated paths in each feed item.</span></label>}
+                  <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={supplierActive} onChange={(event) => setSupplierActive(event.target.checked)} className="h-4 w-4 accent-neutral-950" />Supplier is active</label>
                   <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={autoSync} onChange={(event) => setAutoSync(event.target.checked)} className="h-4 w-4 accent-neutral-950" />Enable automatic stock sync</label>
-                  <button disabled={savingSupplier} className="btn-primary w-full disabled:opacity-60">{savingSupplier ? "Validating and syncing…" : "Save, validate & sync"}</button>
+                  <button disabled={savingSupplier} className="btn-primary w-full disabled:opacity-60">{savingSupplier ? "Validating and syncing…" : supplierActive ? "Save, validate & sync" : "Save and validate"}</button>
                 </form>
               </section>
               <section className="space-y-3">
@@ -249,9 +275,10 @@ export function AdminPage() {
                 {suppliers.length === 0 && <div className="rounded-2xl border border-neutral-200 bg-white p-6 text-sm text-neutral-500">No supplier integrations configured.</div>}
                 {suppliers.map((supplier) => (
                   <article key={supplier.id} className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-                    <div className="flex items-start justify-between gap-4"><div><h3 className="font-semibold">{supplier.name}</h3><p className="mt-1 text-sm text-neutral-500">{supplier.api_base_url || "No API URL configured"}</p></div><span className={`rounded-full px-2.5 py-1 text-xs ${supplier.has_api_key ? "bg-emerald-50 text-emerald-700" : "bg-neutral-100 text-neutral-600"}`}>{supplier.has_api_key ? "Configured" : "Disconnected"}</span></div>
+                    <div className="flex items-start justify-between gap-4"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold">{supplier.name}</h3><span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-600">{supplier.adapter === "cj" ? "CJ Dropshipping" : "JSON feed"}</span></div><p className="mt-1 break-all text-sm text-neutral-500">{supplier.api_base_url || "CJ default API endpoint"}</p></div><span className={`shrink-0 rounded-full px-2.5 py-1 text-xs ${!supplier.is_active ? "bg-neutral-100 text-neutral-500" : supplier.connection_status === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>{!supplier.is_active ? "Inactive" : supplier.connection_status === "syncing" ? "Syncing" : supplier.connection_status === "connected" ? "Connected" : supplier.connection_status === "error" ? "Error" : "Pending"}</span></div>
                     {supplier.last_sync_error && <p className="mt-3 rounded-lg bg-red-50 p-2 text-xs text-red-700">{supplier.last_sync_error}</p>}
-                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 pt-4"><span className="text-sm text-neutral-600">{supplier.connection_status} · {supplier.last_sync_at ? `last synced ${new Date(supplier.last_sync_at).toLocaleString()}` : "not synced"}</span><div className="flex gap-3"><button disabled={syncingSupplierId === supplier.id} onClick={() => void syncSupplier(supplier.id)} className="text-sm font-medium underline disabled:opacity-50">{syncingSupplierId === supplier.id ? "Syncing…" : "Sync now"}</button><button onClick={() => editSupplier(supplier)} className="text-sm font-medium underline">Edit</button></div></div>
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 pt-4"><span className="text-sm text-neutral-600">{supplier.last_sync_at ? `Last synced ${new Date(supplier.last_sync_at).toLocaleString()}` : "Not synced yet"}</span><div className="flex gap-3"><button disabled={!supplier.is_active || syncingSupplierIds.has(supplier.id)} onClick={() => void syncSupplier(supplier.id)} className="text-sm font-medium underline disabled:opacity-40">{syncingSupplierIds.has(supplier.id) ? "Syncing…" : "Sync now"}</button><button onClick={() => editSupplier(supplier)} className="text-sm font-medium underline">Edit</button><button onClick={() => void setSupplierEnabled(supplier, !supplier.is_active)} className="text-sm font-medium underline">{supplier.is_active ? "Disable" : "Enable"}</button></div></div>
+                    <details className="mt-4 border-t border-neutral-100 pt-3"><summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-neutral-500">Sync history ({supplier.sync_history.length})</summary>{supplier.sync_history.length ? <div className="mt-3 space-y-2">{supplier.sync_history.map((entry) => <div key={entry.id} className="flex items-start justify-between gap-3 rounded-lg bg-neutral-50 p-2.5 text-xs"><div><p className="font-medium">{entry.status === "success" ? `${entry.imported_count} added · ${entry.updated_count} updated` : entry.status === "running" ? "Sync in progress" : entry.error_message || "Sync failed"}</p><p className="mt-1 text-neutral-500">{new Date(entry.started_at).toLocaleString()}</p></div><span className={`rounded-full px-2 py-0.5 capitalize ${entry.status === "success" ? "bg-emerald-100 text-emerald-700" : entry.status === "error" ? "bg-red-100 text-red-700" : "bg-sky-100 text-sky-700"}`}>{entry.status}</span></div>)}</div> : <p className="mt-2 text-xs text-neutral-500">No sync attempts recorded yet.</p>}</details>
                   </article>
                 ))}
               </section>

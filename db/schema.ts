@@ -127,11 +127,26 @@ export const supplierIntegrations = sqliteTable("supplier_integrations", {
   adapter: text("adapter").notNull().default("generic_json"),
   fieldMappingJson: text("field_mapping_json").notNull().default("{}"),
   autoSync: integer("auto_sync", { mode: "boolean" }).notNull().default(false),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
   connectionStatus: text("connection_status").notNull().default("pending"),
   lastSyncAt: text("last_sync_at"),
   lastSyncError: text("last_sync_error"),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const supplierSyncHistory = sqliteTable("supplier_sync_history", {
+  id: text("id").primaryKey(),
+  supplierId: text("supplier_id").notNull().references(() => supplierIntegrations.id, { onDelete: "cascade" }),
+  status: text("status", { enum: ["running", "success", "error"] }).notNull(),
+  importedCount: integer("imported_count").notNull().default(0),
+  updatedCount: integer("updated_count").notNull().default(0),
+  totalCount: integer("total_count").notNull().default(0),
+  errorMessage: text("error_message"),
+  startedAt: text("started_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  finishedAt: text("finished_at"),
+}, (table) => [
+  index("supplier_sync_history_supplier_started_idx").on(table.supplierId, table.startedAt),
+]);
 
 export const carts = sqliteTable("carts", {
   userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),

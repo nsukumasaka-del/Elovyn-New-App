@@ -7,6 +7,7 @@ import {
   orders,
   products,
   supplierIntegrations,
+  supplierSyncHistory,
   users,
   variantOptionValues,
   variants,
@@ -27,6 +28,7 @@ import {
   verifyOAuthState,
   type StoreUser,
 } from "../lib/auth";
+import { readSupplierJsonResponse, supplierUrlValidationError } from "../../src/lib/supplier-validation";
 
 export interface Env {
   DB?: D1Database;
@@ -72,6 +74,7 @@ const supplierColumns = {
   api_base_url: supplierIntegrations.apiBaseUrl,
   webhook_url: supplierIntegrations.webhookUrl,
   auto_sync: supplierIntegrations.autoSync,
+  is_active: supplierIntegrations.isActive,
   has_api_key: sql<boolean>`(${supplierIntegrations.encryptedApiKey} IS NOT NULL)`.as("has_api_key"),
   adapter: supplierIntegrations.adapter,
   field_mapping_json: supplierIntegrations.fieldMappingJson,
@@ -767,26 +770,26 @@ async function decryptSecret(value: string, secret: string) {
 
 type SupplierRecord = typeof supplierIntegrations.$inferSelect;
 
-function safeSupplierUrl(value: string) {
-  const url = new URL(value);
-  const host = url.hostname.toLowerCase();
-  if (url.protocol !== "https:" || host === "localhost" || host === "127.0.0.1" || host === "::1" || /^10\.|^192\.168\.|^169\.254\.|^172\.(1[6-9]|2\d|3[01])\./.test(host)) {
-    throw new ApiError("Supplier URL must be a public HTTPS endpoint.", 400);
-  }
-  return url;
+function safeSupplierUrl(value: string, storeHostname = "") {
+  const validationError = supplierUrlValidationError(value, storeHostname);
+  if (validationError) throw new ApiError(validationError, 400);
+  return new URL(value);
 }
 
-async function supplierFetch(supplier: SupplierRecord, token: string, validateOnly = false) {
-  const base = safeSupplierUrl(supplier.apiBaseUrl || (supplier.adapter === "cj" ? "https://developers.cjdropshipping.com/api2.0/v1" : ""));
+async function supplierFetch(supplier: SupplierRecord, token: string, validateOnly = false, storeHostname = "") {
+  const base = safeSupplierUrl(supplier.apiBaseUrl || (supplier.adapter === "cj" ? "https://developers.cjdropshipping.com/api2.0/v1" : ""), storeHostname);
   const url = supplier.adapter === "cj"
     ? new URL(validateOnly ? "setting/get" : "product/listV2?page=1&size=50", `${base.toString().replace(/\/$/, "")}/`)
     : base;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15000);
   try {
-    const response = await fetch(url, { headers: token ? { [supplier.adapter === "cj" ? "CJ-Access-Token" : "Authorization"]: supplier.adapter === "cj" ? token : `Bearer ${token}`, Accept: "application/json" } : { Accept: "application/json" }, signal: controller.signal });
-    if (!response.ok) throw new ApiError(`Supplier returned HTTP ${response.status}. Check the URL and credentials.`, 400);
-    const payload: unknown = await response.json();
+    const response = await fetch(url, { headers: token ? { [supplier.adapter === "cj" ? "CJ-Access-Token" : "Authorization"]: supplier.adapter === "cj" ? token : `Bearer ${token}`, Accept: "application/json" } : { Accept: "application/json" }, redirect: "manual", signal: controller.signal });
+    const redirectedUrlError = supplierUrlValidationError(response.url || url.toString(), storeHostname);
+    if (redirectedUrlError) throw new ApiError(`Supplier request was redirected to an invalid destination. ${redirectedUrlError}`, 400);
+    const result = await readSupplierJsonResponse(response);
+    if (!result.ok) throw new ApiError(result.error, 400);
+    const payload = result.payload;
     if (supplier.adapter === "cj" && (!payload || typeof payload !== "object" || ((payload as { result?: boolean }).result === false) || ((payload as { success?: boolean }).success === false))) throw new ApiError(`CJ rejected the request: ${String((payload as { message?: unknown }).message || "invalid credentials")}`, 400);
     return payload;
   } catch (error) {
@@ -814,10 +817,14 @@ function supplierProducts(payload: unknown, supplier: SupplierRecord) {
   });
 }
 
-async function syncSupplier(env: Env, db: ReturnType<typeof createDb>, supplier: SupplierRecord, token: string) {
+async function syncSupplier(env: Env, db: ReturnType<typeof createDb>, supplier: SupplierRecord, token: string, storeHostname = "") {
+  const historyId = crypto.randomUUID();
+  let imported = 0, updated = 0, total = 0;
+  await db.insert(supplierSyncHistory).values({ id: historyId, supplierId: supplier.id, status: "running" });
+  await db.update(supplierIntegrations).set({ connectionStatus: "syncing", lastSyncError: null, updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(supplierIntegrations.id, supplier.id));
   try {
-    const incoming = supplierProducts(await supplierFetch(supplier, token), supplier);
-    let imported = 0, updated = 0;
+    const incoming = supplierProducts(await supplierFetch(supplier, token, false, storeHostname), supplier);
+    total = incoming.length;
     for (const item of incoming) {
       const existing = await env.DB!.prepare("SELECT id, supplier_id FROM products WHERE (supplier_id = ? AND supplier_product_id = ?) OR lower(sku) = lower(?) LIMIT 1").bind(supplier.id, item.externalId, item.product.sku).first<{ id: string; supplier_id: string | null }>();
       if (existing?.supplier_id && existing.supplier_id !== supplier.id) throw new ApiError(`SKU ${item.product.sku} is already managed by another supplier.`, 409);
@@ -826,9 +833,12 @@ async function syncSupplier(env: Env, db: ReturnType<typeof createDb>, supplier:
       existing ? updated += 1 : imported += 1;
     }
     await db.update(supplierIntegrations).set({ connectionStatus: "connected", lastSyncAt: sql`CURRENT_TIMESTAMP`, lastSyncError: null, updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(supplierIntegrations.id, supplier.id));
+    await db.update(supplierSyncHistory).set({ status: "success", importedCount: imported, updatedCount: updated, totalCount: total, finishedAt: sql`CURRENT_TIMESTAMP` }).where(eq(supplierSyncHistory.id, historyId));
     return { imported, updated, total: incoming.length };
   } catch (error) {
-    await db.update(supplierIntegrations).set({ connectionStatus: "error", lastSyncError: errorMessage(error).slice(0, 1000), updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(supplierIntegrations.id, supplier.id));
+    const message = errorMessage(error).slice(0, 1000);
+    await db.update(supplierIntegrations).set({ connectionStatus: "error", lastSyncError: message, updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(supplierIntegrations.id, supplier.id));
+    await db.update(supplierSyncHistory).set({ status: "error", importedCount: imported, updatedCount: updated, totalCount: total, errorMessage: message, finishedAt: sql`CURRENT_TIMESTAMP` }).where(eq(supplierSyncHistory.id, historyId));
     throw error;
   }
 }
@@ -1266,8 +1276,19 @@ async function route(
     const suppliers = await db
       .select(supplierColumns)
       .from(supplierIntegrations)
-      .orderBy(asc(supplierIntegrations.name));
-    return json({ suppliers });
+      .orderBy(desc(supplierIntegrations.isActive), asc(supplierIntegrations.name));
+    const history = await db.select({
+      id: supplierSyncHistory.id,
+      supplier_id: supplierSyncHistory.supplierId,
+      status: supplierSyncHistory.status,
+      imported_count: supplierSyncHistory.importedCount,
+      updated_count: supplierSyncHistory.updatedCount,
+      total_count: supplierSyncHistory.totalCount,
+      error_message: supplierSyncHistory.errorMessage,
+      started_at: supplierSyncHistory.startedAt,
+      finished_at: supplierSyncHistory.finishedAt,
+    }).from(supplierSyncHistory).orderBy(desc(supplierSyncHistory.startedAt)).limit(100);
+    return json({ suppliers: suppliers.map((supplier) => ({ ...supplier, sync_history: history.filter((entry) => entry.supplier_id === supplier.id).slice(0, 5) })) });
   }
 
   if (path === "/admin/suppliers" && method === "PUT") {
@@ -1278,24 +1299,22 @@ async function route(
     const adapter = body.adapter === "cj" ? "cj" : "generic_json";
     const apiBaseUrl = typeof body.api_base_url === "string" ? body.api_base_url.trim() : "";
     const webhookUrl = typeof body.webhook_url === "string" ? body.webhook_url.trim() : "";
-    for (const [label, value] of [["API base URL", apiBaseUrl], ["Webhook URL", webhookUrl]] as const) {
-      if (value) {
-        try {
-          const parsed = new URL(value);
-          if (parsed.protocol !== "https:") throw new Error("https required");
-        } catch {
-          throw new ApiError(`${label} must be a valid HTTPS URL.`, 400);
-        }
-      }
+    if (apiBaseUrl) safeSupplierUrl(apiBaseUrl, url.hostname);
+    if (webhookUrl) {
+      try {
+        const parsed = new URL(webhookUrl);
+        if (parsed.protocol !== "https:") throw new Error("https required");
+      } catch { throw new ApiError("Webhook URL must be a valid HTTPS URL.", 400); }
     }
     if (!apiBaseUrl && adapter !== "cj") throw new ApiError("A product feed URL is required.", 400);
     const apiKey = typeof body.api_key === "string" ? body.api_key.trim() : "";
     const [saved] = await db.select().from(supplierIntegrations).where(eq(supplierIntegrations.id, id)).limit(1);
     const token = apiKey || (saved?.encryptedApiKey ? await decryptSecret(saved.encryptedApiKey, env.SUPPLIER_SECRET_ENCRYPTION_KEY) : "");
-    if (!token) throw new ApiError("An API key or access token is required.", 400);
+    if (!token && adapter === "cj") throw new ApiError("An API key or access token is required for CJ Dropshipping.", 400);
     const encryptedKey = apiKey ? await encryptSecret(apiKey, env.SUPPLIER_SECRET_ENCRYPTION_KEY) : null;
     const fieldMapping = body.field_mapping && typeof body.field_mapping === "object" && !Array.isArray(body.field_mapping) ? body.field_mapping : {};
     const autoSync = body.auto_sync === true;
+    const isActive = body.is_active !== false;
     const values = {
       name,
       apiBaseUrl: apiBaseUrl || null,
@@ -1304,6 +1323,7 @@ async function route(
       fieldMappingJson: JSON.stringify(fieldMapping),
       connectionStatus: "pending",
       autoSync,
+      isActive,
       ...(encryptedKey ? { encryptedApiKey: encryptedKey } : {}),
     };
     const rows = await db
@@ -1315,12 +1335,15 @@ async function route(
       })
       .returning(supplierColumns);
     const stored = await db.select().from(supplierIntegrations).where(eq(supplierIntegrations.id, id)).limit(1);
-    try { await supplierFetch(stored[0], token, true); }
+    try { await supplierFetch(stored[0], token, true, url.hostname); }
     catch (error) {
       await db.update(supplierIntegrations).set({ connectionStatus: "error", lastSyncError: errorMessage(error).slice(0, 1000), updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(supplierIntegrations.id, id));
       throw error;
     }
-    const sync = await syncSupplier(env, db, stored[0], token);
+    const sync = isActive
+      ? await syncSupplier(env, db, stored[0], token, url.hostname)
+      : { imported: 0, updated: 0, total: 0 };
+    if (!isActive) await db.update(supplierIntegrations).set({ connectionStatus: "connected", lastSyncError: null, updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(supplierIntegrations.id, id));
     const refreshed = await db.select(supplierColumns).from(supplierIntegrations).where(eq(supplierIntegrations.id, id)).limit(1);
     return json({ supplier: refreshed[0] ?? rows[0], sync }, 200);
   }
@@ -1330,11 +1353,23 @@ async function route(
     const id = decodeURIComponent(path.slice("/admin/suppliers/".length, -"/sync".length));
     const [supplier] = await db.select().from(supplierIntegrations).where(eq(supplierIntegrations.id, id)).limit(1);
     if (!supplier) throw new ApiError("Supplier was not found.", 404);
-    if (!supplier.encryptedApiKey) throw new ApiError("Supplier credentials are not configured.", 400);
-    const token = await decryptSecret(supplier.encryptedApiKey, env.SUPPLIER_SECRET_ENCRYPTION_KEY);
-    const sync = await syncSupplier(env, db, supplier, token);
+    if (!supplier.isActive) throw new ApiError("This supplier is inactive. Enable it before syncing.", 400);
+    if (!supplier.encryptedApiKey && supplier.adapter === "cj") throw new ApiError("Supplier credentials are not configured.", 400);
+    const token = supplier.encryptedApiKey ? await decryptSecret(supplier.encryptedApiKey, env.SUPPLIER_SECRET_ENCRYPTION_KEY) : "";
+    const sync = await syncSupplier(env, db, supplier, token, url.hostname);
     const refreshed = await db.select(supplierColumns).from(supplierIntegrations).where(eq(supplierIntegrations.id, id)).limit(1);
     return json({ supplier: refreshed[0], sync });
+  }
+
+  if (path.startsWith("/admin/suppliers/") && method === "PATCH") {
+    await requireAdmin(db, request, env);
+    const id = decodeURIComponent(path.slice("/admin/suppliers/".length));
+    const body = await bodyAsJson(request);
+    if (typeof body.is_active !== "boolean") throw new ApiError("Supplier active status must be true or false.", 400);
+    const [existing] = await db.select({ id: supplierIntegrations.id }).from(supplierIntegrations).where(eq(supplierIntegrations.id, id)).limit(1);
+    if (!existing) throw new ApiError("Supplier was not found.", 404);
+    const [supplier] = await db.update(supplierIntegrations).set({ isActive: body.is_active, updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(supplierIntegrations.id, id)).returning(supplierColumns);
+    return json({ supplier });
   }
 
   if (path.startsWith("/assets/") && method === "GET") {
