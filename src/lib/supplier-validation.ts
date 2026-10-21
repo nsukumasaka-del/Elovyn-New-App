@@ -1,4 +1,5 @@
 const blockedStoreHosts = new Set(["elovyn.store", "www.elovyn.store", "elovyn-new-app.pages.dev"]);
+export const SUPPLIER_AUTHENTICATION_ERROR = "Authentication failed: Please check that your API key is correct and active.";
 
 function isPrivateHost(hostname: string) {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
@@ -29,7 +30,7 @@ export function supplierUrlValidationError(value: string, currentStoreHost = "")
 
 export async function readSupplierJsonResponse(response: Response) {
   if (response.status === 401 || response.status === 403) {
-    return { ok: false as const, error: "Authentication failed: Please check that your API key is correct and active." };
+    return { ok: false as const, error: SUPPLIER_AUTHENTICATION_ERROR };
   }
   if (!response.ok) {
     return { ok: false as const, error: `Supplier returned HTTP ${response.status}. Check the URL and credentials.` };

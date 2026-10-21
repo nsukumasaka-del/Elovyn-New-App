@@ -30,7 +30,8 @@ import {
   verifyOAuthState,
   type StoreUser,
 } from "../lib/auth";
-import { readSupplierJsonResponse, supplierUrlValidationError } from "../../src/lib/supplier-validation";
+import { readSupplierJsonResponse, supplierUrlValidationError, SUPPLIER_AUTHENTICATION_ERROR } from "../../src/lib/supplier-validation";
+import { cjAccessTokenFromPayload, cjProductRecordsFromPayload } from "../../src/lib/cj-auth";
 import { createYocoCheckout, registerYocoWebhook, verifyYocoWebhookSignature } from "../lib/yoco";
 
 export interface Env {
@@ -78,6 +79,7 @@ const supplierColumns = {
   name: supplierIntegrations.name,
   api_base_url: supplierIntegrations.apiBaseUrl,
   webhook_url: supplierIntegrations.webhookUrl,
+  account_email: supplierIntegrations.accountEmail,
   auto_sync: supplierIntegrations.autoSync,
   is_active: supplierIntegrations.isActive,
   has_api_key: sql<boolean>`(${supplierIntegrations.encryptedApiKey} IS NOT NULL)`.as("has_api_key"),
@@ -838,6 +840,7 @@ async function resolveCheckoutItems(env: Env, input: unknown) {
 }
 
 type SupplierRecord = typeof supplierIntegrations.$inferSelect;
+const CJ_AUTHENTICATION_URL = "https://developers.cjdropshipping.com/api2.0/v1/authentication/getAccessToken";
 
 function safeSupplierUrl(value: string, storeHostname = "") {
   const validationError = supplierUrlValidationError(value, storeHostname);
@@ -853,13 +856,36 @@ async function supplierFetch(supplier: SupplierRecord, token: string, validateOn
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15000);
   try {
-    const response = await fetch(url, { headers: token ? { [supplier.adapter === "cj" ? "CJ-Access-Token" : "Authorization"]: supplier.adapter === "cj" ? token : `Bearer ${token}`, Accept: "application/json" } : { Accept: "application/json" }, redirect: "manual", signal: controller.signal });
+    let requestToken = token;
+    if (supplier.adapter === "cj") {
+      const authUrl = new URL(CJ_AUTHENTICATION_URL);
+      const authResponse = await fetch(authUrl, {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey: token, ...(supplier.accountEmail ? { email: supplier.accountEmail } : {}) }),
+        redirect: "manual",
+        signal: controller.signal,
+      });
+      const redirectedAuthUrlError = supplierUrlValidationError(authResponse.url || authUrl.toString(), storeHostname);
+      if (redirectedAuthUrlError) throw new ApiError(`CJ authentication was redirected to an invalid destination. ${redirectedAuthUrlError}`, 400);
+      if (!authResponse.ok) throw new ApiError(SUPPLIER_AUTHENTICATION_ERROR, 400);
+      const authResult = await readSupplierJsonResponse(authResponse);
+      if (!authResult.ok) throw new ApiError(SUPPLIER_AUTHENTICATION_ERROR, 400);
+      const accessToken = cjAccessTokenFromPayload(authResult.payload);
+      if (!accessToken.ok) throw new ApiError(accessToken.error, 400);
+      requestToken = accessToken.accessToken;
+    }
+    const response = await fetch(url, { headers: requestToken ? { [supplier.adapter === "cj" ? "CJ-Access-Token" : "Authorization"]: supplier.adapter === "cj" ? requestToken : `Bearer ${requestToken}`, Accept: "application/json" } : { Accept: "application/json" }, redirect: "manual", signal: controller.signal });
     const redirectedUrlError = supplierUrlValidationError(response.url || url.toString(), storeHostname);
     if (redirectedUrlError) throw new ApiError(`Supplier request was redirected to an invalid destination. ${redirectedUrlError}`, 400);
     const result = await readSupplierJsonResponse(response);
     if (!result.ok) throw new ApiError(result.error, 400);
     const payload = result.payload;
-    if (supplier.adapter === "cj" && (!payload || typeof payload !== "object" || ((payload as { result?: boolean }).result === false) || ((payload as { success?: boolean }).success === false))) throw new ApiError(`CJ rejected the request: ${String((payload as { message?: unknown }).message || "invalid credentials")}`, 400);
+    if (supplier.adapter === "cj" && (!payload || typeof payload !== "object" || ((payload as { result?: boolean }).result === false) || ((payload as { success?: boolean }).success === false))) {
+      const cjError = payload && typeof payload === "object" ? payload as { code?: unknown; message?: unknown } : {};
+      const authenticationFailure = /^160000[1-7]$/.test(String(cjError.code ?? "")) || /auth|token|api\s*key/i.test(String(cjError.message ?? ""));
+      throw new ApiError(authenticationFailure ? SUPPLIER_AUTHENTICATION_ERROR : `CJ rejected the request: ${String(cjError.message || "unknown supplier error")}`, 400);
+    }
     return payload;
   } catch (error) {
     if (error instanceof ApiError) throw error;
@@ -873,12 +899,12 @@ function pathValue(record: unknown, path: string) {
 
 function supplierProducts(payload: unknown, supplier: SupplierRecord) {
   let records: unknown[] | undefined;
-  if (supplier.adapter === "cj") records = pathValue(payload, "data.content.productList") as unknown[] | undefined;
+  if (supplier.adapter === "cj") records = cjProductRecordsFromPayload(payload) ?? undefined;
   else records = Array.isArray(payload) ? payload : (pathValue(payload, "products") || pathValue(payload, "data.products") || pathValue(payload, "data")) as unknown[] | undefined;
   if (!Array.isArray(records)) throw new ApiError("Supplier response does not contain a product array.", 400);
   let mapping: Record<string, string> = {};
   try { mapping = JSON.parse(supplier.fieldMappingJson || "{}"); } catch { throw new ApiError("Saved supplier field mapping is invalid.", 500); }
-  const defaults = supplier.adapter === "cj" ? { external_id: "id", title: "nameEn", sku: "sku", price: "sellPrice", category: "categoryName", image_url: "bigImage", stock_quantity: "stockQuantity" } : { external_id: "id", title: "title", sku: "sku", price: "price", category: "category", image_url: "image_url", stock_quantity: "stock_quantity", variants: "variants", options: "options" };
+  const defaults = supplier.adapter === "cj" ? { external_id: "id", title: "nameEn", sku: "sku", price: "sellPrice", category: "threeCategoryName", image_url: "bigImage", stock_quantity: "warehouseInventoryNum" } : { external_id: "id", title: "title", sku: "sku", price: "price", category: "category", image_url: "image_url", stock_quantity: "stock_quantity", variants: "variants", options: "options" };
   return records.slice(0, 50).map((entry, index) => {
     const mapped = Object.fromEntries(Object.entries({ ...defaults, ...mapping }).map(([key, path]) => [key, pathValue(entry, path)]));
     const rawPrice = typeof mapped.price === "string" ? mapped.price.split("-")[0] : mapped.price;
@@ -1492,9 +1518,11 @@ async function route(
     }
     if (!apiBaseUrl && adapter !== "cj") throw new ApiError("A product feed URL is required.", 400);
     const apiKey = typeof body.api_key === "string" ? body.api_key.trim() : "";
+    const accountEmail = typeof body.account_email === "string" ? body.account_email.trim().toLowerCase() : "";
+    if (adapter === "cj" && accountEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(accountEmail)) throw new ApiError("CJ account email must be a valid email address.", 400);
     const [saved] = await db.select().from(supplierIntegrations).where(eq(supplierIntegrations.id, id)).limit(1);
     const token = apiKey || (saved?.encryptedApiKey ? await decryptSecret(saved.encryptedApiKey, env.SUPPLIER_SECRET_ENCRYPTION_KEY) : "");
-    if (!token && adapter === "cj") throw new ApiError("An API key or access token is required for CJ Dropshipping.", 400);
+    if (!token && adapter === "cj") throw new ApiError("A CJ API key is required to request an access token.", 400);
     const encryptedKey = apiKey ? await encryptSecret(apiKey, env.SUPPLIER_SECRET_ENCRYPTION_KEY) : null;
     const fieldMapping = body.field_mapping && typeof body.field_mapping === "object" && !Array.isArray(body.field_mapping) ? body.field_mapping : {};
     const autoSync = body.auto_sync === true;
@@ -1503,6 +1531,7 @@ async function route(
       name,
       apiBaseUrl: apiBaseUrl || null,
       webhookUrl: webhookUrl || null,
+      accountEmail: adapter === "cj" ? accountEmail || null : null,
       adapter,
       fieldMappingJson: JSON.stringify(fieldMapping),
       connectionStatus: "pending",
@@ -1519,14 +1548,14 @@ async function route(
       })
       .returning(supplierColumns);
     const stored = await db.select().from(supplierIntegrations).where(eq(supplierIntegrations.id, id)).limit(1);
-    try { await supplierFetch(stored[0], token, true, url.hostname); }
-    catch (error) {
+    let sync = { imported: 0, updated: 0, total: 0 };
+    try {
+      if (isActive) sync = await syncSupplier(env, db, stored[0], token, url.hostname);
+      else await supplierFetch(stored[0], token, true, url.hostname);
+    } catch (error) {
       await db.update(supplierIntegrations).set({ connectionStatus: "error", lastSyncError: errorMessage(error).slice(0, 1000), updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(supplierIntegrations.id, id));
       throw error;
     }
-    const sync = isActive
-      ? await syncSupplier(env, db, stored[0], token, url.hostname)
-      : { imported: 0, updated: 0, total: 0 };
     if (!isActive) await db.update(supplierIntegrations).set({ connectionStatus: "connected", lastSyncError: null, updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(supplierIntegrations.id, id));
     const refreshed = await db.select(supplierColumns).from(supplierIntegrations).where(eq(supplierIntegrations.id, id)).limit(1);
     return json({ supplier: refreshed[0] ?? rows[0], sync }, 200);

@@ -23,6 +23,7 @@ type Supplier = {
   name: string;
   api_base_url: string | null;
   webhook_url: string | null;
+  account_email: string | null;
   auto_sync: boolean;
   is_active: boolean;
   has_api_key: boolean;
@@ -58,6 +59,7 @@ export function AdminPage() {
   const [apiBaseUrl, setApiBaseUrl] = useState("");
   const [webhookUrl, setWebhookUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [supplierAccountEmail, setSupplierAccountEmail] = useState("");
   const [autoSync, setAutoSync] = useState(false);
   const [supplierActive, setSupplierActive] = useState(true);
   const [supplierAdapter, setSupplierAdapter] = useState<"cj" | "generic_json">("cj");
@@ -72,6 +74,7 @@ export function AdminPage() {
     setApiBaseUrl("");
     setWebhookUrl("");
     setApiKey("");
+    setSupplierAccountEmail("");
     setAutoSync(false);
     setSupplierActive(true);
     setSupplierAdapter("cj");
@@ -140,6 +143,7 @@ export function AdminPage() {
           api_base_url: apiBaseUrl,
           webhook_url: webhookUrl,
           api_key: apiKey,
+          account_email: supplierAccountEmail,
           auto_sync: autoSync,
           is_active: supplierActive,
           adapter: supplierAdapter,
@@ -161,6 +165,7 @@ export function AdminPage() {
     setApiBaseUrl(supplier.api_base_url ?? "");
     setWebhookUrl(supplier.webhook_url ?? "");
     setApiKey("");
+    setSupplierAccountEmail(supplier.account_email ?? "");
     setAutoSync(supplier.auto_sync);
     setSupplierActive(supplier.is_active);
     setSupplierAdapter(supplier.adapter);
@@ -278,6 +283,7 @@ export function AdminPage() {
                 <form onSubmit={(event) => void saveSupplier(event)} className="mt-5 space-y-4">
                   <label className="block text-sm font-medium">Integration type<select value={supplierAdapter} onChange={(event) => setSupplierAdapter(event.target.value as typeof supplierAdapter)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 bg-white px-3"><option value="cj">CJ Dropshipping</option><option value="generic_json">Custom or ZA supplier (JSON/API feed)</option></select><span className="mt-1 block text-xs font-normal text-neutral-500">Choose the custom option for ZA Dropshipping or any supplier that provides a JSON product API/feed.</span></label>
                   <label className="block text-sm font-medium">Supplier name<input required value={supplierName} onChange={(event) => setSupplierName(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
+                  {supplierAdapter === "cj" && <label className="block text-sm font-medium">CJ account email (optional)<input type="email" autoComplete="email" value={supplierAccountEmail} onChange={(event) => setSupplierAccountEmail(event.target.value)} placeholder="you@example.com" className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /><span className="mt-1 block text-xs font-normal text-neutral-500">Included in CJ token authentication when supplied. CJ currently requires the API key.</span></label>}
                   <label className="block text-sm font-medium">{supplierAdapter === "cj" ? "API base URL (optional)" : "Product API / JSON feed URL"}<input type="url" value={apiBaseUrl} onChange={(event) => setApiBaseUrl(event.target.value)} placeholder={supplierAdapter === "cj" ? "https://developers.cjdropshipping.com/api2.0/v1" : "https://supplier.example/products.json"} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
                   <label className="block text-sm font-medium">API key{supplierAdapter === "generic_json" ? " (optional)" : ""}<input type="password" autoComplete="new-password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={supplierId ? "Leave blank to keep the saved key" : supplierAdapter === "cj" ? "Enter API key" : "Only needed for protected feeds"} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
                   <label className="block text-sm font-medium">Webhook URL<input type="url" value={webhookUrl} onChange={(event) => setWebhookUrl(event.target.value)} placeholder="https://your-store.com/api/supplier-webhook" className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>

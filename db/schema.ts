@@ -143,6 +143,7 @@ export const supplierIntegrations = sqliteTable("supplier_integrations", {
   name: text("name").notNull(),
   apiBaseUrl: text("api_base_url"),
   webhookUrl: text("webhook_url"),
+  accountEmail: text("account_email"),
   encryptedApiKey: text("encrypted_api_key"),
   adapter: text("adapter").notNull().default("generic_json"),
   fieldMappingJson: text("field_mapping_json").notNull().default("{}"),

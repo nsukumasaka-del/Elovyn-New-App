@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readSupplierJsonResponse, supplierUrlValidationError } from "@/lib/supplier-validation";
+import { cjAccessTokenFromPayload, cjProductRecordsFromPayload } from "@/lib/cj-auth";
 
 describe("supplier feed safeguards", () => {
   it("rejects storefront, admin, insecure, and private feed URLs", () => {
@@ -30,5 +31,22 @@ describe("supplier feed safeguards", () => {
 
     const valid = await readSupplierJsonResponse(new Response('{"products":[]}', { headers: { "Content-Type": "application/json; charset=utf-8" } }));
     expect(valid).toEqual({ ok: true, payload: { products: [] } });
+  });
+});
+
+describe("CJ access-token responses", () => {
+  it("extracts a successful access token", () => {
+    expect(cjAccessTokenFromPayload({ result: true, success: true, data: { accessToken: " cj-token " } })).toEqual({ ok: true, accessToken: "cj-token" });
+  });
+
+  it("returns a safe authentication error for rejected or malformed responses", () => {
+    const error = "Authentication failed: Please check that your API key is correct and active.";
+    expect(cjAccessTokenFromPayload({ result: false, message: "raw upstream error" })).toEqual({ ok: false, error });
+    expect(cjAccessTokenFromPayload({ result: true, data: {} })).toEqual({ ok: false, error });
+  });
+
+  it("extracts products from the CJ listV2 grouped response", () => {
+    const products = [{ id: "cj-1", warehouseInventoryNum: 42 }];
+    expect(cjProductRecordsFromPayload({ data: { content: [{ productList: products }, { relatedCategoryList: [] }] } })).toEqual(products);
   });
 });
