@@ -91,7 +91,7 @@ export const ClothingShowcase = () => {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-neutral-500">{item.category}</p>
-                    <h3 className="mt-2 text-xl font-semibold tracking-[-0.05em] text-neutral-950"><Link to={`/products/${["essential-box-tee", "everyday-overshirt", "layered-set", "signature-hoodie"][item.id - 1]} className="hover:underline">{item.name}</Link></h3>
+                    <h3 className="mt-2 text-xl font-semibold tracking-[-0.05em] text-neutral-950"><Link to={`/products/${["essential-box-tee", "everyday-overshirt", "layered-set", "signature-hoodie"][item.id - 1]}`} className="hover:underline">{item.name}</Link></h3>
                   </div>
                   <button aria-label={`Save ${item.name}`} aria-pressed={wishlist.includes(["essential-box-tee", "everyday-overshirt", "layered-set", "signature-hoodie"][item.id - 1])} onClick={() => toggleWishlist(
                     ["essential-box-tee", "everyday-overshirt", "layered-set", "signature-hoodie"][item.id - 1],
