@@ -112,6 +112,7 @@ export const orders = sqliteTable("orders", {
   totalAmount: real("total_amount").notNull(),
   status: text("status").notNull().default("Pending"),
   itemsJson: text("items_json").notNull(),
+  deliveryAddressJson: text("delivery_address_json"),
   paymentProvider: text("payment_provider"),
   paymentReference: text("payment_reference"),
   paymentId: text("payment_id"),

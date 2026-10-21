@@ -32,6 +32,7 @@ import {
 } from "../lib/auth";
 import { readSupplierJsonResponse, supplierUrlValidationError, SUPPLIER_AUTHENTICATION_ERROR } from "../../src/lib/supplier-validation";
 import { cjAccessTokenFromPayload, cjProductRecordsFromPayload } from "../../src/lib/cj-auth";
+import { normalizeDeliveryAddress } from "../../src/lib/delivery-address";
 import { createYocoCheckout, registerYocoWebhook, verifyYocoWebhookSignature } from "../lib/yoco";
 
 export interface Env {
@@ -1222,6 +1223,7 @@ async function route(
         total_amount: orders.totalAmount,
         status: orders.status,
         items_json: orders.itemsJson,
+        delivery_address_json: orders.deliveryAddressJson,
         created_at: orders.createdAt,
       })
       .from(orders)
@@ -1234,6 +1236,8 @@ async function route(
     const user = await requireUser(db, request);
     if (!env.YOCO_TEST_SECRET_KEY) throw new ApiError("Yoco test payments are not configured.", 503);
     const body = await bodyAsJson(request);
+    const deliveryAddress = normalizeDeliveryAddress(body.delivery_address);
+    if (!deliveryAddress.ok) throw new ApiError(deliveryAddress.error, 400);
     const checkoutItems = await resolveCheckoutItems(env, body.items);
     const totalCents = checkoutItems.reduce((sum, item) => sum + Math.round(item.price * 100) * item.quantity, 0);
     if (!Number.isSafeInteger(totalCents) || totalCents < 1) throw new ApiError("The order total must be at least R0.01.", 400);
@@ -1245,6 +1249,7 @@ async function route(
       totalAmount: totalCents / 100,
       status: "Awaiting Payment",
       itemsJson: JSON.stringify(checkoutItems),
+      deliveryAddressJson: JSON.stringify(deliveryAddress.address),
       paymentProvider: "yoco",
     });
     let checkout: Awaited<ReturnType<typeof createYocoCheckout>>;

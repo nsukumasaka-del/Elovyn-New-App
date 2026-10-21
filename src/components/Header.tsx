@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Heart, Menu, Search, ShoppingBag, UserRound, X } from "lucide-react";
 import { toast } from "sonner";
-import { useStore } from "@/lib/store";
+import { useStore, type DeliveryAddress } from "@/lib/store";
 import { isPrimaryAdmin } from "@/lib/store-api";
 
 const navItems = [
@@ -146,13 +146,29 @@ function CartDrawer({ onClose }: { onClose: () => void }) {
   const { cart, changeQuantity, removeFromCart, checkout, user, setAuthOpen } = useStore();
   const [error, setError] = useState("");
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [deliveryAddress, setDeliveryAddress] = useState<DeliveryAddress>({
+    recipientName: user?.fullName ?? "",
+    phone: "",
+    addressLine1: "",
+    addressLine2: "",
+    suburb: "",
+    city: "",
+    province: "",
+    postalCode: "",
+    country: "South Africa",
+  });
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
-  async function startCheckout() {
+  function updateDeliveryAddress(field: keyof DeliveryAddress, value: string) {
+    setDeliveryAddress((current) => ({ ...current, [field]: value }));
+  }
+
+  async function startCheckout(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     setError("");
     setCheckoutLoading(true);
     try {
-      await checkout();
+      await checkout(deliveryAddress);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not place the order.");
       setCheckoutLoading(false);
@@ -183,8 +199,9 @@ function CartDrawer({ onClose }: { onClose: () => void }) {
               <div><ShoppingBag className="mx-auto h-8 w-8 text-neutral-400" /><p className="mt-4 font-medium">Your bag is empty.</p><p className="mt-1 text-sm text-neutral-500">Find something you love.</p></div>
             </div>
           ) : (
-            <ul className="divide-y divide-neutral-200">
-              {cart.map((item) => (
+            <>
+              <ul className="divide-y divide-neutral-200">
+                {cart.map((item) => (
                 <li key={item.id} className="flex gap-4 py-5">
                   <img src={item.imageUrl} alt="" className="h-24 w-20 rounded-xl bg-neutral-100 object-cover" />
                   <div className="min-w-0 flex-1">
@@ -203,8 +220,26 @@ function CartDrawer({ onClose }: { onClose: () => void }) {
                     </div>
                   </div>
                 </li>
-              ))}
-            </ul>
+                ))}
+              </ul>
+              {user && (
+                <form id="delivery-address-form" onSubmit={(event) => void startCheckout(event)} className="mb-6 border-t border-neutral-200 pt-6">
+                  <h3 className="font-semibold">Delivery address</h3>
+                  <p className="mt-1 text-xs leading-5 text-neutral-500">Enter the residential or delivery location where this order should be sent.</p>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <label className="text-xs font-medium text-neutral-700 sm:col-span-2">Recipient full name<input required autoComplete="name" maxLength={100} value={deliveryAddress.recipientName} onChange={(event) => updateDeliveryAddress("recipientName", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm" /></label>
+                    <label className="text-xs font-medium text-neutral-700 sm:col-span-2">Phone number<input required type="tel" autoComplete="tel" minLength={7} maxLength={30} value={deliveryAddress.phone} onChange={(event) => updateDeliveryAddress("phone", event.target.value)} placeholder="+27 82 123 4567" className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm" /></label>
+                    <label className="text-xs font-medium text-neutral-700 sm:col-span-2">Street address<input required autoComplete="address-line1" maxLength={160} value={deliveryAddress.addressLine1} onChange={(event) => updateDeliveryAddress("addressLine1", event.target.value)} placeholder="House number and street" className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm" /></label>
+                    <label className="text-xs font-medium text-neutral-700 sm:col-span-2">Apartment, unit, or complex (optional)<input autoComplete="address-line2" maxLength={100} value={deliveryAddress.addressLine2} onChange={(event) => updateDeliveryAddress("addressLine2", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm" /></label>
+                    <label className="text-xs font-medium text-neutral-700">Suburb<input required autoComplete="address-level3" maxLength={100} value={deliveryAddress.suburb} onChange={(event) => updateDeliveryAddress("suburb", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm" /></label>
+                    <label className="text-xs font-medium text-neutral-700">City or town<input required autoComplete="address-level2" maxLength={100} value={deliveryAddress.city} onChange={(event) => updateDeliveryAddress("city", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm" /></label>
+                    <label className="text-xs font-medium text-neutral-700">Province or state<input required autoComplete="address-level1" maxLength={100} value={deliveryAddress.province} onChange={(event) => updateDeliveryAddress("province", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm" /></label>
+                    <label className="text-xs font-medium text-neutral-700">Postal code<input required autoComplete="postal-code" maxLength={20} value={deliveryAddress.postalCode} onChange={(event) => updateDeliveryAddress("postalCode", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm" /></label>
+                    <label className="text-xs font-medium text-neutral-700 sm:col-span-2">Country<input required autoComplete="country-name" maxLength={100} value={deliveryAddress.country} onChange={(event) => updateDeliveryAddress("country", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm" /></label>
+                  </div>
+                </form>
+              )}
+            </>
           )}
         </div>
         <footer className="border-t border-neutral-200 p-6">
@@ -212,7 +247,7 @@ function CartDrawer({ onClose }: { onClose: () => void }) {
           <p className="mt-2 text-xs text-neutral-500">Shipping and taxes are calculated at checkout.</p>
           {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
           {user ? (
-            <button disabled={cart.length === 0 || checkoutLoading} onClick={() => void startCheckout()} className="btn-primary mt-5 w-full disabled:cursor-not-allowed disabled:opacity-50">
+            <button type="submit" form="delivery-address-form" disabled={cart.length === 0 || checkoutLoading} className="btn-primary mt-5 w-full disabled:cursor-not-allowed disabled:opacity-50">
               {checkoutLoading ? "Opening Yoco…" : "Pay securely with Yoco"}
             </button>
           ) : (

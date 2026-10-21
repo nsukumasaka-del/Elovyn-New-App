@@ -9,8 +9,10 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { apiRequest as request, type CartProduct, type StoreUser } from "@/lib/store-api";
+import type { DeliveryAddress } from "@/lib/delivery-address";
 
 export type { CartProduct, StoreUser } from "@/lib/store-api";
+export type { DeliveryAddress } from "@/lib/delivery-address";
 export type CartLine = CartProduct & { quantity: number };
 export type StoreProduct = {
   id: string;
@@ -44,7 +46,7 @@ type StoreContextValue = {
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, fullName: string) => Promise<void>;
   signOut: () => Promise<void>;
-  checkout: () => Promise<void>;
+  checkout: (deliveryAddress: DeliveryAddress) => Promise<void>;
 };
 
 const StoreContext = createContext<StoreContextValue | null>(null);
@@ -245,7 +247,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     toast.success("You have signed out.");
   }, []);
 
-  const checkout = useCallback(async () => {
+  const checkout = useCallback(async (deliveryAddress: DeliveryAddress) => {
     if (!user) {
       setAuthMode("signin");
       setAuthOpen(true);
@@ -254,7 +256,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
     const result = await request<{ redirect_url: string }>("/orders", {
       method: "POST",
-      body: JSON.stringify({ items: cart.map(({ id, quantity }) => ({ id, quantity })) }),
+      body: JSON.stringify({ items: cart.map(({ id, quantity }) => ({ id, quantity })), delivery_address: deliveryAddress }),
     });
     window.location.assign(result.redirect_url);
   }, [cart, user]);

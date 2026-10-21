@@ -94,6 +94,7 @@ type Order = {
   total_amount: number | string;
   status: string;
   items_json: string;
+  delivery_address_json: string | null;
   created_at: string;
 };
 
@@ -129,7 +130,9 @@ export function OrdersPage() {
           <div className="mt-8 space-y-4">
             {orders.map((order) => {
               let items: { title: string; quantity: number }[] = [];
+              let address: { recipientName?: string; addressLine1?: string; addressLine2?: string; suburb?: string; city?: string; province?: string; postalCode?: string; country?: string } | null = null;
               try { items = JSON.parse(order.items_json); } catch { /* Invalid historical row; keep displaying the order. */ }
+              try { address = order.delivery_address_json ? JSON.parse(order.delivery_address_json) : null; } catch { /* Historical orders may not have a delivery address. */ }
               return (
                 <article key={order.id} className="rounded-2xl border border-neutral-200 bg-white p-6">
                   <div className="flex flex-wrap justify-between gap-3">
@@ -137,6 +140,7 @@ export function OrdersPage() {
                     <div className="text-right"><p className="font-semibold">R {Number(order.total_amount).toFixed(2)}</p><p className="mt-1 text-sm text-neutral-500">{order.status}</p></div>
                   </div>
                   <p className="mt-4 text-sm text-neutral-600">{items.map((item) => `${item.title} × ${item.quantity}`).join(", ")}</p>
+                  {address && <p className="mt-3 border-t border-neutral-100 pt-3 text-sm text-neutral-500"><span className="font-medium text-neutral-700">Deliver to:</span> {[address.recipientName, address.addressLine1, address.addressLine2, address.suburb, address.city, address.province, address.postalCode, address.country].filter(Boolean).join(", ")}</p>}
                 </article>
               );
             })}
