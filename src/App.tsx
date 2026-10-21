@@ -10,6 +10,7 @@ import { AdminPage } from "./pages/Admin";
 import { ProductDetailPage } from "./pages/ProductDetail";
 import { AccountPage, LoginPage, OrdersPage, WishlistPage } from "./pages/StoreAccount";
 import { CategoryPage } from "./pages/Category";
+import { PaymentResultPage } from "./pages/PaymentResult";
 
 const queryClient = new QueryClient();
 
@@ -29,6 +30,9 @@ const App = () => (
             <Route path="/wishlist" element={<WishlistPage />} />
             <Route path="/profile" element={<AccountPage />} />
             <Route path="/orders" element={<OrdersPage />} />
+            <Route path="/payment/success" element={<PaymentResultPage kind="success" />} />
+            <Route path="/payment/cancelled" element={<PaymentResultPage kind="cancelled" />} />
+            <Route path="/payment/failed" element={<PaymentResultPage kind="failed" />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </StoreProvider>

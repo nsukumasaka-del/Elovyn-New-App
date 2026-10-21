@@ -5,6 +5,8 @@ import {
   inventoryItems,
   options,
   orders,
+  paymentProviderSettings,
+  paymentWebhookEvents,
   products,
   supplierIntegrations,
   supplierSyncHistory,
@@ -29,6 +31,7 @@ import {
   type StoreUser,
 } from "../lib/auth";
 import { readSupplierJsonResponse, supplierUrlValidationError } from "../../src/lib/supplier-validation";
+import { createYocoCheckout, registerYocoWebhook, verifyYocoWebhookSignature } from "../lib/yoco";
 
 export interface Env {
   DB?: D1Database;
@@ -41,6 +44,8 @@ export interface Env {
   RESEND_API_KEY?: string;
   RESEND_FROM_EMAIL?: string;
   JWT_SECRET?: string;
+  YOCO_TEST_PUBLIC_KEY?: string;
+  YOCO_TEST_SECRET_KEY?: string;
 }
 
 interface PagesContext {
@@ -768,6 +773,70 @@ async function decryptSecret(value: string, secret: string) {
   } catch { throw new ApiError("Saved supplier credential could not be decrypted.", 500); }
 }
 
+async function ensureYocoWebhook(env: Env, db: ReturnType<typeof createDb>, origin: string) {
+  if (!env.YOCO_TEST_SECRET_KEY) throw new ApiError("Yoco test payments are not configured.", 503);
+  const [saved] = await db.select().from(paymentProviderSettings).where(eq(paymentProviderSettings.provider, "yoco")).limit(1);
+  if (saved?.encryptedWebhookSecret) {
+    return decryptSecret(saved.encryptedWebhookSecret, env.SUPPLIER_SECRET_ENCRYPTION_KEY);
+  }
+  let registered: Awaited<ReturnType<typeof registerYocoWebhook>>;
+  try { registered = await registerYocoWebhook(env.YOCO_TEST_SECRET_KEY, `${origin}/api/payments/yoco/webhook`); }
+  catch (error) { throw new ApiError(errorMessage(error), 502); }
+  const encryptedWebhookSecret = await encryptSecret(registered.secret, env.SUPPLIER_SECRET_ENCRYPTION_KEY);
+  await db.insert(paymentProviderSettings).values({
+    provider: "yoco",
+    mode: registered.mode,
+    webhookId: registered.id,
+    encryptedWebhookSecret,
+  }).onConflictDoUpdate({
+    target: paymentProviderSettings.provider,
+    set: { mode: registered.mode, webhookId: registered.id, encryptedWebhookSecret, updatedAt: sql`CURRENT_TIMESTAMP` },
+  });
+  return registered.secret;
+}
+
+type CheckoutItem = {
+  variant_id: string;
+  product_id: string;
+  sku: string;
+  title: string;
+  price: number;
+  quantity: number;
+};
+
+async function resolveCheckoutItems(env: Env, input: unknown) {
+  if (!Array.isArray(input) || input.length === 0 || input.length > 100) throw new ApiError("Your cart must contain between 1 and 100 items.", 400);
+  const requested = input.map((item) => {
+    if (!item || typeof item !== "object") throw new ApiError("Cart item is invalid.", 400);
+    const entry = item as Record<string, unknown>;
+    const id = requiredString(entry.id, "Product id", 100);
+    const quantity = Number(entry.quantity);
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 99) throw new ApiError("Cart quantity must be between 1 and 99.", 400);
+    return { id, quantity };
+  });
+  const resolved: CheckoutItem[] = [];
+  for (const requestItem of requested) {
+    const variantQuery = `SELECT v.id AS variant_id, p.id AS product_id, v.sku, p.title, v.title AS variant_title,
+      v.price, COALESCE(i.quantity, 0) AS available, COALESCE(i.track_quantity, 1) AS track_quantity
+      FROM variants v INNER JOIN products p ON p.id = v.product_id
+      LEFT JOIN inventory_items i ON i.variant_id = v.id`;
+    let row = await env.DB!.prepare(`${variantQuery} WHERE v.id = ? LIMIT 1`).bind(requestItem.id).first<{
+      variant_id: string; product_id: string; sku: string; title: string; variant_title: string; price: number; available: number; track_quantity: number;
+    }>();
+    if (!row) row = await env.DB!.prepare(`${variantQuery} WHERE p.id = ? ORDER BY COALESCE(i.quantity, 0) DESC, v.created_at ASC LIMIT 1`).bind(requestItem.id).first();
+    if (!row) throw new ApiError("A product in your bag is no longer available.", 409);
+    if (row.track_quantity && row.available < requestItem.quantity) throw new ApiError(`${row.title} does not have enough stock for this order.`, 409);
+    const existing = resolved.find((item) => item.variant_id === row.variant_id);
+    if (existing) {
+      existing.quantity += requestItem.quantity;
+      if (row.track_quantity && row.available < existing.quantity) throw new ApiError(`${row.title} does not have enough stock for this order.`, 409);
+    } else {
+      resolved.push({ variant_id: row.variant_id, product_id: row.product_id, sku: row.sku, title: row.variant_title === "Default" ? row.title : `${row.title} (${row.variant_title})`, price: Number(row.price), quantity: requestItem.quantity });
+    }
+  }
+  return resolved;
+}
+
 type SupplierRecord = typeof supplierIntegrations.$inferSelect;
 
 function safeSupplierUrl(value: string, storeHostname = "") {
@@ -862,6 +931,83 @@ async function route(
     }
     await env.DB.prepare("SELECT 1").first();
     return json({ ok: true, database: "connected" });
+  }
+
+  if (path === "/payments/status" && method === "GET") {
+    return json({ provider: "yoco", enabled: Boolean(env.YOCO_TEST_PUBLIC_KEY && env.YOCO_TEST_SECRET_KEY), mode: "test" });
+  }
+
+  if (path === "/payments/yoco/webhook" && method === "POST") {
+    const webhookId = request.headers.get("webhook-id") || "";
+    const timestamp = request.headers.get("webhook-timestamp") || "";
+    const signature = request.headers.get("webhook-signature") || "";
+    const rawBody = await request.text();
+    if (!webhookId || !timestamp || !signature) throw new ApiError("Yoco webhook signature headers are missing.", 401);
+    const [settings] = await db.select().from(paymentProviderSettings).where(eq(paymentProviderSettings.provider, "yoco")).limit(1);
+    if (!settings?.encryptedWebhookSecret) throw new ApiError("Yoco webhook verification is not configured.", 503);
+    const webhookSecret = await decryptSecret(settings.encryptedWebhookSecret, env.SUPPLIER_SECRET_ENCRYPTION_KEY);
+    if (!await verifyYocoWebhookSignature({ secret: webhookSecret, webhookId, timestamp, signature, rawBody })) {
+      throw new ApiError("Yoco webhook signature is invalid or expired.", 401);
+    }
+    const [processed] = await db.select({ id: paymentWebhookEvents.id }).from(paymentWebhookEvents).where(eq(paymentWebhookEvents.id, webhookId)).limit(1);
+    if (processed) return json({ received: true, duplicate: true });
+    let event: unknown;
+    try { event = JSON.parse(rawBody); } catch { throw new ApiError("Yoco webhook body is invalid JSON.", 400); }
+    if (!event || typeof event !== "object") throw new ApiError("Yoco webhook body is invalid.", 400);
+    const record = event as { type?: unknown; payload?: unknown };
+    const eventType = typeof record.type === "string" ? record.type : "unknown";
+    const payload = record.payload && typeof record.payload === "object" ? record.payload as Record<string, unknown> : {};
+    const metadata = payload.metadata && typeof payload.metadata === "object" ? payload.metadata as Record<string, unknown> : {};
+    const orderId = typeof metadata.orderId === "string" ? metadata.orderId : "";
+    const checkoutId = typeof metadata.checkoutId === "string" ? metadata.checkoutId : "";
+    const [order] = orderId
+      ? await db.select().from(orders).where(eq(orders.id, orderId)).limit(1)
+      : checkoutId ? await db.select().from(orders).where(eq(orders.paymentReference, checkoutId)).limit(1) : [];
+    if (!order) throw new ApiError("Yoco webhook does not match an Elovyn order.", 404);
+    if (checkoutId && order.paymentReference && checkoutId !== order.paymentReference) throw new ApiError("Yoco checkout reference does not match the order.", 409);
+    const eventStatement = env.DB!.prepare("INSERT INTO payment_webhook_events (id, provider, event_type) VALUES (?, 'yoco', ?)").bind(webhookId, eventType);
+    if (eventType === "payment.succeeded") {
+      const amount = Number(payload.amount);
+      const currency = payload.currency;
+      if (!Number.isInteger(amount) || amount !== Math.round(Number(order.totalAmount) * 100) || currency !== "ZAR") {
+        throw new ApiError("Yoco payment amount or currency does not match the order.", 409);
+      }
+      if (order.status === "Paid" || order.status === "Completed" || order.status === "Fulfilled") {
+        await env.DB!.batch([eventStatement]);
+        return json({ received: true, order_id: order.id });
+      }
+      let items: CheckoutItem[];
+      try { items = JSON.parse(order.itemsJson) as CheckoutItem[]; }
+      catch { throw new ApiError("Order items could not be read.", 500); }
+      const stockRows = await Promise.all(items.map((item) => env.DB!.prepare("SELECT quantity, track_quantity FROM inventory_items WHERE variant_id = ?").bind(item.variant_id).first<{ quantity: number; track_quantity: number }>()));
+      const stockAvailable = items.every((item, index) => stockRows[index] && (!stockRows[index]!.track_quantity || stockRows[index]!.quantity >= item.quantity));
+      const paymentId = typeof payload.id === "string" ? payload.id : null;
+      if (!stockAvailable) {
+        await env.DB!.batch([
+          eventStatement,
+          env.DB!.prepare("UPDATE orders SET status = 'Payment Review', payment_id = ?, paid_at = CURRENT_TIMESTAMP WHERE id = ?").bind(paymentId, order.id),
+        ]);
+        return json({ received: true, order_id: order.id, review: true });
+      }
+      const statements: D1PreparedStatement[] = [eventStatement];
+      for (const item of items) {
+        statements.push(env.DB!.prepare("UPDATE inventory_items SET quantity = MAX(0, quantity - ?), updated_at = CURRENT_TIMESTAMP WHERE variant_id = ? AND track_quantity = 1").bind(item.quantity, item.variant_id));
+      }
+      for (const productId of [...new Set(items.map((item) => item.product_id))]) {
+        statements.push(env.DB!.prepare(`UPDATE products SET stock_quantity = (SELECT COALESCE(SUM(i.quantity), 0) FROM inventory_items i INNER JOIN variants v ON v.id = i.variant_id WHERE v.product_id = ?), status = CASE WHEN (SELECT COALESCE(SUM(i.quantity), 0) FROM inventory_items i INNER JOIN variants v ON v.id = i.variant_id WHERE v.product_id = ?) <= 0 THEN 'Out of Stock' WHEN (SELECT COALESCE(SUM(i.quantity), 0) FROM inventory_items i INNER JOIN variants v ON v.id = i.variant_id WHERE v.product_id = ?) <= 5 THEN 'Low Stock' ELSE 'In Stock' END, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(productId, productId, productId, productId));
+      }
+      statements.push(env.DB!.prepare("UPDATE orders SET status = 'Paid', payment_id = ?, paid_at = CURRENT_TIMESTAMP WHERE id = ?").bind(paymentId, order.id));
+      statements.push(env.DB!.prepare("DELETE FROM carts WHERE user_id = ?").bind(order.userId));
+      await env.DB!.batch(statements);
+    } else if (eventType === "payment.failed") {
+      await env.DB!.batch([
+        eventStatement,
+        env.DB!.prepare("UPDATE orders SET status = 'Payment Failed', payment_id = ? WHERE id = ? AND status = 'Awaiting Payment'").bind(typeof payload.id === "string" ? payload.id : null, order.id),
+      ]);
+    } else {
+      await env.DB!.batch([eventStatement]);
+    }
+    return json({ received: true, order_id: order.id });
   }
 
   if (path === "/auth/google" && method === "GET") {
@@ -1059,11 +1205,49 @@ async function route(
   }
 
   if (path === "/orders" && method === "POST") {
-    await requireUser(db, request);
-    throw new ApiError(
-      "Online checkout is unavailable because no payment provider is configured. Your cart and inventory have not been changed.",
-      503,
-    );
+    const user = await requireUser(db, request);
+    if (!env.YOCO_TEST_SECRET_KEY) throw new ApiError("Yoco test payments are not configured.", 503);
+    const body = await bodyAsJson(request);
+    const checkoutItems = await resolveCheckoutItems(env, body.items);
+    const totalCents = checkoutItems.reduce((sum, item) => sum + Math.round(item.price * 100) * item.quantity, 0);
+    if (!Number.isSafeInteger(totalCents) || totalCents < 1) throw new ApiError("The order total must be at least R0.01.", 400);
+    await ensureYocoWebhook(env, db, url.origin);
+    const orderId = crypto.randomUUID();
+    await db.insert(orders).values({
+      id: orderId,
+      userId: user.id,
+      totalAmount: totalCents / 100,
+      status: "Awaiting Payment",
+      itemsJson: JSON.stringify(checkoutItems),
+      paymentProvider: "yoco",
+    });
+    let checkout: Awaited<ReturnType<typeof createYocoCheckout>>;
+    try {
+      checkout = await createYocoCheckout(env.YOCO_TEST_SECRET_KEY, {
+        amount: totalCents,
+        currency: "ZAR",
+        successUrl: `${url.origin}/payment/success?order=${encodeURIComponent(orderId)}`,
+        cancelUrl: `${url.origin}/payment/cancelled?order=${encodeURIComponent(orderId)}`,
+        failureUrl: `${url.origin}/payment/failed?order=${encodeURIComponent(orderId)}`,
+        metadata: { orderId, userId: user.id },
+        externalId: orderId,
+        clientReferenceId: orderId,
+      });
+    } catch (error) {
+      await db.update(orders).set({ status: "Payment Failed" }).where(eq(orders.id, orderId));
+      throw new ApiError(errorMessage(error), 502);
+    }
+    await db.update(orders).set({ paymentReference: checkout.id }).where(eq(orders.id, orderId));
+    return json({ order_id: orderId, redirect_url: checkout.redirectUrl, mode: checkout.processingMode }, 201);
+  }
+
+  if (path.startsWith("/orders/") && method === "GET") {
+    const user = await requireUser(db, request);
+    const orderId = decodeURIComponent(path.slice("/orders/".length));
+    const [order] = await db.select({ id: orders.id, status: orders.status, total_amount: orders.totalAmount, payment_provider: orders.paymentProvider, created_at: orders.createdAt })
+      .from(orders).where(and(eq(orders.id, orderId), eq(orders.userId, user.id))).limit(1);
+    if (!order) throw new ApiError("Order was not found.", 404);
+    return json({ order });
   }
 
   if (path === "/admin/inventory" && method === "GET") {

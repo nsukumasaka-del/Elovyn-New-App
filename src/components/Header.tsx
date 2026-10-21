@@ -145,14 +145,17 @@ function AuthDialog({ onClose }: { onClose: () => void }) {
 function CartDrawer({ onClose }: { onClose: () => void }) {
   const { cart, changeQuantity, removeFromCart, checkout, user, setAuthOpen } = useStore();
   const [error, setError] = useState("");
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
   async function startCheckout() {
     setError("");
+    setCheckoutLoading(true);
     try {
       await checkout();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not place the order.");
+      setCheckoutLoading(false);
     }
   }
 
@@ -209,8 +212,8 @@ function CartDrawer({ onClose }: { onClose: () => void }) {
           <p className="mt-2 text-xs text-neutral-500">Shipping and taxes are calculated at checkout.</p>
           {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
           {user ? (
-            <button disabled={cart.length === 0} onClick={() => void startCheckout()} className="btn-primary mt-5 w-full disabled:cursor-not-allowed disabled:opacity-50">
-              Place order
+            <button disabled={cart.length === 0 || checkoutLoading} onClick={() => void startCheckout()} className="btn-primary mt-5 w-full disabled:cursor-not-allowed disabled:opacity-50">
+              {checkoutLoading ? "Opening Yoco…" : "Pay securely with Yoco"}
             </button>
           ) : (
             <button
@@ -221,7 +224,7 @@ function CartDrawer({ onClose }: { onClose: () => void }) {
               Sign in to continue
             </button>
           )}
-          <p className="mt-3 text-center text-xs text-neutral-500">Secure payment will be available once a payment provider is configured.</p>
+          <p className="mt-3 text-center text-xs text-neutral-500">Secure test checkout powered by Yoco. No live payment will be collected.</p>
         </footer>
       </aside>
     </div>

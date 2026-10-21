@@ -39,6 +39,7 @@ type StoreContextValue = {
   addToCart: (product: CartProduct) => void;
   changeQuantity: (id: string, quantity: number) => void;
   removeFromCart: (id: string) => void;
+  clearCart: () => void;
   toggleWishlist: (id: string, product: CartProduct) => void;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, fullName: string) => Promise<void>;
@@ -176,6 +177,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     persistCart(cart.filter((item) => item.id !== id));
   }, [cart, persistCart]);
 
+  const clearCart = useCallback(() => persistCart([]), [persistCart]);
+
   const toggleWishlist = useCallback((id: string, product: CartProduct) => {
     localStorage.setItem(`elovyn-product:${id}`, JSON.stringify(product));
     setWishlist((current) => {
@@ -249,19 +252,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toast.message("Sign in to place your order.");
       return;
     }
-    await request("/orders", {
+    const result = await request<{ redirect_url: string }>("/orders", {
       method: "POST",
       body: JSON.stringify({ items: cart.map(({ id, quantity }) => ({ id, quantity })) }),
     });
+    window.location.assign(result.redirect_url);
   }, [cart, user]);
 
   const value = useMemo(() => ({
     user, ready, connectionError, retryConnection, products, refreshProducts, cart, wishlist, cartOpen, setCartOpen, authOpen, setAuthOpen,
-    authMode, setAuthMode, addToCart, changeQuantity, removeFromCart,
+    authMode, setAuthMode, addToCart, changeQuantity, removeFromCart, clearCart,
     toggleWishlist, signIn, signUp, signOut, checkout,
   }), [
     user, ready, connectionError, retryConnection, products, refreshProducts, cart, wishlist, cartOpen, authOpen, authMode, addToCart,
-    changeQuantity, removeFromCart, toggleWishlist, signIn, signUp, signOut, checkout,
+    changeQuantity, removeFromCart, clearCart, toggleWishlist, signIn, signUp, signOut, checkout,
   ]);
 
   return (
