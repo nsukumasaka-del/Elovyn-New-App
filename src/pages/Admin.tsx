@@ -284,6 +284,8 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [loadingProduct, setLoadingProduct] = useState(Boolean(productId));
+  const selectedImagePreviews = useMemo(() => images.map((file) => ({ file, url: URL.createObjectURL(file) })), [images]);
+  useEffect(() => () => selectedImagePreviews.forEach(({ url }) => URL.revokeObjectURL(url)), [selectedImagePreviews]);
   const matrix = useMemo(() => {
     const options = optionRows.map((option) => ({
       name: option.name.trim(),
@@ -355,6 +357,18 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
     const form = new FormData();
     form.set("file", file);
     return (await apiRequest<{ image_url: string }>("/admin/assets", { method: "POST", body: form })).image_url;
+  }
+
+  function addGalleryImages(files: File[]) {
+    const supported = files.filter((file) => ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type));
+    if (supported.length !== files.length) setError("Only JPEG, PNG, WebP, and GIF images can be added.");
+    setImages((current) => {
+      const seen = new Set(current.map((file) => `${file.name}:${file.size}:${file.lastModified}`));
+      const additions = supported.filter((file) => !seen.has(`${file.name}:${file.size}:${file.lastModified}`));
+      const available = Math.max(0, 20 - existingImageUrls.length - current.length);
+      if (additions.length > available) setError("A product can have no more than 20 gallery images.");
+      return [...current, ...additions.slice(0, available)];
+    });
   }
 
   function updateVariantField(key: string, field: keyof VariantFields, value: string) {
@@ -442,7 +456,15 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
             <label className="block text-sm font-medium">Brand<input value={brand} onChange={(event) => setBrand(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
             <label className="block text-sm font-medium">Product description / features<textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} className="mt-1.5 w-full rounded-xl border border-neutral-300 px-3 py-2" /></label>
           </div>
-          <label className="block text-sm font-medium">Product gallery<input multiple accept="image/jpeg,image/png,image/webp,image/gif" type="file" onChange={(event) => setImages(Array.from(event.target.files ?? []))} className="mt-1.5 block w-full text-sm file:mr-3 file:rounded-full file:border-0 file:bg-neutral-100 file:px-4 file:py-2" /><span className="mt-1 block text-xs text-neutral-500">Select multiple JPEG, PNG, WebP or GIF files · max 5 MB each · 20 images total{existingImageUrls.length ? ` · ${existingImageUrls.length} saved` : ""}{images.length ? ` · ${images.length} selected` : ""}</span></label>
+          <section className="rounded-2xl border border-neutral-200 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-sm font-semibold">Product gallery</h3><p className="mt-1 text-xs text-neutral-500">Add images together or in separate selections. The first image is the storefront cover.</p></div><label htmlFor="product-gallery-files" className="cursor-pointer rounded-full bg-neutral-950 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-800">Add images</label></div>
+            <input id="product-gallery-files" multiple accept="image/jpeg,image/png,image/webp,image/gif" type="file" onChange={(event) => { addGalleryImages(Array.from(event.target.files ?? [])); event.target.value = ""; }} className="sr-only" />
+            <p className="mt-2 text-xs text-neutral-500">JPEG, PNG, WebP or GIF · max 5 MB each · {existingImageUrls.length + images.length}/20 images</p>
+            {existingImageUrls.length + selectedImagePreviews.length > 0 ? <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5">
+              {existingImageUrls.map((url, index) => <div key={url} className="relative overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50"><img src={url} alt={`Saved product image ${index + 1}`} className="aspect-square w-full object-contain" />{index === 0 && <span className="absolute left-2 top-2 rounded-full bg-black px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-white">Cover</span>}<button type="button" aria-label={`Remove saved image ${index + 1}`} onClick={() => setExistingImageUrls((current) => current.filter((entry) => entry !== url))} className="absolute right-2 top-2 rounded-full bg-white p-1.5 shadow"><X className="h-3.5 w-3.5" /></button></div>)}
+              {selectedImagePreviews.map(({ file, url }, index) => <div key={`${file.name}-${file.lastModified}`} className="relative overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50"><img src={url} alt={`New product image ${index + 1}`} className="aspect-square w-full object-contain" />{existingImageUrls.length === 0 && index === 0 && <span className="absolute left-2 top-2 rounded-full bg-black px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-white">Cover</span>}<button type="button" aria-label={`Remove ${file.name}`} onClick={() => setImages((current) => current.filter((entry) => entry !== file))} className="absolute right-2 top-2 rounded-full bg-white p-1.5 shadow"><X className="h-3.5 w-3.5" /></button><p className="truncate px-2 py-1.5 text-[10px] text-neutral-600">{file.name}</p></div>)}
+            </div> : <div className="mt-4 rounded-xl border border-dashed border-neutral-300 p-8 text-center text-sm text-neutral-500">No images yet. Choose “Add images” and select as many as you need.</div>}
+          </section>
           <section className="rounded-2xl border border-neutral-200 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div><h3 className="font-semibold">Options and variants</h3><p className="mt-1 text-xs text-neutral-500">Enter comma-separated values. A SKU and stock row is generated for each combination.</p></div>

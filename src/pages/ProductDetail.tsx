@@ -161,9 +161,9 @@ export function ProductDetailPage() {
         )}
         {!loading && data && (
           <section className="grid gap-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.85fr)_minmax(270px,0.68fr)] lg:gap-7">
-            <div className="grid items-start gap-3 sm:grid-cols-[72px_minmax(0,1fr)]">
+            <div className={images.length > 1 ? "grid items-start gap-3 sm:grid-cols-[72px_minmax(0,1fr)]" : "block"}>
               {images.length > 1 && (
-                <div className="order-2 flex gap-2 overflow-x-auto sm:order-1 sm:flex-col">
+                <div className="order-2 flex gap-2 overflow-x-auto sm:order-1 sm:max-h-[740px] sm:flex-col sm:overflow-y-auto">
                   {images.map((image, index) => (
                     <button key={image} type="button" onMouseEnter={() => setHeroImage(image)} onClick={() => setHeroImage(image)}
                       aria-label={`Show product image ${index + 1}`} aria-pressed={heroImage === image}
@@ -173,8 +173,8 @@ export function ProductDetailPage() {
                   ))}
                 </div>
               )}
-              <div className="order-1 flex aspect-[4/5] max-h-[740px] items-center justify-center overflow-hidden rounded-3xl bg-white sm:order-2">
-                <img src={heroImage || data.product.image_url || productFallback} alt={data.product.title} className="h-full w-full object-cover" />
+              <div className={`${images.length > 1 ? "order-1 sm:order-2" : ""} flex aspect-[4/5] min-h-[420px] w-full max-h-[740px] items-center justify-center overflow-hidden rounded-3xl bg-white`}>
+                <img src={heroImage || data.product.image_url || productFallback} alt={data.product.title} className="h-full w-full object-contain p-2" />
               </div>
             </div>
 
