@@ -1,4 +1,4 @@
-CREATE TABLE product_import_jobs (
+CREATE TABLE IF NOT EXISTS product_import_jobs (
   id TEXT PRIMARY KEY NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
   payload_json TEXT NOT NULL,
@@ -8,4 +8,4 @@ CREATE TABLE product_import_jobs (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX product_import_jobs_created_at_idx ON product_import_jobs(created_at);
+CREATE INDEX IF NOT EXISTS product_import_jobs_created_at_idx ON product_import_jobs(created_at);

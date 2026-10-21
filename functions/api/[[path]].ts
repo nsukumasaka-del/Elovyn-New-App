@@ -583,15 +583,24 @@ function productInsertStatements(env: Env, product: ProductInput, productId: str
     product.image_url,
     JSON.stringify(product.images),
   ];
-  const statements: D1PreparedStatement[] = [
-    env.DB.prepare(updateExisting ? `UPDATE products SET
-      title = ?, sku = ?, price = ?, compare_at_price = ?, stock_quantity = ?, status = ?, category = ?,
-      brand = ?, description = ?, handle = ?, image_url = ?, images_json = ?, supplier_id = COALESCE(?, supplier_id), supplier_product_id = COALESCE(?, supplier_product_id), updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?` : `INSERT INTO products
-      (id, title, sku, price, compare_at_price, stock_quantity, status, category, brand, description, handle, image_url, images_json, supplier_id, supplier_product_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .bind(...(updateExisting ? [...productValues, source?.supplierId ?? null, source?.externalId ?? null, productId] : [productId, ...productValues, source?.supplierId ?? null, source?.externalId ?? null])),
-  ];
+  const statement = updateExisting
+    ? source
+      ? env.DB.prepare(`UPDATE products SET
+          title = ?, sku = ?, price = ?, compare_at_price = ?, stock_quantity = ?, status = ?, category = ?,
+          brand = ?, description = ?, handle = ?, image_url = ?, images_json = ?, supplier_id = ?, supplier_product_id = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?`).bind(...productValues, source.supplierId, source.externalId, productId)
+      : env.DB.prepare(`UPDATE products SET
+          title = ?, sku = ?, price = ?, compare_at_price = ?, stock_quantity = ?, status = ?, category = ?,
+          brand = ?, description = ?, handle = ?, image_url = ?, images_json = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?`).bind(...productValues, productId)
+    : source
+      ? env.DB.prepare(`INSERT INTO products
+          (id, title, sku, price, compare_at_price, stock_quantity, status, category, brand, description, handle, image_url, images_json, supplier_id, supplier_product_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(productId, ...productValues, source.supplierId, source.externalId)
+      : env.DB.prepare(`INSERT INTO products
+          (id, title, sku, price, compare_at_price, stock_quantity, status, category, brand, description, handle, image_url, images_json)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(productId, ...productValues);
+  const statements: D1PreparedStatement[] = [statement];
   if (updateExisting) {
     statements.push(env.DB.prepare("DELETE FROM variants WHERE product_id = ?").bind(productId));
     statements.push(env.DB.prepare("DELETE FROM options WHERE product_id = ?").bind(productId));
@@ -1378,6 +1387,13 @@ export async function onRequest(context: PagesContext) {
   } catch (error) {
     if (error instanceof ApiError) return json({ error: error.message }, error.status);
     console.error("Store API request failed:", error);
+    const message = errorMessage(error);
+    if (/no such (?:table|column):/i.test(message)) {
+      return json({ error: "The store database is missing a required migration. Apply the latest D1 migrations and try again." }, 503);
+    }
+    if (/UNIQUE constraint failed/i.test(message)) {
+      return json({ error: "A product or variant already uses one of these SKUs or this product handle. Choose unique values and try again." }, 409);
+    }
     return json({ error: "The request could not be completed. Check the Cloudflare Pages Function logs for details." }, 500);
   }
 }
