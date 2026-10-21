@@ -23,6 +23,23 @@ describe("CJ importer normalization", () => {
     expect(product.variants[0]).toMatchObject({ sku: "CJ-TEE-BLK-S", price: 10.25, inventory_quantity: 7, option_values: { Color: "Black", Size: "S" } });
   });
 
+  it("preserves variants from CJ's standard product query response", () => {
+    const product = cjImportProductFromDetail({}, { data: {
+      pid: "p2", productNameEn: "Classic Hoodie", productSku: "CJ-HOOD", sellPrice: 18.5,
+      bigImage: "https://example.com/hoodie.jpg", productImageSet: ["https://example.com/back.jpg"],
+      productKeyEn: "Color-Size", categoryName: "Apparel / Hoodies",
+      variants: [
+        { vid: "v1", variantSku: "CJ-HOOD-BLK-S", variantSellPrice: 19.5, variantKey: "Black-S", variantImage: "https://example.com/black.jpg", barcode: "111", inventories: [{ totalInventory: 5 }, { totalInventory: 2 }] },
+        { vid: "v2", variantSku: "CJ-HOOD-WHT-M", variantSellPrice: 20, variantKey: "White-M", inventories: [{ totalInventory: 3 }] },
+      ],
+    } });
+    expect(product).toMatchObject({ title: "Classic Hoodie", sku: "CJ-HOOD", stock_quantity: 10, category: "Apparel / Hoodies" });
+    expect(product.options).toEqual([{ name: "Color", values: ["Black", "White"] }, { name: "Size", values: ["S", "M"] }]);
+    expect(product.variants).toHaveLength(2);
+    expect(product.variants[0]).toMatchObject({ sku: "CJ-HOOD-BLK-S", price: 19.5, inventory_quantity: 7, barcode: "111", image_url: "https://example.com/black.jpg" });
+    expect(product.images).toContain("https://example.com/black.jpg");
+  });
+
   it("maps searchable CJ list results", () => {
     expect(cjSearchResultsFromPayload({ data: { content: [{ productList: [{ id: "p1", sku: "CJ-HOOD", nameEn: "Everyday Hoodie", bigImage: "https://example.com/hoodie.jpg", sellPrice: "12.50", threeCategoryName: "Hoodies" }] }] } })).toEqual([
       { id: "p1", sku: "CJ-HOOD", title: "Everyday Hoodie", image_url: "https://example.com/hoodie.jpg", price: 12.5, category: "Hoodies", currency: "USD" },

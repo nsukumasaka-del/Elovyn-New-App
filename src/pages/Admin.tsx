@@ -69,6 +69,7 @@ export function AdminPage() {
   const [savingSupplier, setSavingSupplier] = useState(false);
   const [syncingSupplierIds, setSyncingSupplierIds] = useState<Set<string>>(() => new Set());
   const [deletingSupplierId, setDeletingSupplierId] = useState("");
+  const [deletingProductId, setDeletingProductId] = useState("");
 
   function resetSupplierForm() {
     setSupplierId("");
@@ -123,6 +124,21 @@ export function AdminPage() {
       await loadData();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not update stock.");
+    }
+  }
+
+  async function deleteProduct(product: Product) {
+    if (!window.confirm(`Delete ${product.title} (${product.sku})? This permanently removes the product, all of its variants, and its inventory from the storefront.`)) return;
+    setDeletingProductId(product.id);
+    try {
+      await apiRequest(`/admin/products/${encodeURIComponent(product.id)}`, { method: "DELETE" });
+      if (editProductId === product.id) setEditProductId(null);
+      await Promise.all([loadData(), refreshProducts()]);
+      toast.success(`${product.title} was deleted.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not delete the product.");
+    } finally {
+      setDeletingProductId("");
     }
   }
 
@@ -269,6 +285,7 @@ export function AdminPage() {
                         <button aria-label={`Edit ${product.title}`} onClick={() => setEditProductId(product.id)} className="rounded-lg border border-neutral-300 p-2 hover:bg-neutral-100"><Pencil className="h-4 w-4" /></button>
                         <button aria-label={`Decrease ${product.title} stock`} onClick={() => void changeStock(product, -1)} className="rounded-lg border border-neutral-300 p-2 hover:bg-neutral-100"><ArrowDownToLine className="h-4 w-4" /></button>
                         <button aria-label={`Increase ${product.title} stock`} onClick={() => void changeStock(product, 1)} className="rounded-lg border border-neutral-300 p-2 hover:bg-neutral-100"><ArrowUpFromLine className="h-4 w-4" /></button>
+                        <button aria-label={`Delete ${product.title}`} disabled={deletingProductId === product.id} onClick={() => void deleteProduct(product)} className="rounded-lg border border-red-200 p-2 text-red-700 hover:bg-red-50 disabled:opacity-50"><Trash2 className="h-4 w-4" /></button>
                       </div></td>
                     </tr>)}
                   </tbody>

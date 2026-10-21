@@ -30,10 +30,25 @@ function optionName(value: string, index: number) {
   return normalized ? normalized.replace(/\b\w/g, (letter) => letter.toUpperCase()) : `Option ${index + 1}`;
 }
 
+function stringArray(value: unknown) {
+  if (Array.isArray(value)) return value.map(text).filter(Boolean);
+  if (typeof value !== "string") return [];
+  const trimmed = value.trim();
+  if (trimmed.startsWith("[")) {
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed.map(text).filter(Boolean);
+    } catch { /* Fall back to the original string. */ }
+  }
+  return trimmed ? [trimmed] : [];
+}
+
 export function cjImportProductFromDetail(listEntry: unknown, detailPayload: unknown) {
   const list = record(listEntry);
   const detail = record(record(detailPayload).data);
-  const rawVariants = Array.isArray(detail.stanProducts) ? detail.stanProducts.map(record) : [];
+  const rawVariants = Array.isArray(detail.stanProducts)
+    ? detail.stanProducts.map(record)
+    : Array.isArray(detail.variants) ? detail.variants.map(record) : [];
   const inventoryByVariant = new Map<string, number>();
   if (Array.isArray(detail.variantInventory)) {
     for (const entry of detail.variantInventory.map(record)) {
@@ -41,36 +56,38 @@ export function cjImportProductFromDetail(listEntry: unknown, detailPayload: unk
       inventoryByVariant.set(text(entry.vid), inventory.reduce((sum, warehouse) => sum + number(warehouse.totalInventory), 0));
     }
   }
-  const rawNames = text(detail.variantkeyen || detail.variantkey).split("-").filter(Boolean);
-  const maximumValues = rawVariants.reduce((maximum, variant) => Math.max(maximum, text(variant.variantkey).split("-").filter(Boolean).length), 0);
+  const rawNames = stringArray(detail.variantkeyen || detail.productKeyEn || detail.productKeySet || detail.variantkey)
+    .flatMap((value) => value.split("-").filter(Boolean));
+  const maximumValues = rawVariants.reduce((maximum, variant) => Math.max(maximum, text(variant.variantkey || variant.variantKey).split("-").filter(Boolean).length), 0);
   const names = Array.from({ length: Math.max(rawNames.length, maximumValues) }, (_, index) => optionName(rawNames[index] || "", index));
   const valuesByOption = names.map(() => new Set<string>());
   const variants = rawVariants.map((variant, variantIndex) => {
-    const values = text(variant.variantkey).split("-").filter(Boolean);
+    const values = text(variant.variantkey || variant.variantKey).split("-").filter(Boolean);
     const optionValues = Object.fromEntries(names.map((name, index) => {
       const value = values[index] || `Variant ${variantIndex + 1}`;
       valuesByOption[index].add(value);
       return [name, value];
     }));
     return {
-      sku: text(variant.sku) || `${text(detail.sku || list.sku)}-${variantIndex + 1}`,
-      price: number(variant.sellprice, number(detail.sellprice || list.sellPrice)),
+      sku: text(variant.sku || variant.variantSku) || `${text(detail.sku || detail.productSku || list.sku)}-${variantIndex + 1}`,
+      price: number(variant.sellprice || variant.variantSellPrice || variant.nowPrice, number(detail.sellprice || detail.sellPrice || list.sellPrice)),
       compare_at_price: null,
-      inventory_quantity: inventoryByVariant.get(text(variant.id)) ?? number(variant.totalInventory),
+      inventory_quantity: inventoryByVariant.get(text(variant.id || variant.vid))
+        ?? (Array.isArray(variant.inventories) ? variant.inventories.map(record).reduce((sum, inventory) => sum + number(inventory.totalInventory), 0) : number(variant.totalInventory)),
       barcode: text(variant.barcode) || null,
-      image_url: text(variant.img) || null,
+      image_url: text(variant.img || variant.variantImage) || null,
       option_values: optionValues,
     };
   });
-  const images = [detail.bigimg, list.bigImage, ...(Array.isArray(detail.newImgList) ? detail.newImgList : []), ...rawVariants.map((variant) => variant.img)]
+  const images = [detail.bigimg, detail.bigImage, list.bigImage, ...stringArray(detail.newImgList), ...stringArray(detail.productImageSet), ...stringArray(detail.img), ...rawVariants.map((variant) => variant.img || variant.variantImage)]
     .map(text).filter((value, index, entries) => /^https:\/\//i.test(value) && entries.indexOf(value) === index);
   const variantStock = variants.reduce((sum, variant) => sum + variant.inventory_quantity, 0);
   return {
-    title: text(detail.nameen || list.nameEn || detail.name),
-    sku: text(detail.sku || list.sku),
-    price: number(detail.sellprice || list.sellPrice),
+    title: text(detail.nameen || detail.productNameEn || list.nameEn || detail.name),
+    sku: text(detail.sku || detail.productSku || list.sku),
+    price: number(detail.sellprice || detail.sellPrice || list.sellPrice),
     description: text(detail.description || list.description),
-    category: text(detail.category || list.threeCategoryName),
+    category: text(detail.category || detail.categoryName || list.threeCategoryName),
     brand: text(detail.supplierNameEn || detail.supplierName || list.supplierName) || "CJ Dropshipping",
     stock_quantity: variantStock || number(detail.totalInventory || list.warehouseInventoryNum),
     image_url: images[0] || "",

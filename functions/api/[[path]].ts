@@ -974,8 +974,9 @@ async function supplierProductDetails(supplier: SupplierRecord, token: string, s
     for (const productId of productIds) {
       await new Promise((resolve) => setTimeout(resolve, 550));
       try {
-        const detailUrl = new URL("product/productDetail/query", `${base.toString().replace(/\/$/, "")}/`);
-        const detailPayload = await cjJsonRequest(detailUrl, accessToken, storeHostname, signal, { method: "POST", body: JSON.stringify({ id: productId }) });
+        const detailUrl = new URL("product/query", `${base.toString().replace(/\/$/, "")}/`);
+        detailUrl.searchParams.set("pid", productId);
+        const detailPayload = await cjJsonRequest(detailUrl, accessToken, storeHostname, signal);
         products.push(cjImportProductFromDetail({ id: productId }, detailPayload));
       } catch (error) {
         if (errorMessage(error) === SUPPLIER_AUTHENTICATION_ERROR) throw error;
@@ -996,6 +997,7 @@ async function supplierDirectProduct(supplier: SupplierRecord, token: string, st
   }
   return withCjSession(supplier, token, storeHostname, async (base, accessToken, signal) => {
     let productData: Record<string, unknown> | null = null;
+    let productPayload: unknown = null;
     for (const parameter of ["pid", "productSku"] as const) {
       try {
         const queryUrl = new URL("product/query", `${base.toString().replace(/\/$/, "")}/`);
@@ -1004,6 +1006,7 @@ async function supplierDirectProduct(supplier: SupplierRecord, token: string, st
         const data = payload && typeof payload === "object" ? (payload as { data?: unknown }).data : null;
         if (data && typeof data === "object" && !Array.isArray(data)) {
           productData = data as Record<string, unknown>;
+          productPayload = payload;
           break;
         }
       } catch (error) {
@@ -1012,10 +1015,8 @@ async function supplierDirectProduct(supplier: SupplierRecord, token: string, st
     }
     const productId = String(productData?.pid || productData?.id || "").trim();
     if (!productId) throw new ApiError("No exact CJ product matched that Product ID or SKU.", 404);
-    const detailUrl = new URL("product/productDetail/query", `${base.toString().replace(/\/$/, "")}/`);
-    const detailPayload = await cjJsonRequest(detailUrl, accessToken, storeHostname, signal, { method: "POST", body: JSON.stringify({ id: productId }) });
     const listEntry = { id: productId, nameEn: productData?.productNameEn, sku: productData?.productSku, bigImage: productData?.bigImage, threeCategoryName: productData?.categoryName };
-    return { products: [cjImportProductFromDetail(listEntry, detailPayload)], warnings: [] as string[] };
+    return { products: [cjImportProductFromDetail(listEntry, productPayload)], warnings: [] as string[] };
   });
 }
 
@@ -1532,6 +1533,21 @@ async function route(
     }
     await env.DB!.batch(productInsertStatements(env, product, productId, true));
     return json({ product: { id: productId, title: product.title, sku: product.sku, handle: product.handle } });
+  }
+
+  if (path.startsWith("/admin/products/") && method === "DELETE") {
+    await requireAdmin(db, request, env);
+    let productId: string;
+    try {
+      productId = decodeURIComponent(path.slice("/admin/products/".length));
+    } catch {
+      throw new ApiError("Product was not found.", 404);
+    }
+    if (!productId || productId.includes("/") || productId.length > 100) throw new ApiError("Product was not found.", 404);
+    const [product] = await db.select({ id: products.id, title: products.title, sku: products.sku }).from(products).where(eq(products.id, productId)).limit(1);
+    if (!product) throw new ApiError("Product was not found.", 404);
+    await db.delete(products).where(eq(products.id, productId));
+    return json({ deleted: true, product });
   }
 
   if (path.startsWith("/admin/products/import/") && method === "GET") {
