@@ -101,6 +101,9 @@ export function ProductDetailPage() {
     const values = parseOptionValues(variant.options_json);
     return data.options.every((option) => values[option.name] === selectedValues[option.name]);
   });
+  useEffect(() => {
+    if (selectedVariant?.image_url) setHeroImage(selectedVariant.image_url);
+  }, [selectedVariant?.image_url]);
   const availability = selectedVariant?.inventory_quantity ?? 0;
   const inStock = selectedVariant
     ? selectedVariant.track_quantity ? availability > 0 : true

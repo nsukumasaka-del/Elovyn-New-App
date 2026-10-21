@@ -946,7 +946,7 @@ async function route(
 
   if (path === "/products" && method === "GET") {
     const rows = await db.select(productColumns).from(products).orderBy(desc(products.updatedAt));
-    return json({ products: rows });
+    return json({ products: rows }, 200, { "Cache-Control": "no-store" });
   }
 
   if (path.startsWith("/products/") && method === "GET") {
@@ -1058,7 +1058,11 @@ async function route(
 
   if (path === "/admin/inventory" && method === "GET") {
     await requireAdmin(db, request, env);
-    const rows = await db.select(productColumns).from(products).orderBy(asc(products.title));
+    const rows = await db.select(productColumns).from(products).orderBy(
+      sql`CASE WHEN ${products.stockQuantity} > 0 THEN 0 ELSE 1 END`,
+      desc(products.stockQuantity),
+      asc(products.title),
+    );
     const [stats] = await db
       .select({
         total_sales: sql<number>`COALESCE((SELECT SUM(${orders.totalAmount}) FROM ${orders}

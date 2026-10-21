@@ -27,6 +27,7 @@ type StoreContextValue = {
   connectionError: string | null;
   retryConnection: () => void;
   products: StoreProduct[];
+  refreshProducts: () => Promise<void>;
   cart: CartLine[];
   wishlist: string[];
   cartOpen: boolean;
@@ -102,6 +103,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const retryConnection = useCallback(() => {
     setReady(false);
     setRetryCount((count) => count + 1);
+  }, []);
+
+  const refreshProducts = useCallback(async () => {
+    const catalog = await request<{ products: StoreProduct[] }>("/products");
+    setProducts(catalog.products);
   }, []);
 
   useEffect(() => {
@@ -250,11 +256,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [cart, user]);
 
   const value = useMemo(() => ({
-    user, ready, connectionError, retryConnection, products, cart, wishlist, cartOpen, setCartOpen, authOpen, setAuthOpen,
+    user, ready, connectionError, retryConnection, products, refreshProducts, cart, wishlist, cartOpen, setCartOpen, authOpen, setAuthOpen,
     authMode, setAuthMode, addToCart, changeQuantity, removeFromCart,
     toggleWishlist, signIn, signUp, signOut, checkout,
   }), [
-    user, ready, connectionError, retryConnection, products, cart, wishlist, cartOpen, authOpen, authMode, addToCart,
+    user, ready, connectionError, retryConnection, products, refreshProducts, cart, wishlist, cartOpen, authOpen, authMode, addToCart,
     changeQuantity, removeFromCart, toggleWishlist, signIn, signUp, signOut, checkout,
   ]);
 

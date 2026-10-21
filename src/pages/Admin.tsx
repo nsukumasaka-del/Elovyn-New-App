@@ -41,7 +41,7 @@ const tabs = [
 type Tab = typeof tabs[number]["id"];
 
 export function AdminPage() {
-  const { user, ready } = useStore();
+  const { user, ready, refreshProducts } = useStore();
   const [verifiedUser, setVerifiedUser] = useState<StoreUser | null>(null);
   const [checking, setChecking] = useState(true);
   const [tab, setTab] = useState<Tab>("overview");
@@ -261,8 +261,8 @@ export function AdminPage() {
           {tab === "imports" && <ImportProductsPanel onImported={() => void loadData()} />}
         </main>
       </div>
-      {addOpen && <AddProductDialog onClose={() => setAddOpen(false)} onCreated={() => { setAddOpen(false); void loadData(); }} />}
-      {editProductId && <AddProductDialog productId={editProductId} onClose={() => setEditProductId(null)} onCreated={() => { setEditProductId(null); void loadData(); }} />}
+      {addOpen && <AddProductDialog onClose={() => setAddOpen(false)} onCreated={() => { setAddOpen(false); void Promise.all([loadData(), refreshProducts()]); }} />}
+      {editProductId && <AddProductDialog productId={editProductId} onClose={() => setEditProductId(null)} onCreated={() => { setEditProductId(null); void Promise.all([loadData(), refreshProducts()]); }} />}
     </div>
   );
 }
@@ -275,10 +275,12 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
   const [category, setCategory] = useState("Streetwear");
   const [brand, setBrand] = useState("");
   const [description, setDescription] = useState("");
-  const [image, setImage] = useState<File | null>(null);
+  const [images, setImages] = useState<File[]>([]);
   const [optionRows, setOptionRows] = useState(productId ? [] : [{ name: "Size", values: "S, M, L" }]);
   const [variantFields, setVariantFields] = useState<Record<string, VariantFields>>({});
-  const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
+  const [existingImageUrls, setExistingImageUrls] = useState<string[]>([]);
+  const [colorImageFiles, setColorImageFiles] = useState<Record<string, File | null>>({});
+  const [colorImageUrls, setColorImageUrls] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [loadingProduct, setLoadingProduct] = useState(Boolean(productId));
@@ -304,9 +306,9 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
     if (!productId) return;
     let active = true;
     apiRequest<{
-      product: { title: string; sku: string; price: number; stock_quantity: number; category: string | null; brand: string | null; description: string | null; image_url: string | null };
+      product: { title: string; sku: string; price: number; stock_quantity: number; category: string | null; brand: string | null; description: string | null; image_url: string | null; images_json: string };
       options: { name: string; values_json: string }[];
-      variants: { sku: string; price: number; compare_at_price: number | null; barcode: string | null; options_json: string; inventory_quantity: number }[];
+      variants: { sku: string; price: number; compare_at_price: number | null; barcode: string | null; options_json: string; image_url: string | null; inventory_quantity: number }[];
     }>(`/products/${encodeURIComponent(productId)}`)
       .then((detail) => {
         if (!active) return;
@@ -317,16 +319,21 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
         setCategory(detail.product.category || "Streetwear");
         setBrand(detail.product.brand || "");
         setDescription(detail.product.description || "");
-        setExistingImageUrl(detail.product.image_url);
+        let savedImages: unknown = [];
+        try { savedImages = JSON.parse(detail.product.images_json); } catch { savedImages = []; }
+        setExistingImageUrls([...new Set([detail.product.image_url, ...(Array.isArray(savedImages) ? savedImages : [])].filter((url): url is string => typeof url === "string" && Boolean(url)))]);
         setOptionRows(detail.options.map((option) => {
           let values: unknown = [];
           try { values = JSON.parse(option.values_json); } catch { values = []; }
           return { name: option.name, values: Array.isArray(values) ? values.join(", ") : "" };
         }));
+        const nextColorImages: Record<string, string> = {};
         setVariantFields(Object.fromEntries(detail.variants.map((variant) => {
           let values: unknown = {};
           try { values = JSON.parse(variant.options_json); } catch { values = {}; }
           const optionValues = values && typeof values === "object" && !Array.isArray(values) ? values : {};
+          const color = Object.entries(optionValues).find(([name, value]) => /^(?:color|colour)$/i.test(name) && typeof value === "string")?.[1];
+          if (typeof color === "string" && variant.image_url) nextColorImages[color] = variant.image_url;
           return [JSON.stringify(optionValues), {
             sku: variant.sku,
             price: String(variant.price),
@@ -335,11 +342,20 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
             stock: String(variant.inventory_quantity),
           }];
         })));
+        setColorImageUrls(nextColorImages);
       })
       .catch((reason: Error) => { if (active) setError(`Could not load product: ${reason.message}`); })
       .finally(() => { if (active) setLoadingProduct(false); });
     return () => { active = false; };
   }, [productId]);
+
+  const colorOption = matrix.options.find((option) => /^(?:color|colour)$/i.test(option.name));
+
+  async function uploadImage(file: File) {
+    const form = new FormData();
+    form.set("file", file);
+    return (await apiRequest<{ image_url: string }>("/admin/assets", { method: "POST", body: form })).image_url;
+  }
 
   function updateVariantField(key: string, field: keyof VariantFields, value: string) {
     setVariantFields((current) => ({
@@ -364,13 +380,14 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
     setSaving(true);
     setError("");
     try {
-      let imageUrl: string | null = existingImageUrl;
-      if (image) {
-        const form = new FormData();
-        form.set("file", image);
-        const upload = await apiRequest<{ image_url: string }>("/admin/assets", { method: "POST", body: form });
-        imageUrl = upload.image_url;
-      }
+      if (images.length + existingImageUrls.length > 20) throw new Error("A product can have no more than 20 gallery images.");
+      const uploadedGallery = await Promise.all(images.map(uploadImage));
+      const nextColorImageUrls = { ...colorImageUrls };
+      await Promise.all(Object.entries(colorImageFiles).map(async ([color, file]) => {
+        if (file) nextColorImageUrls[color] = await uploadImage(file);
+      }));
+      const galleryImages = [...new Set([...existingImageUrls, ...uploadedGallery, ...Object.values(nextColorImageUrls)])];
+      const imageUrl = galleryImages[0] ?? null;
       const variants = matrix.combinations.map((optionValues, index) => {
         const key = JSON.stringify(optionValues);
         const fields = variantFields[key];
@@ -381,6 +398,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
           barcode: fields?.barcode || null,
           inventory_quantity: Number(fields?.stock || 0),
           option_values: optionValues,
+          image_url: colorOption ? nextColorImageUrls[optionValues[colorOption.name]] || null : null,
         };
       });
       await apiRequest(productId ? `/admin/products/${encodeURIComponent(productId)}` : "/admin/products", {
@@ -394,7 +412,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
           brand,
           description,
           image_url: imageUrl,
-          images: imageUrl ? [imageUrl] : [],
+          images: galleryImages,
           options: matrix.options,
           variants,
         }),
@@ -424,7 +442,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
             <label className="block text-sm font-medium">Brand<input value={brand} onChange={(event) => setBrand(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
             <label className="block text-sm font-medium">Product description / features<textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} className="mt-1.5 w-full rounded-xl border border-neutral-300 px-3 py-2" /></label>
           </div>
-          <label className="block text-sm font-medium">Product image<input accept="image/jpeg,image/png,image/webp,image/gif" type="file" onChange={(event) => setImage(event.target.files?.[0] ?? null)} className="mt-1.5 block w-full text-sm file:mr-3 file:rounded-full file:border-0 file:bg-neutral-100 file:px-4 file:py-2" /><span className="mt-1 block text-xs text-neutral-500">JPEG, PNG, WebP or GIF · max 5 MB</span></label>
+          <label className="block text-sm font-medium">Product gallery<input multiple accept="image/jpeg,image/png,image/webp,image/gif" type="file" onChange={(event) => setImages(Array.from(event.target.files ?? []))} className="mt-1.5 block w-full text-sm file:mr-3 file:rounded-full file:border-0 file:bg-neutral-100 file:px-4 file:py-2" /><span className="mt-1 block text-xs text-neutral-500">Select multiple JPEG, PNG, WebP or GIF files · max 5 MB each · 20 images total{existingImageUrls.length ? ` · ${existingImageUrls.length} saved` : ""}{images.length ? ` · ${images.length} selected` : ""}</span></label>
           <section className="rounded-2xl border border-neutral-200 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div><h3 className="font-semibold">Options and variants</h3><p className="mt-1 text-xs text-neutral-500">Enter comma-separated values. A SKU and stock row is generated for each combination.</p></div>
@@ -437,6 +455,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
                 <button type="button" aria-label={`Remove option ${index + 1}`} onClick={() => setOptionRows((current) => current.filter((_, row) => row !== index))} className="rounded-lg border border-neutral-300 px-3 text-sm text-neutral-500">Remove</button>
               </div>)}
             </div>
+            {colorOption && <div className="mt-5 rounded-xl bg-neutral-50 p-4"><h4 className="text-sm font-semibold">Images by {colorOption.name}</h4><p className="mt-1 text-xs text-neutral-500">Assign one image to each colour. Every size using that colour will use the same image.</p><div className="mt-3 grid gap-3 sm:grid-cols-2">{colorOption.values.map((color) => <label key={color} className="rounded-xl border border-neutral-200 bg-white p-3 text-sm font-medium"><span className="flex items-center gap-2">{colorImageUrls[color] && <img src={colorImageUrls[color]} alt="" className="h-10 w-10 rounded-lg object-cover" />}{color}</span><input accept="image/jpeg,image/png,image/webp,image/gif" type="file" onChange={(event) => setColorImageFiles((current) => ({ ...current, [color]: event.target.files?.[0] ?? null }))} className="mt-2 block w-full text-xs file:mr-2 file:rounded-full file:border-0 file:bg-neutral-100 file:px-3 file:py-1.5" /></label>)}</div></div>}
             {matrix.combinations.length > 0 && <div className="mt-5 overflow-x-auto">
               <table className="w-full min-w-[780px] text-left text-xs">
                 <thead className="bg-neutral-50 uppercase tracking-wider text-neutral-500"><tr>
