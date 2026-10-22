@@ -207,7 +207,7 @@ export function normalizeEproloProducts(payload: unknown) {
       return {
         sku: `EPROLO-${externalId || productIndex}-${upstreamSku}`.slice(0, 100),
         price: Number(variant.cost || 0),
-        inventory_quantity: Math.max(0, Math.floor(Number(variant.inventory_quantity || 0))),
+        inventory_quantity: Math.max(0, Math.floor(Number(variant.inventory_quantity ?? variant.inventory ?? variant.stock ?? variant.quantity ?? 0))),
         option_values: optionValues,
         image_url: imageById.get(String(variant.imagesid || "")) || null,
       };

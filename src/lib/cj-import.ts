@@ -53,7 +53,8 @@ export function cjImportProductFromDetail(listEntry: unknown, detailPayload: unk
   if (Array.isArray(detail.variantInventory)) {
     for (const entry of detail.variantInventory.map(record)) {
       const inventory = Array.isArray(entry.inventory) ? entry.inventory.map(record) : [];
-      inventoryByVariant.set(text(entry.vid), inventory.reduce((sum, warehouse) => sum + number(warehouse.totalInventory), 0));
+      const variantId = text(entry.vid || entry.variantId || entry.id);
+      if (variantId) inventoryByVariant.set(variantId, inventory.reduce((sum, warehouse) => sum + number(warehouse.totalInventory), 0));
     }
   }
   const rawNames = stringArray(detail.variantkeyen || detail.productKeyEn || detail.productKeySet || detail.variantkey)
@@ -72,7 +73,8 @@ export function cjImportProductFromDetail(listEntry: unknown, detailPayload: unk
       sku: text(variant.sku || variant.variantSku) || `${text(detail.sku || detail.productSku || list.sku)}-${variantIndex + 1}`,
       price: number(variant.sellprice || variant.variantSellPrice || variant.nowPrice, number(detail.sellprice || detail.sellPrice || list.sellPrice)),
       compare_at_price: null,
-      inventory_quantity: inventoryByVariant.get(text(variant.id || variant.vid))
+      inventory_quantity: inventoryByVariant.get(text(variant.vid))
+        ?? inventoryByVariant.get(text(variant.id))
         ?? (Array.isArray(variant.inventories) ? variant.inventories.map(record).reduce((sum, inventory) => sum + number(inventory.totalInventory), 0) : number(variant.totalInventory)),
       barcode: text(variant.barcode) || null,
       image_url: text(variant.img || variant.variantImage) || null,
@@ -89,7 +91,7 @@ export function cjImportProductFromDetail(listEntry: unknown, detailPayload: unk
     description: text(detail.description || list.description),
     category: text(detail.category || detail.categoryName || list.threeCategoryName),
     brand: text(detail.supplierNameEn || detail.supplierName || list.supplierName) || "CJ Dropshipping",
-    stock_quantity: variantStock || number(detail.totalInventory || list.warehouseInventoryNum),
+    stock_quantity: variants.length ? variantStock : number(detail.totalInventory || list.warehouseInventoryNum),
     image_url: images[0] || "",
     images,
     options: names.map((name, index) => ({ name, values: [...valuesByOption[index]] })).filter((option) => option.values.length),

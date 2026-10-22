@@ -100,4 +100,14 @@ describe("EPROLO integration", () => {
     expect(products[0].product.variants[0]).toMatchObject({ sku: "EPROLO-ep-1-EP-BLK-S", price: 12.5, inventory_quantity: 4, option_values: { Color: "Black", Size: "S" }, image_url: "https://cdn.example/black.jpg" });
     expect(products[0].product.images).toEqual(["https://cdn.example/main.jpg", "https://cdn.example/black.jpg", "https://cdn.example/white.jpg"]);
   });
+
+  it("accepts alternate EPROLO stock field names without inflating quantities", () => {
+    const [result] = normalizeEproloProducts({ code: "0", data: [{
+      id: "ep-stock",
+      title: "Stock field variants",
+      variantlist: [{ sku: "A", cost: 1, stock: 3 }, { sku: "B", cost: 1, quantity: 2 }],
+    }] });
+    expect(result.product.stock_quantity).toBe(5);
+    expect(result.product.variants.map((variant) => variant.inventory_quantity)).toEqual([3, 2]);
+  });
 });

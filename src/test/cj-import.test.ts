@@ -40,6 +40,20 @@ describe("CJ importer normalization", () => {
     expect(product.images).toContain("https://example.com/black.jpg");
   });
 
+  it("keeps verified zero variant stock instead of falling back to a stale product total", () => {
+    const product = cjImportProductFromDetail(
+      { sku: "CJ-ZERO", warehouseInventoryNum: 999 },
+      { data: {
+        sku: "CJ-ZERO",
+        nameen: "Sold out item",
+        stanProducts: [{ id: "internal-v1", vid: "v1", sku: "CJ-ZERO-1", totalInventory: 25 }],
+        variantInventory: [{ vid: "v1", inventory: [{ totalInventory: 0 }] }],
+      } },
+    );
+    expect(product.stock_quantity).toBe(0);
+    expect(product.variants[0].inventory_quantity).toBe(0);
+  });
+
   it("maps searchable CJ list results", () => {
     expect(cjSearchResultsFromPayload({ data: { content: [{ productList: [{ id: "p1", sku: "CJ-HOOD", nameEn: "Everyday Hoodie", bigImage: "https://example.com/hoodie.jpg", sellPrice: "12.50", threeCategoryName: "Hoodies" }] }] } })).toEqual([
       { id: "p1", sku: "CJ-HOOD", title: "Everyday Hoodie", image_url: "https://example.com/hoodie.jpg", price: 12.5, category: "Hoodies", currency: "USD" },

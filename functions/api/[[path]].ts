@@ -83,6 +83,8 @@ const productColumns = {
   handle: products.handle,
   image_url: products.imageUrl,
   images_json: products.imagesJson,
+  supplier_id: products.supplierId,
+  supplier_product_id: products.supplierProductId,
   is_listed: products.isListed,
   updated_at: products.updatedAt,
 };
@@ -696,13 +698,47 @@ async function processProductImport(env: Env, jobId: string) {
     } catch {
       throw new Error("Saved import job payload is invalid.");
     }
-    if (!Array.isArray(payload)) throw new Error("Saved import job payload must be a product list.");
-    const importedProducts = payload.map(normalizeProductInput);
+    const supplierId = payload && typeof payload === "object" && !Array.isArray(payload) && typeof (payload as { supplier_id?: unknown }).supplier_id === "string"
+      ? (payload as { supplier_id: string }).supplier_id : "";
+    const rawProducts = Array.isArray(payload)
+      ? payload
+      : payload && typeof payload === "object" && Array.isArray((payload as { products?: unknown }).products)
+        ? (payload as { products: unknown[] }).products
+        : null;
+    if (!rawProducts) throw new Error("Saved import job payload must contain a product list.");
+    const importedProducts = rawProducts.map(normalizeProductInput);
+    const db = createDb(env.DB);
+    if (supplierId) {
+      const [supplier] = await db.select({ id: supplierIntegrations.id }).from(supplierIntegrations).where(eq(supplierIntegrations.id, supplierId)).limit(1);
+      if (!supplier) throw new Error("The supplier linked to this import no longer exists.");
+      const result: ProductImportResult = { imported: [], skipped: [] };
+      for (let index = 0; index < importedProducts.length; index += 1) {
+        const product = importedProducts[index];
+        const raw = rawProducts[index];
+        const externalId = raw && typeof raw === "object" && !Array.isArray(raw) && typeof (raw as { supplier_product_id?: unknown }).supplier_product_id === "string"
+          ? (raw as { supplier_product_id: string }).supplier_product_id.trim() : "";
+        if (!externalId) {
+          result.skipped.push({ title: product.title, sku: product.sku, reason: "Supplier product ID is missing." });
+          continue;
+        }
+        const existing = await env.DB.prepare("SELECT id, supplier_id FROM products WHERE (supplier_id = ? AND supplier_product_id = ?) OR lower(sku) = lower(?) LIMIT 1")
+          .bind(supplierId, externalId, product.sku).first<{ id: string; supplier_id: string | null }>();
+        if (existing?.supplier_id && existing.supplier_id !== supplierId) {
+          result.skipped.push({ title: product.title, sku: product.sku, reason: "SKU is managed by another supplier." });
+          continue;
+        }
+        const id = existing?.id || crypto.randomUUID();
+        await env.DB.batch(productInsertStatements(env, product, id, Boolean(existing), { supplierId, externalId }));
+        result.imported.push({ id, title: product.title, sku: product.sku });
+      }
+      await env.DB.prepare(`UPDATE product_import_jobs_v2 SET status = 'completed', result_json = ?,
+        updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(JSON.stringify(result), jobId).run();
+      return;
+    }
     const allProductSkus = importedProducts.map((product) => product.sku.toLowerCase());
     const allHandles = importedProducts.map((product) => product.handle.toLowerCase());
     const allVariantSkus = importedProducts.flatMap((product) => product.variants.map((variant) => variant.sku.toLowerCase()));
     const allCheckedSkus = [...new Set([...allProductSkus, ...allVariantSkus])];
-    const db = createDb(env.DB);
     const [existingProducts, existingVariants] = await Promise.all([
       db.select({ sku: products.sku, handle: products.handle }).from(products).where(or(
         inArray(sql`lower(${products.sku})`, allProductSkus),
@@ -1024,10 +1060,10 @@ async function supplierCategoryOptions(supplier: SupplierRecord, credentials: Su
 async function supplierProductDetails(supplier: SupplierRecord, credentials: SupplierCredentials, storeHostname: string, productIds: string[]) {
   if (supplier.adapter !== "cj") {
     const selected = new Set(productIds);
-    return { products: supplierProducts(await supplierFetch(supplier, credentials, false, storeHostname), supplier).filter(({ externalId }) => selected.has(externalId)).map(({ product }) => product), warnings: [] as string[] };
+    return { products: supplierProducts(await supplierFetch(supplier, credentials, false, storeHostname), supplier).filter(({ externalId }) => selected.has(externalId)).map(({ externalId, product }) => ({ ...product, supplier_product_id: externalId })), warnings: [] as string[] };
   }
   return withCjSession(supplier, credentials.apiKey, storeHostname, async (base, accessToken, signal) => {
-    const products: ReturnType<typeof cjImportProductFromDetail>[] = [];
+    const products: (ReturnType<typeof cjImportProductFromDetail> & { supplier_product_id: string })[] = [];
     const warnings: string[] = [];
     for (const productId of productIds) {
       await new Promise((resolve) => setTimeout(resolve, 550));
@@ -1035,7 +1071,7 @@ async function supplierProductDetails(supplier: SupplierRecord, credentials: Sup
         const detailUrl = new URL("product/query", `${base.toString().replace(/\/$/, "")}/`);
         detailUrl.searchParams.set("pid", productId);
         const detailPayload = await cjJsonRequest(detailUrl, accessToken, storeHostname, signal);
-        products.push(cjImportProductFromDetail({ id: productId }, detailPayload));
+        products.push({ ...cjImportProductFromDetail({ id: productId }, detailPayload), supplier_product_id: productId });
       } catch (error) {
         if (errorMessage(error) === SUPPLIER_AUTHENTICATION_ERROR) throw error;
         warnings.push(`Product details could not be loaded for ${productId}.`);
@@ -1051,7 +1087,7 @@ async function supplierDirectProduct(supplier: SupplierRecord, credentials: Supp
     const incoming = supplierProducts(await supplierFetch(supplier, credentials, false, storeHostname), supplier);
     const match = incoming.find(({ externalId, product }) => externalId.toLowerCase() === query.toLowerCase() || product.sku.toLowerCase() === query.toLowerCase());
     if (!match) throw new ApiError("No exact product matched that supplier product ID or SKU.", 404);
-    return { products: [match.product], warnings: [] as string[] };
+    return { products: [{ ...match.product, supplier_product_id: match.externalId }], warnings: [] as string[] };
   }
   return withCjSession(supplier, credentials.apiKey, storeHostname, async (base, accessToken, signal) => {
     let productData: Record<string, unknown> | null = null;
@@ -1074,7 +1110,7 @@ async function supplierDirectProduct(supplier: SupplierRecord, credentials: Supp
     const productId = String(productData?.pid || productData?.id || "").trim();
     if (!productId) throw new ApiError("No exact CJ product matched that Product ID or SKU.", 404);
     const listEntry = { id: productId, nameEn: productData?.productNameEn, sku: productData?.productSku, bigImage: productData?.bigImage, threeCategoryName: productData?.categoryName };
-    return { products: [cjImportProductFromDetail(listEntry, productPayload)], warnings: [] as string[] };
+    return { products: [{ ...cjImportProductFromDetail(listEntry, productPayload), supplier_product_id: productId }], warnings: [] as string[] };
   });
 }
 
@@ -1102,10 +1138,28 @@ function supplierProducts(payload: unknown, supplier: SupplierRecord) {
 async function syncSupplier(env: Env, db: ReturnType<typeof createDb>, supplier: SupplierRecord, credentials: SupplierCredentials, storeHostname = "") {
   const historyId = crypto.randomUUID();
   let imported = 0, updated = 0, total = 0;
+  const lock = await env.DB!.prepare(`UPDATE supplier_integrations SET connection_status = 'syncing', last_sync_error = NULL, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND (connection_status <> 'syncing' OR updated_at <= datetime('now', '-15 minutes'))`).bind(supplier.id).run();
+  if (!lock.meta.changes) throw new ApiError("A sync is already running for this supplier.", 409);
   await db.insert(supplierSyncHistory).values({ id: historyId, supplierId: supplier.id, status: "running" });
-  await db.update(supplierIntegrations).set({ connectionStatus: "syncing", lastSyncError: null, updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(supplierIntegrations.id, supplier.id));
   try {
-    const incoming = supplierProducts(await supplierFetch(supplier, credentials, false, storeHostname), supplier);
+    const linkedProducts = await db.select({ externalId: products.supplierProductId }).from(products).where(eq(products.supplierId, supplier.id));
+    let incoming: { externalId: string; product: ProductInput }[];
+    if (linkedProducts.length) {
+      const externalIds = linkedProducts.map((product) => product.externalId).filter((externalId): externalId is string => Boolean(externalId));
+      const details = await supplierProductDetails(supplier, credentials, storeHostname, externalIds);
+      incoming = details.products.map((rawProduct) => {
+        const source = rawProduct as typeof rawProduct & { supplier_product_id?: unknown };
+        const externalId = typeof source.supplier_product_id === "string" ? source.supplier_product_id.trim() : "";
+        if (!externalId) throw new ApiError("Supplier returned a product without its stable product ID.", 400);
+        return { externalId, product: normalizeProductInput(rawProduct) };
+      });
+      const receivedIds = new Set(incoming.map((item) => item.externalId));
+      const missingIds = externalIds.filter((externalId) => !receivedIds.has(externalId));
+      if (missingIds.length) throw new ApiError(`Supplier did not return current stock for ${missingIds.length} linked product${missingIds.length === 1 ? "" : "s"}. Existing stock was preserved.`, 502);
+    } else {
+      incoming = supplierProducts(await supplierFetch(supplier, credentials, false, storeHostname), supplier);
+    }
     total = incoming.length;
     for (const item of incoming) {
       const existing = await env.DB!.prepare("SELECT id, supplier_id FROM products WHERE (supplier_id = ? AND supplier_product_id = ?) OR lower(sku) = lower(?) LIMIT 1").bind(supplier.id, item.externalId, item.product.sku).first<{ id: string; supplier_id: string | null }>();
@@ -1123,6 +1177,24 @@ async function syncSupplier(env: Env, db: ReturnType<typeof createDb>, supplier:
     await db.update(supplierIntegrations).set({ connectionStatus: "error", lastSyncError: message, updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(supplierIntegrations.id, supplier.id));
     await db.update(supplierSyncHistory).set({ status: "error", importedCount: imported, updatedCount: updated, totalCount: total, errorMessage: message, finishedAt: sql`CURRENT_TIMESTAMP` }).where(eq(supplierSyncHistory.id, historyId));
     throw error;
+  }
+}
+
+async function syncDueSuppliers(env: Env, db: ReturnType<typeof createDb>, storeHostname: string) {
+  const candidates = await db.select().from(supplierIntegrations).where(and(
+    eq(supplierIntegrations.isActive, true),
+    eq(supplierIntegrations.autoSync, true),
+    ne(supplierIntegrations.connectionStatus, "syncing"),
+  ));
+  const staleBefore = Date.now() - 15 * 60 * 1000;
+  for (const supplier of candidates) {
+    const lastSync = supplier.lastSyncAt ? Date.parse(supplier.lastSyncAt.endsWith("Z") ? supplier.lastSyncAt : `${supplier.lastSyncAt.replace(" ", "T")}Z`) : 0;
+    if (Number.isFinite(lastSync) && lastSync > staleBefore) continue;
+    try {
+      await syncSupplier(env, db, supplier, await credentialsForSupplier(supplier, env), storeHostname);
+    } catch (error) {
+      console.error(`Automatic supplier sync failed for ${supplier.id}:`, error);
+    }
   }
 }
 
@@ -1327,6 +1399,7 @@ async function route(
   }
 
   if (path === "/products" && method === "GET") {
+    waitUntil(syncDueSuppliers(env, db, url.hostname));
     const rows = await db.select(productColumns).from(products)
       .where(eq(products.isListed, true))
       .orderBy(desc(products.updatedAt));
@@ -1334,6 +1407,7 @@ async function route(
   }
 
   if (path.startsWith("/products/") && method === "GET") {
+    waitUntil(syncDueSuppliers(env, db, url.hostname));
     let productKey: string;
     try {
       productKey = decodeURIComponent(path.slice("/products/".length));
@@ -1506,6 +1580,7 @@ async function route(
 
   if (path === "/admin/inventory" && method === "GET") {
     await requireAdmin(db, request, env);
+    await syncDueSuppliers(env, db, url.hostname);
     const rows = await db.select(productColumns).from(products).orderBy(
       sql`CASE WHEN ${products.stockQuantity} > 0 THEN 0 ELSE 1 END`,
       desc(products.stockQuantity),
@@ -1530,8 +1605,9 @@ async function route(
     if (!Number.isInteger(change) || change === 0 || Math.abs(change) > 9999) {
       throw new ApiError("Stock change must be a non-zero integer.", 400);
     }
-    const [product] = await db.select({ id: products.id }).from(products).where(eq(products.id, id)).limit(1);
+    const [product] = await db.select({ id: products.id, supplierId: products.supplierId }).from(products).where(eq(products.id, id)).limit(1);
     if (!product) throw new ApiError("Product not found.", 404);
+    if (product.supplierId) throw new ApiError("Stock for supplier-managed products can only be changed by the supplier sync.", 409);
     const [variant] = await db.select({ id: variants.id })
       .from(variants)
       .innerJoin(inventoryItems, eq(inventoryItems.variantId, variants.id))
@@ -1650,9 +1726,19 @@ async function route(
     if (!productId || productId.includes("/") || productId.length > 100) {
       throw new ApiError("Product was not found.", 404);
     }
-    const [currentProduct] = await db.select({ id: products.id }).from(products).where(eq(products.id, productId)).limit(1);
+    const [currentProduct] = await db.select({ id: products.id, supplierId: products.supplierId }).from(products).where(eq(products.id, productId)).limit(1);
     if (!currentProduct) throw new ApiError("Product was not found.", 404);
     const product = normalizeProductInput(await bodyAsJson(request));
+    if (currentProduct.supplierId) {
+      const supplierInventory = await db.select({ sku: variants.sku, quantity: inventoryItems.quantity })
+        .from(variants).innerJoin(inventoryItems, eq(inventoryItems.variantId, variants.id)).where(eq(variants.productId, productId));
+      const quantityBySku = new Map(supplierInventory.map((item) => [item.sku.toLowerCase(), item.quantity]));
+      if (product.variants.length !== supplierInventory.length || product.variants.some((variant) => !quantityBySku.has(variant.sku.toLowerCase()))) {
+        throw new ApiError("Supplier-managed variant SKUs cannot be added, removed, or renamed. Refresh stock from the supplier instead.", 409);
+      }
+      for (const variant of product.variants) variant.inventory_quantity = quantityBySku.get(variant.sku.toLowerCase())!;
+      product.stock_quantity = product.variants.reduce((total, variant) => total + variant.inventory_quantity, 0);
+    }
     const allSkus = [...new Set([product.sku, ...product.variants.map((variant) => variant.sku)].map((sku) => sku.toLowerCase()))];
     const [duplicateProduct] = await db.select({ id: products.id }).from(products).where(and(
       ne(products.id, productId),
@@ -1729,6 +1815,17 @@ async function route(
       throw new ApiError("Import must contain between 1 and 50 products.", 400);
     }
     const importedProducts = body.products.map(normalizeProductInput);
+    const supplierId = typeof body.supplier_id === "string" ? body.supplier_id.trim() : "";
+    if (supplierId) {
+      const [supplier] = await db.select({ id: supplierIntegrations.id, isActive: supplierIntegrations.isActive }).from(supplierIntegrations).where(eq(supplierIntegrations.id, supplierId)).limit(1);
+      if (!supplier) throw new ApiError("Supplier was not found.", 404);
+      if (!supplier.isActive) throw new ApiError("This supplier is inactive. Enable it before importing products.", 400);
+      for (const product of body.products) {
+        if (!product || typeof product !== "object" || Array.isArray(product) || typeof (product as { supplier_product_id?: unknown }).supplier_product_id !== "string" || !(product as { supplier_product_id: string }).supplier_product_id.trim()) {
+          throw new ApiError("Every supplier product must include its supplier product ID.", 400);
+        }
+      }
+    }
     const statementCount = importedProducts.reduce((total, product) =>
       total + 1 + product.options.length + product.variants.length * (2 + product.options.length), 0);
     if (statementCount > 900) throw new ApiError("Import is too large. Split it into smaller batches.", 413);
@@ -1760,7 +1857,7 @@ async function route(
     }
     const jobId = crypto.randomUUID();
     await env.DB!.prepare(`INSERT INTO product_import_jobs_v2 (id, status, payload_json)
-      VALUES (?, 'pending', ?)`).bind(jobId, JSON.stringify(importedProducts)).run();
+      VALUES (?, 'pending', ?)`).bind(jobId, JSON.stringify(supplierId ? { supplier_id: supplierId, products: body.products } : importedProducts)).run();
     waitUntil(processProductImport(env, jobId));
     return json({ job_id: jobId, status: "pending" }, 202);
   }
@@ -1923,6 +2020,8 @@ async function route(
     if (!id || id.includes("/")) throw new ApiError("Supplier id is invalid.", 400);
     const [supplier] = await db.select({ id: supplierIntegrations.id, name: supplierIntegrations.name }).from(supplierIntegrations).where(eq(supplierIntegrations.id, id)).limit(1);
     if (!supplier) throw new ApiError("Supplier was not found.", 404);
+    const [managedProduct] = await db.select({ id: products.id }).from(products).where(eq(products.supplierId, id)).limit(1);
+    if (managedProduct) throw new ApiError("This supplier still manages imported products. Delete those products before removing the supplier connection.", 409);
     await db.delete(supplierIntegrations).where(eq(supplierIntegrations.id, id));
     return json({ deleted: true, supplier });
   }

@@ -153,7 +153,7 @@ export const supplierIntegrations = sqliteTable("supplier_integrations", {
   encryptedApiSecret: text("encrypted_api_secret"),
   adapter: text("adapter").notNull().default("generic_json"),
   fieldMappingJson: text("field_mapping_json").notNull().default("{}"),
-  autoSync: integer("auto_sync", { mode: "boolean" }).notNull().default(false),
+  autoSync: integer("auto_sync", { mode: "boolean" }).notNull().default(true),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
   connectionStatus: text("connection_status").notNull().default("pending"),
   lastSyncAt: text("last_sync_at"),

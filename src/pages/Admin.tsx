@@ -16,6 +16,8 @@ type Product = {
   status: "In Stock" | "Low Stock" | "Out of Stock";
   category: string | null;
   image_url: string | null;
+  supplier_id: string | null;
+  supplier_product_id: string | null;
   is_listed: boolean;
 };
 type Stats = { total_sales: number | string; order_count: number | string; product_count: number | string };
@@ -83,7 +85,6 @@ export function AdminPage() {
   const [apiKey, setApiKey] = useState("");
   const [apiSecret, setApiSecret] = useState("");
   const [supplierAccountEmail, setSupplierAccountEmail] = useState("");
-  const [autoSync, setAutoSync] = useState(false);
   const [supplierActive, setSupplierActive] = useState(true);
   const [supplierAdapter, setSupplierAdapter] = useState<"cj" | "eprolo" | "generic_json">("cj");
   const [fieldMapping, setFieldMapping] = useState("{}");
@@ -103,7 +104,6 @@ export function AdminPage() {
     setApiKey("");
     setApiSecret("");
     setSupplierAccountEmail("");
-    setAutoSync(false);
     setSupplierActive(true);
     setSupplierAdapter("cj");
     setFieldMapping("{}");
@@ -215,7 +215,7 @@ export function AdminPage() {
           api_key: apiKey,
           api_secret: apiSecret,
           account_email: supplierAccountEmail,
-          auto_sync: autoSync,
+          auto_sync: true,
           is_active: supplierActive,
           adapter: supplierAdapter,
           field_mapping: parsedMapping,
@@ -238,7 +238,6 @@ export function AdminPage() {
     setApiKey("");
     setApiSecret("");
     setSupplierAccountEmail(supplier.account_email ?? "");
-    setAutoSync(supplier.auto_sync);
     setSupplierActive(supplier.is_active);
     setSupplierAdapter(supplier.adapter);
     setFieldMapping(supplier.field_mapping_json || "{}");
@@ -263,7 +262,7 @@ export function AdminPage() {
   }
 
   async function deleteSupplier(supplier: Supplier) {
-    if (!window.confirm(`Delete ${supplier.name}? Imported products will remain in your catalog, but this supplier's connection and sync history will be removed.`)) return;
+    if (!window.confirm(`Delete ${supplier.name}? This is only possible after all products managed by this supplier have been removed from inventory.`)) return;
     setDeletingSupplierId(supplier.id);
     try {
       await apiRequest(`/admin/suppliers/${encodeURIComponent(supplier.id)}`, { method: "DELETE" });
@@ -339,7 +338,7 @@ export function AdminPage() {
                   <tbody className="divide-y divide-neutral-100">
                     {products.map((product) => <tr key={product.id}>
                       <td className="px-4 py-4"><input type="checkbox" aria-label={`Select ${product.title}`} checked={selectedProductIds.has(product.id)} onChange={(event) => setSelectedProductIds((current) => { const next = new Set(current); if (event.target.checked) next.add(product.id); else next.delete(product.id); return next; })} className="h-4 w-4 accent-neutral-950" /></td>
-                      <td className="px-3 py-4"><div className="flex items-center gap-3"><div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-lg bg-neutral-100">{product.image_url ? <img src={product.image_url} alt="" className="h-full w-full object-cover" /> : <Boxes className="h-5 w-5 text-neutral-400" />}</div><div><p className="font-medium">{product.title}</p><p className="text-xs text-neutral-500">{product.category}</p></div></div></td>
+                      <td className="px-3 py-4"><div className="flex items-center gap-3"><div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-lg bg-neutral-100">{product.image_url ? <img src={product.image_url} alt="" className="h-full w-full object-cover" /> : <Boxes className="h-5 w-5 text-neutral-400" />}</div><div><p className="font-medium">{product.title}</p><p className="text-xs text-neutral-500">{product.category}</p>{product.supplier_id && <span className="mt-1 inline-block rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700">Supplier-managed stock</span>}</div></div></td>
                       <td className="px-4 py-4 text-neutral-600">{product.sku}</td>
                       <td className="px-4 py-4">R {Number(product.price).toFixed(2)}</td>
                       <td className="px-4 py-4 font-medium">{product.stock_quantity}</td>
@@ -372,7 +371,7 @@ export function AdminPage() {
                   <label className="block text-sm font-medium">Webhook URL<input type="url" value={webhookUrl} onChange={(event) => setWebhookUrl(event.target.value)} placeholder="https://your-store.com/api/supplier-webhook" className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
                   {supplierAdapter === "generic_json" && <div className="rounded-xl border border-neutral-200 p-4"><label className="block text-sm font-medium">Request configuration & field mapping (JSON)<textarea value={fieldMapping} onChange={(event) => setFieldMapping(event.target.value)} rows={14} placeholder={'{"products_path":"data.list","request":{"method":"GET","headers":{"X-Api-Key":"{{api_key}}"},"query":{"limit":50}},"fields":{"title":"product_name","sku":"sku","price":"sale_price"}}'} className="mt-1.5 w-full rounded-xl border border-neutral-300 p-3 font-mono text-xs" /><span className="mt-1 block text-xs font-normal text-neutral-500">Paths support dot notation and array indexes. Secrets remain encrypted: reference them with <code>{"{{api_key}}"}</code> and <code>{"{{api_secret}}"}</code>. Methods: GET, POST, or PUT.</span></label><div className="mt-3 flex flex-wrap gap-2"><span className="w-full text-xs font-semibold uppercase tracking-wider text-neutral-500">Start from a preset</span>{Object.entries(customSupplierPresets).map(([name, preset]) => <button key={name} type="button" onClick={() => setFieldMapping(JSON.stringify(preset, null, 2))} className="rounded-full border border-neutral-300 px-3 py-1.5 text-xs font-medium hover:bg-neutral-50">{name}</button>)}</div></div>}
                   <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={supplierActive} onChange={(event) => setSupplierActive(event.target.checked)} className="h-4 w-4 accent-neutral-950" />Supplier is active</label>
-                  <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={autoSync} onChange={(event) => setAutoSync(event.target.checked)} className="h-4 w-4 accent-neutral-950" />Enable automatic stock sync</label>
+                  <div className="rounded-xl bg-violet-50 p-3 text-sm text-violet-900"><span className="font-semibold">Automatic stock sync is always enabled.</span> Stock for imported products is controlled by the supplier and cannot be edited manually.</div>
                   <button disabled={savingSupplier} className="btn-primary w-full disabled:opacity-60">{savingSupplier ? "Validating and syncing…" : supplierActive ? "Save, validate & sync" : "Save and validate"}</button>
                 </form>
               </section>
@@ -443,6 +442,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
   const [optionRows, setOptionRows] = useState(productId ? [] : [{ name: "Size", values: "S, M, L" }]);
   const [variantFields, setVariantFields] = useState<Record<string, VariantFields>>({});
   const [allVariantPrice, setAllVariantPrice] = useState("");
+  const [supplierManaged, setSupplierManaged] = useState(false);
   const [existingImageUrls, setExistingImageUrls] = useState<string[]>([]);
   const [colorImageFiles, setColorImageFiles] = useState<Record<string, File | null>>({});
   const [colorImageUrls, setColorImageUrls] = useState<Record<string, string>>({});
@@ -473,7 +473,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
     if (!productId) return;
     let active = true;
     apiRequest<{
-      product: { title: string; sku: string; price: number; stock_quantity: number; category: string | null; brand: string | null; description: string | null; image_url: string | null; images_json: string };
+      product: { title: string; sku: string; price: number; stock_quantity: number; category: string | null; brand: string | null; description: string | null; image_url: string | null; images_json: string; supplier_id: string | null };
       options: { name: string; values_json: string }[];
       variants: { sku: string; price: number; compare_at_price: number | null; barcode: string | null; options_json: string; image_url: string | null; inventory_quantity: number }[];
     }>(`/products/${encodeURIComponent(productId)}`)
@@ -483,6 +483,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
         setSku(detail.product.sku);
         setPrice(String(detail.product.price));
         setStock(String(detail.product.stock_quantity));
+        setSupplierManaged(Boolean(detail.product.supplier_id));
         setCategory(detail.product.category || "Streetwear");
         setBrand(detail.product.brand || "");
         setDescription(detail.product.description || "");
@@ -634,7 +635,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
           <label className="block text-sm font-medium">SKU<input required value={sku} onChange={(event) => setSku(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
           <div className="grid grid-cols-2 gap-3">
             <label className="block text-sm font-medium">Price (ZAR)<input required min="0" step="0.01" type="number" value={price} onChange={(event) => setPrice(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
-            <label className="block text-sm font-medium">Stock quantity<input required min="0" step="1" type="number" value={stock} onChange={(event) => setStock(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
+            <label className="block text-sm font-medium">Stock quantity{supplierManaged && <span className="ml-2 text-xs font-normal text-violet-700">Controlled by supplier</span>}<input required min="0" step="1" type="number" value={stock} disabled={supplierManaged} onChange={(event) => setStock(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500" /></label>
           </div>
           <label className="block text-sm font-medium">Category<select value={category} onChange={(event) => setCategory(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3"><option>Streetwear</option><option>T-Shirts</option><option>Hoodies</option><option>Accessories</option><option>Wigs</option><option>Care</option><option>New Arrivals</option></select></label>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -681,9 +682,9 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
                     {matrix.options.map((option) => <td key={option.name} className="px-3 py-2 font-medium">{combo[option.name]}</td>)}
                     <td className="px-2 py-2"><input aria-label={`Variant ${index + 1} price`} type="number" min="0" step="0.01" value={fields?.price ?? price} onChange={(event) => updateVariantField(key, "price", event.target.value)} className="h-9 w-24 rounded-md border border-neutral-300 px-2" /></td>
                     <td className="px-2 py-2"><input aria-label={`Variant ${index + 1} compare-at price`} type="number" min="0" step="0.01" value={fields?.compareAt ?? ""} onChange={(event) => updateVariantField(key, "compareAt", event.target.value)} className="h-9 w-24 rounded-md border border-neutral-300 px-2" /></td>
-                    <td className="px-2 py-2"><input required aria-label={`Variant ${index + 1} SKU`} value={skuValue} onChange={(event) => updateVariantField(key, "sku", event.target.value)} className="h-9 w-28 rounded-md border border-neutral-300 px-2" /></td>
+                    <td className="px-2 py-2"><input required aria-label={`Variant ${index + 1} SKU${supplierManaged ? " (supplier controlled)" : ""}`} value={skuValue} disabled={supplierManaged} onChange={(event) => updateVariantField(key, "sku", event.target.value)} className="h-9 w-28 rounded-md border border-neutral-300 px-2 disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500" /></td>
                     <td className="px-2 py-2"><input aria-label={`Variant ${index + 1} barcode`} value={fields?.barcode ?? ""} onChange={(event) => updateVariantField(key, "barcode", event.target.value)} className="h-9 w-28 rounded-md border border-neutral-300 px-2" /></td>
-                    <td className="px-2 py-2"><input required aria-label={`Variant ${index + 1} stock`} type="number" min="0" step="1" value={fields?.stock ?? (matrix.options.length ? "0" : stock)} onChange={(event) => updateVariantField(key, "stock", event.target.value)} className="h-9 w-20 rounded-md border border-neutral-300 px-2" /></td>
+                    <td className="px-2 py-2"><input required aria-label={`Variant ${index + 1} stock${supplierManaged ? " (supplier controlled)" : ""}`} type="number" min="0" step="1" value={fields?.stock ?? (matrix.options.length ? "0" : stock)} disabled={supplierManaged} onChange={(event) => updateVariantField(key, "stock", event.target.value)} className="h-9 w-20 rounded-md border border-neutral-300 px-2 disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500" /></td>
                   </tr>;
                 })}</tbody>
               </table>
@@ -705,6 +706,7 @@ function ImportProductsPanel({ onImported, suppliers }: { onImported: () => void
   const [jsonText, setJsonText] = useState("");
   const [headers, setHeaders] = useState<string[]>([]);
   const [records, setRecords] = useState<Record<string, unknown>[]>([]);
+  const [recordsSupplierId, setRecordsSupplierId] = useState("");
   const [mapping, setMapping] = useState<ImportMapping>(() => suggestedMapping(importFieldDefinitions.map(([key]) => key)));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -756,7 +758,7 @@ function ImportProductsPanel({ onImported, suppliers }: { onImported: () => void
     return () => { cancelled = true; };
   }, [selectedSupplierId]);
 
-  function loadRecords(nextRecords: Record<string, unknown>[], nextHeaders?: string[]) {
+  function loadRecords(nextRecords: Record<string, unknown>[], nextHeaders?: string[], sourceSupplierId = "") {
     if (nextRecords.length > 50) throw new Error("Imports are limited to 50 products per batch.");
     if (nextRecords.some((record) => !record || typeof record !== "object" || Array.isArray(record))) {
       throw new Error("Every product in the import must be a JSON object.");
@@ -764,6 +766,7 @@ function ImportProductsPanel({ onImported, suppliers }: { onImported: () => void
     const available = nextHeaders?.length ? nextHeaders : [...new Set(nextRecords.flatMap((record) => Object.keys(record)))];
     if (!available.length) throw new Error("No fields were found in this import.");
     setRecords(nextRecords);
+    setRecordsSupplierId(sourceSupplierId);
     setHeaders(available);
     setMapping((current) => {
       const suggested = suggestedMapping(available);
@@ -841,7 +844,7 @@ function ImportProductsPanel({ onImported, suppliers }: { onImported: () => void
   function populateSupplierFeed(products: Record<string, unknown>[], supplierName: string, warnings: string[] = []) {
     setSource("json");
     setJsonText(JSON.stringify(products, null, 2));
-    loadRecords(products);
+    loadRecords(products, undefined, selectedSupplierId);
     setSelectionOpen(false);
     const warning = warnings.length ? ` ${warnings.join(" ")}` : "";
     setSupplierNotice(`${products.length} selected product${products.length === 1 ? "" : "s"} from ${supplierName} added to the JSON feed and mapped for import.${warning}`);
@@ -864,9 +867,13 @@ function ImportProductsPanel({ onImported, suppliers }: { onImported: () => void
       const nextHeaders = [...new Set(response.products.flatMap((product) => Object.keys(product)))];
       setSource("json");
       setJsonText(JSON.stringify(response.products, null, 2));
-      loadRecords(response.products, nextHeaders);
+      loadRecords(response.products, nextHeaders, selectedSupplierId);
       setSelectionOpen(false);
-      const imported = await submitImportProducts(buildImportProducts(response.products, suggestedMapping(nextHeaders)));
+      const mappedProducts = buildImportProducts(response.products, suggestedMapping(nextHeaders)).map((product, index) => ({
+        ...product,
+        supplier_product_id: response.products[index]?.supplier_product_id,
+      }));
+      const imported = await submitImportProducts(mappedProducts, selectedSupplierId);
       if (imported) {
         const warning = response.warnings.length ? ` ${response.warnings.join(" ")}` : "";
         setSupplierNotice(`${imported.imported_count} product${imported.imported_count === 1 ? "" : "s"} from ${response.supplier.name} imported into inventory.${warning}`);
@@ -914,13 +921,13 @@ function ImportProductsPanel({ onImported, suppliers }: { onImported: () => void
     });
   }
 
-  async function submitImportProducts(products: Record<string, unknown>[]) {
+  async function submitImportProducts(products: Record<string, unknown>[], sourceSupplierId = "") {
     setBusy(true);
     setError("");
     try {
       const response = await apiRequest<{ job_id: string; status: string }>("/admin/products/import", {
         method: "POST",
-        body: JSON.stringify({ products }),
+        body: JSON.stringify({ products, ...(sourceSupplierId ? { supplier_id: sourceSupplierId } : {}) }),
       });
       setJobId(response.job_id);
       setJobStatus(response.status);
@@ -964,7 +971,11 @@ function ImportProductsPanel({ onImported, suppliers }: { onImported: () => void
 
   async function importRecords() {
     try {
-      await submitImportProducts(buildImportProducts(records, mapping));
+      const mappedProducts = buildImportProducts(records, mapping).map((product, index) => ({
+        ...product,
+        ...(recordsSupplierId ? { supplier_product_id: records[index]?.supplier_product_id } : {}),
+      }));
+      await submitImportProducts(mappedProducts, recordsSupplierId);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Product import failed.");
     }
@@ -1007,7 +1018,7 @@ function ImportProductsPanel({ onImported, suppliers }: { onImported: () => void
         <h2 className="font-semibold">Import products</h2>
         <p className="mt-1 text-sm text-neutral-500">Map a JSON or CSV feed into your Elovyn catalog. Batches are validated and duplicates are reported rather than overwritten.</p>
         <div className="mt-5 flex flex-wrap items-center gap-2">
-          {(["json", "csv"] as const).map((format) => <button key={format} type="button" onClick={() => { setSource(format); setRecords([]); setResult(null); setError(""); }}
+          {(["json", "csv"] as const).map((format) => <button key={format} type="button" onClick={() => { setSource(format); setRecords([]); setRecordsSupplierId(""); setResult(null); setError(""); }}
             className={`rounded-full px-4 py-2 text-sm font-medium ${source === format ? "bg-neutral-950 text-white" : "border border-neutral-300"}`}>{format.toUpperCase()}</button>)}
         </div>
         {!availableSuppliers.length && <p className="mt-2 text-xs text-amber-700">Add and enable a supplier in the Suppliers view before fetching products.</p>}
