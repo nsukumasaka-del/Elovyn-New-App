@@ -12,6 +12,7 @@ export type StoreUser = {
   email: string;
   role: "customer" | "admin";
   fullName: string | null;
+  deliveryAddressJson: string | null;
 };
 
 const sessionCookieName = "elovyn_session";
@@ -140,7 +141,7 @@ export async function getSessionUser(db: StoreDb, request: Request): Promise<Sto
   if (!token) return null;
   const tokenHash = await digest(token);
   const rows = await db
-    .select({ id: users.id, email: users.email, role: users.role, fullName: users.fullName })
+    .select({ id: users.id, email: users.email, role: users.role, fullName: users.fullName, deliveryAddressJson: users.deliveryAddressJson })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
     .where(and(eq(sessions.tokenHash, tokenHash), gt(sessions.expiresAt, sql`unixepoch()`)))

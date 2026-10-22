@@ -218,7 +218,7 @@ async function authenticate(
         target: users.email,
         set: { passwordHash: adminPasswordHash, role: "admin" },
       })
-      .returning({ id: users.id, email: users.email, role: users.role, fullName: users.fullName });
+      .returning({ id: users.id, email: users.email, role: users.role, fullName: users.fullName, deliveryAddressJson: users.deliveryAddressJson });
     return rows[0];
   }
 
@@ -228,6 +228,7 @@ async function authenticate(
       email: users.email,
       role: users.role,
       fullName: users.fullName,
+      deliveryAddressJson: users.deliveryAddressJson,
       passwordHash: users.passwordHash,
     })
     .from(users)
@@ -236,7 +237,7 @@ async function authenticate(
   if (!user?.passwordHash || !await verifyPassword(password, user.passwordHash)) {
     throw new ApiError("Email or password is incorrect.", 401);
   }
-  return { id: user.id, email: user.email, role: user.role, fullName: user.fullName };
+  return { id: user.id, email: user.email, role: user.role, fullName: user.fullName, deliveryAddressJson: user.deliveryAddressJson };
 }
 
 function secureCookieAttribute(url: URL) {
@@ -353,7 +354,7 @@ async function authenticateWithGoogle(
     : null;
 
   let [user] = await db
-    .select({ id: users.id, email: users.email, role: users.role, fullName: users.fullName })
+    .select({ id: users.id, email: users.email, role: users.role, fullName: users.fullName, deliveryAddressJson: users.deliveryAddressJson })
     .from(users)
     .where(eq(users.googleId, profile.id))
     .limit(1);
@@ -365,6 +366,7 @@ async function authenticateWithGoogle(
         email: users.email,
         role: users.role,
         fullName: users.fullName,
+        deliveryAddressJson: users.deliveryAddressJson,
         googleId: users.googleId,
       })
       .from(users)
@@ -377,7 +379,7 @@ async function authenticateWithGoogle(
       [user] = await db.update(users)
         .set({ googleId: profile.id, fullName: fullName ?? emailUser.fullName })
         .where(eq(users.id, emailUser.id))
-        .returning({ id: users.id, email: users.email, role: users.role, fullName: users.fullName });
+        .returning({ id: users.id, email: users.email, role: users.role, fullName: users.fullName, deliveryAddressJson: users.deliveryAddressJson });
     } else {
       [user] = await db.insert(users)
         .values({
@@ -389,13 +391,13 @@ async function authenticateWithGoogle(
           role: "customer",
         })
         .onConflictDoNothing()
-        .returning({ id: users.id, email: users.email, role: users.role, fullName: users.fullName });
+        .returning({ id: users.id, email: users.email, role: users.role, fullName: users.fullName, deliveryAddressJson: users.deliveryAddressJson });
     }
   }
 
   if (!user) {
     [user] = await db
-      .select({ id: users.id, email: users.email, role: users.role, fullName: users.fullName })
+      .select({ id: users.id, email: users.email, role: users.role, fullName: users.fullName, deliveryAddressJson: users.deliveryAddressJson })
       .from(users)
       .where(eq(users.googleId, profile.id))
       .limit(1);
@@ -818,6 +820,24 @@ type CheckoutItem = {
   price: number;
   quantity: number;
 };
+
+const STANDARD_SHIPPING_FEE_CENTS = 9_900;
+
+function savedDeliveryAddress(user: StoreUser) {
+  let input: unknown;
+  try { input = user.deliveryAddressJson ? JSON.parse(user.deliveryAddressJson) : null; }
+  catch { input = null; }
+  const normalized = normalizeDeliveryAddress(input);
+  if (!normalized.ok) throw new ApiError("Set up your delivery address in your profile before checkout.", 409);
+  return normalized.address;
+}
+
+function checkoutAmounts(items: CheckoutItem[]) {
+  const subtotalCents = items.reduce((sum, item) => sum + Math.round(item.price * 100) * item.quantity, 0);
+  const totalCents = subtotalCents + STANDARD_SHIPPING_FEE_CENTS;
+  if (!Number.isSafeInteger(totalCents) || subtotalCents < 1) throw new ApiError("The order subtotal must be at least R0.01.", 400);
+  return { subtotalCents, shippingCents: STANDARD_SHIPPING_FEE_CENTS, totalCents };
+}
 
 async function resolveCheckoutItems(env: Env, input: unknown) {
   if (!Array.isArray(input) || input.length === 0 || input.length > 100) throw new ApiError("Your cart must contain between 1 and 100 items.", 400);
@@ -1256,7 +1276,7 @@ async function route(
         .insert(users)
         .values({ id: crypto.randomUUID(), email, passwordHash, fullName, role: "customer" })
         .onConflictDoNothing({ target: users.email })
-        .returning({ id: users.id, email: users.email, role: users.role, fullName: users.fullName });
+        .returning({ id: users.id, email: users.email, role: users.role, fullName: users.fullName, deliveryAddressJson: users.deliveryAddressJson });
       if (!rows[0]) throw new ApiError("An account with this email already exists.", 409);
       const [welcomeEmailSent, session] = await Promise.all([
         sendWelcomeEmail(env, email, fullName),
@@ -1299,6 +1319,18 @@ async function route(
     await deleteSession(db, request);
     const secure = secureCookieAttribute(url);
     return json({ ok: true }, 200, { "Set-Cookie": clearedSessionCookie(secure) });
+  }
+
+  if (path === "/profile/delivery-address" && method === "PUT") {
+    const user = await requireUser(db, request);
+    const body = await bodyAsJson(request);
+    const deliveryAddress = normalizeDeliveryAddress(body.delivery_address);
+    if (!deliveryAddress.ok) throw new ApiError(deliveryAddress.error, 400);
+    const [updated] = await db.update(users)
+      .set({ deliveryAddressJson: JSON.stringify(deliveryAddress.address), fullName: deliveryAddress.address.recipientName })
+      .where(eq(users.id, user.id))
+      .returning({ id: users.id, email: users.email, role: users.role, fullName: users.fullName, deliveryAddressJson: users.deliveryAddressJson });
+    return json({ user: updated });
   }
 
   if (path === "/products" && method === "GET") {
@@ -1402,6 +1434,7 @@ async function route(
         status: orders.status,
         items_json: orders.itemsJson,
         delivery_address_json: orders.deliveryAddressJson,
+        shipping_fee: orders.shippingFee,
         created_at: orders.createdAt,
       })
       .from(orders)
@@ -1410,15 +1443,33 @@ async function route(
     return json({ orders: rows });
   }
 
+  if (path === "/checkout/summary" && method === "POST") {
+    const user = await requireUser(db, request);
+    const body = await bodyAsJson(request);
+    const deliveryAddress = savedDeliveryAddress(user);
+    const checkoutItems = await resolveCheckoutItems(env, body.items);
+    const amounts = checkoutAmounts(checkoutItems);
+    return json({
+      items: checkoutItems.map((item) => ({ ...item, line_total: Math.round(item.price * 100) * item.quantity / 100 })),
+      delivery_address: deliveryAddress,
+      subtotal: amounts.subtotalCents / 100,
+      shipping_fee: amounts.shippingCents / 100,
+      total: amounts.totalCents / 100,
+      currency: "ZAR",
+    });
+  }
+
   if (path === "/orders" && method === "POST") {
     const user = await requireUser(db, request);
     if (!env.YOCO_TEST_SECRET_KEY) throw new ApiError("Yoco test payments are not configured.", 503);
     const body = await bodyAsJson(request);
-    const deliveryAddress = normalizeDeliveryAddress(body.delivery_address);
-    if (!deliveryAddress.ok) throw new ApiError(deliveryAddress.error, 400);
+    const deliveryAddress = savedDeliveryAddress(user);
     const checkoutItems = await resolveCheckoutItems(env, body.items);
-    const totalCents = checkoutItems.reduce((sum, item) => sum + Math.round(item.price * 100) * item.quantity, 0);
-    if (!Number.isSafeInteger(totalCents) || totalCents < 1) throw new ApiError("The order total must be at least R0.01.", 400);
+    const { shippingCents, totalCents } = checkoutAmounts(checkoutItems);
+    const expectedTotalCents = Math.round(Number(body.expected_total) * 100);
+    if (!Number.isSafeInteger(expectedTotalCents) || expectedTotalCents !== totalCents) {
+      throw new ApiError("Your order total changed. Review the updated order summary before payment.", 409);
+    }
     await ensureYocoWebhook(env, db, url.origin);
     const orderId = crypto.randomUUID();
     await db.insert(orders).values({
@@ -1427,7 +1478,8 @@ async function route(
       totalAmount: totalCents / 100,
       status: "Awaiting Payment",
       itemsJson: JSON.stringify(checkoutItems),
-      deliveryAddressJson: JSON.stringify(deliveryAddress.address),
+      deliveryAddressJson: JSON.stringify(deliveryAddress),
+      shippingFee: shippingCents / 100,
       paymentProvider: "yoco",
     });
     let checkout: Awaited<ReturnType<typeof createYocoCheckout>>;

@@ -9,6 +9,7 @@ export const users = sqliteTable("users", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   fullName: text("full_name"),
   googleId: text("google_id").unique(),
+  deliveryAddressJson: text("delivery_address_json"),
 }, (table) => [
   check("users_role_check", sql`${table.role} IN ('customer', 'admin')`),
 ]);
@@ -115,6 +116,7 @@ export const orders = sqliteTable("orders", {
   status: text("status").notNull().default("Pending"),
   itemsJson: text("items_json").notNull(),
   deliveryAddressJson: text("delivery_address_json"),
+  shippingFee: real("shipping_fee").notNull().default(0),
   paymentProvider: text("payment_provider"),
   paymentReference: text("payment_reference"),
   paymentId: text("payment_id"),

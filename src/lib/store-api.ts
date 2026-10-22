@@ -3,6 +3,7 @@ export type StoreUser = {
   email: string;
   role: "customer" | "admin";
   fullName: string | null;
+  deliveryAddressJson: string | null;
 };
 export type CartProduct = { id: string; title: string; price: number; imageUrl: string; quantity?: number };
 

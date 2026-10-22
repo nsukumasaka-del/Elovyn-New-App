@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Heart, Menu, Search, ShoppingBag, UserRound, X } from "lucide-react";
 import { toast } from "sonner";
-import { useStore, type DeliveryAddress } from "@/lib/store";
+import { useStore, type CheckoutSummary } from "@/lib/store";
 import { isPrimaryAdmin } from "@/lib/store-api";
 
 const navItems = [
@@ -143,34 +143,31 @@ function AuthDialog({ onClose }: { onClose: () => void }) {
 }
 
 function CartDrawer({ onClose }: { onClose: () => void }) {
-  const { cart, changeQuantity, removeFromCart, checkout, user, setAuthOpen } = useStore();
+  const { cart, changeQuantity, removeFromCart, prepareCheckout, checkout, user, setAuthOpen } = useStore();
   const [error, setError] = useState("");
   const [checkoutLoading, setCheckoutLoading] = useState(false);
-  const [deliveryAddress, setDeliveryAddress] = useState<DeliveryAddress>({
-    recipientName: user?.fullName ?? "",
-    phone: "",
-    addressLine1: "",
-    addressLine2: "",
-    suburb: "",
-    city: "",
-    province: "",
-    postalCode: "",
-    country: "South Africa",
-  });
+  const [summary, setSummary] = useState<CheckoutSummary | null>(null);
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const hasDeliveryAddress = Boolean(user?.deliveryAddressJson);
 
-  function updateDeliveryAddress(field: keyof DeliveryAddress, value: string) {
-    setDeliveryAddress((current) => ({ ...current, [field]: value }));
-  }
-
-  async function startCheckout(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function reviewOrder() {
     setError("");
     setCheckoutLoading(true);
     try {
-      await checkout(deliveryAddress);
+      setSummary(await prepareCheckout());
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not place the order.");
+    } finally {
+      setCheckoutLoading(false);
+    }
+  }
+
+  async function payForOrder() {
+    setError("");
+    setCheckoutLoading(true);
+    try { await checkout(summary!.total); }
+    catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not open the payment gateway.");
       setCheckoutLoading(false);
     }
   }
@@ -186,15 +183,42 @@ function CartDrawer({ onClose }: { onClose: () => void }) {
       >
         <header className="flex items-center justify-between border-b border-neutral-200 px-6 py-5">
           <div>
-            <h2 className="text-2xl font-bold tracking-tight">Your bag</h2>
-            <p className="mt-1 text-sm text-neutral-500">{cart.reduce((sum, item) => sum + item.quantity, 0)} items</p>
+            <h2 className="text-2xl font-bold tracking-tight">{summary ? "Order summary" : "Your bag"}</h2>
+            <p className="mt-1 text-sm text-neutral-500">{summary ? "Review everything before payment" : `${cart.reduce((sum, item) => sum + item.quantity, 0)} items`}</p>
           </div>
           <button type="button" aria-label="Close cart" onClick={onClose} className="rounded-full p-2 hover:bg-neutral-100">
             <X className="h-5 w-5" />
           </button>
         </header>
         <div className="flex-1 overflow-y-auto px-6">
-          {cart.length === 0 ? (
+          {summary ? (
+            <div className="py-6">
+              <button type="button" onClick={() => { setSummary(null); setError(""); }} className="text-sm font-medium underline">← Back to bag</button>
+              <ul className="mt-4 divide-y divide-neutral-200">
+                {summary.items.map((item) => (
+                  <li key={item.variant_id} className="flex justify-between gap-4 py-4 text-sm">
+                    <div><p className="font-semibold">{item.title}</p><p className="mt-1 text-neutral-500">{item.quantity} × R {item.price.toFixed(2)}</p></div>
+                    <p className="whitespace-nowrap font-medium">R {item.line_total.toFixed(2)}</p>
+                  </li>
+                ))}
+              </ul>
+              <section className="mt-5 rounded-2xl bg-neutral-50 p-4 text-sm">
+                <h3 className="font-semibold">Deliver to</h3>
+                <p className="mt-2 leading-6 text-neutral-600">{[
+                  summary.delivery_address.recipientName,
+                  summary.delivery_address.addressLine1,
+                  summary.delivery_address.addressLine2,
+                  summary.delivery_address.suburb,
+                  summary.delivery_address.city,
+                  summary.delivery_address.province,
+                  summary.delivery_address.postalCode,
+                  summary.delivery_address.country,
+                ].filter(Boolean).join(", ")}</p>
+                <p className="mt-1 text-neutral-500">{summary.delivery_address.phone}</p>
+                <Link to="/profile" onClick={onClose} className="mt-3 inline-block font-medium underline">Change in profile</Link>
+              </section>
+            </div>
+          ) : cart.length === 0 ? (
             <div className="grid h-full place-items-center text-center">
               <div><ShoppingBag className="mx-auto h-8 w-8 text-neutral-400" /><p className="mt-4 font-medium">Your bag is empty.</p><p className="mt-1 text-sm text-neutral-500">Find something you love.</p></div>
             </div>
@@ -222,33 +246,20 @@ function CartDrawer({ onClose }: { onClose: () => void }) {
                 </li>
                 ))}
               </ul>
-              {user && (
-                <form id="delivery-address-form" onSubmit={(event) => void startCheckout(event)} className="mb-6 border-t border-neutral-200 pt-6">
-                  <h3 className="font-semibold">Delivery address</h3>
-                  <p className="mt-1 text-xs leading-5 text-neutral-500">Enter the residential or delivery location where this order should be sent.</p>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <label className="text-xs font-medium text-neutral-700 sm:col-span-2">Recipient full name<input required autoComplete="name" maxLength={100} value={deliveryAddress.recipientName} onChange={(event) => updateDeliveryAddress("recipientName", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm" /></label>
-                    <label className="text-xs font-medium text-neutral-700 sm:col-span-2">Phone number<input required type="tel" autoComplete="tel" minLength={7} maxLength={30} value={deliveryAddress.phone} onChange={(event) => updateDeliveryAddress("phone", event.target.value)} placeholder="+27 82 123 4567" className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm" /></label>
-                    <label className="text-xs font-medium text-neutral-700 sm:col-span-2">Street address<input required autoComplete="address-line1" maxLength={160} value={deliveryAddress.addressLine1} onChange={(event) => updateDeliveryAddress("addressLine1", event.target.value)} placeholder="House number and street" className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm" /></label>
-                    <label className="text-xs font-medium text-neutral-700 sm:col-span-2">Apartment, unit, or complex (optional)<input autoComplete="address-line2" maxLength={100} value={deliveryAddress.addressLine2} onChange={(event) => updateDeliveryAddress("addressLine2", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm" /></label>
-                    <label className="text-xs font-medium text-neutral-700">Suburb<input required autoComplete="address-level3" maxLength={100} value={deliveryAddress.suburb} onChange={(event) => updateDeliveryAddress("suburb", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm" /></label>
-                    <label className="text-xs font-medium text-neutral-700">City or town<input required autoComplete="address-level2" maxLength={100} value={deliveryAddress.city} onChange={(event) => updateDeliveryAddress("city", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm" /></label>
-                    <label className="text-xs font-medium text-neutral-700">Province or state<input required autoComplete="address-level1" maxLength={100} value={deliveryAddress.province} onChange={(event) => updateDeliveryAddress("province", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm" /></label>
-                    <label className="text-xs font-medium text-neutral-700">Postal code<input required autoComplete="postal-code" maxLength={20} value={deliveryAddress.postalCode} onChange={(event) => updateDeliveryAddress("postalCode", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm" /></label>
-                    <label className="text-xs font-medium text-neutral-700 sm:col-span-2">Country<input required autoComplete="country-name" maxLength={100} value={deliveryAddress.country} onChange={(event) => updateDeliveryAddress("country", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm" /></label>
-                  </div>
-                </form>
-              )}
+              {user && !hasDeliveryAddress && <div role="alert" className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><p className="font-semibold">Delivery address required</p><p className="mt-1 leading-5">Set up your delivery address in your profile before checking out.</p><Link to="/profile" onClick={onClose} className="mt-3 inline-block font-semibold underline">Set up delivery address</Link></div>}
             </>
           )}
         </div>
         <footer className="border-t border-neutral-200 p-6">
-          <div className="flex justify-between text-base font-semibold"><span>Subtotal</span><span>R {subtotal.toFixed(2)}</span></div>
-          <p className="mt-2 text-xs text-neutral-500">Shipping and taxes are calculated at checkout.</p>
+          {summary ? <div className="space-y-2 text-sm"><div className="flex justify-between"><span>Subtotal</span><span>R {summary.subtotal.toFixed(2)}</span></div><div className="flex justify-between"><span>Delivery fee</span><span>R {summary.shipping_fee.toFixed(2)}</span></div><div className="flex justify-between border-t border-neutral-200 pt-3 text-base font-bold"><span>Total</span><span>R {summary.total.toFixed(2)}</span></div></div> : <><div className="flex justify-between text-base font-semibold"><span>Subtotal</span><span>R {subtotal.toFixed(2)}</span></div><p className="mt-2 text-xs text-neutral-500">The delivery fee and final total are shown before payment.</p></>}
           {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
-          {user ? (
-            <button type="submit" form="delivery-address-form" disabled={cart.length === 0 || checkoutLoading} className="btn-primary mt-5 w-full disabled:cursor-not-allowed disabled:opacity-50">
-              {checkoutLoading ? "Opening Yoco…" : "Pay securely with Yoco"}
+          {summary ? (
+            <button type="button" onClick={() => void payForOrder()} disabled={checkoutLoading} className="btn-primary mt-5 w-full disabled:cursor-not-allowed disabled:opacity-50">
+              {checkoutLoading ? "Opening Yoco…" : `Pay R ${summary.total.toFixed(2)} with Yoco`}
+            </button>
+          ) : user ? (
+            <button type="button" onClick={() => void reviewOrder()} disabled={cart.length === 0 || checkoutLoading || !hasDeliveryAddress} className="btn-primary mt-5 w-full disabled:cursor-not-allowed disabled:opacity-50">
+              {checkoutLoading ? "Preparing summary…" : hasDeliveryAddress ? "Review order" : "Add delivery address to continue"}
             </button>
           ) : (
             <button

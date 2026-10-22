@@ -14,6 +14,14 @@ import type { DeliveryAddress } from "@/lib/delivery-address";
 export type { CartProduct, StoreUser } from "@/lib/store-api";
 export type { DeliveryAddress } from "@/lib/delivery-address";
 export type CartLine = CartProduct & { quantity: number };
+export type CheckoutSummary = {
+  items: Array<{ variant_id: string; product_id: string; sku: string; title: string; price: number; quantity: number; line_total: number }>;
+  delivery_address: DeliveryAddress;
+  subtotal: number;
+  shipping_fee: number;
+  total: number;
+  currency: "ZAR";
+};
 export type StoreProduct = {
   id: string;
   title: string;
@@ -46,7 +54,9 @@ type StoreContextValue = {
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, fullName: string) => Promise<void>;
   signOut: () => Promise<void>;
-  checkout: (deliveryAddress: DeliveryAddress) => Promise<void>;
+  saveDeliveryAddress: (deliveryAddress: DeliveryAddress) => Promise<void>;
+  prepareCheckout: () => Promise<CheckoutSummary>;
+  checkout: (expectedTotal: number) => Promise<void>;
 };
 
 const StoreContext = createContext<StoreContextValue | null>(null);
@@ -247,16 +257,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     toast.success("You have signed out.");
   }, []);
 
-  const checkout = useCallback(async (deliveryAddress: DeliveryAddress) => {
+  const saveDeliveryAddress = useCallback(async (deliveryAddress: DeliveryAddress) => {
+    const result = await request<{ user: StoreUser }>("/profile/delivery-address", {
+      method: "PUT",
+      body: JSON.stringify({ delivery_address: deliveryAddress }),
+    });
+    setUser(result.user);
+    toast.success("Delivery address saved.");
+  }, []);
+
+  const prepareCheckout = useCallback(async () => {
     if (!user) {
       setAuthMode("signin");
       setAuthOpen(true);
       toast.message("Sign in to place your order.");
-      return;
+      throw new Error("Sign in to place your order.");
     }
+    return request<CheckoutSummary>("/checkout/summary", {
+      method: "POST",
+      body: JSON.stringify({ items: cart.map(({ id, quantity }) => ({ id, quantity })) }),
+    });
+  }, [cart, user]);
+
+  const checkout = useCallback(async (expectedTotal: number) => {
+    if (!user) throw new Error("Sign in to place your order.");
     const result = await request<{ redirect_url: string }>("/orders", {
       method: "POST",
-      body: JSON.stringify({ items: cart.map(({ id, quantity }) => ({ id, quantity })), delivery_address: deliveryAddress }),
+      body: JSON.stringify({ items: cart.map(({ id, quantity }) => ({ id, quantity })), expected_total: expectedTotal }),
     });
     window.location.assign(result.redirect_url);
   }, [cart, user]);
@@ -264,10 +291,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const value = useMemo(() => ({
     user, ready, connectionError, retryConnection, products, refreshProducts, cart, wishlist, cartOpen, setCartOpen, authOpen, setAuthOpen,
     authMode, setAuthMode, addToCart, changeQuantity, removeFromCart, clearCart,
-    toggleWishlist, signIn, signUp, signOut, checkout,
+    toggleWishlist, signIn, signUp, signOut, saveDeliveryAddress, prepareCheckout, checkout,
   }), [
     user, ready, connectionError, retryConnection, products, refreshProducts, cart, wishlist, cartOpen, authOpen, authMode, addToCart,
-    changeQuantity, removeFromCart, clearCart, toggleWishlist, signIn, signUp, signOut, checkout,
+    changeQuantity, removeFromCart, clearCart, toggleWishlist, signIn, signUp, signOut, saveDeliveryAddress, prepareCheckout, checkout,
   ]);
 
   return (
