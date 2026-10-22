@@ -669,11 +669,11 @@ type ProductImportResult = {
 async function processProductImport(env: Env, jobId: string) {
   if (!env.DB) throw new ApiError("The D1 database is unavailable.", 503);
   try {
-    const job = await env.DB.prepare("SELECT payload_json FROM product_import_jobs WHERE id = ?")
+    const job = await env.DB.prepare("SELECT payload_json FROM product_import_jobs_v2 WHERE id = ?")
       .bind(jobId)
       .first<{ payload_json: string }>();
     if (!job) throw new Error("Import job payload was not found.");
-    await env.DB.prepare("UPDATE product_import_jobs SET status = 'processing', updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+    await env.DB.prepare("UPDATE product_import_jobs_v2 SET status = 'processing', updated_at = CURRENT_TIMESTAMP WHERE id = ?")
       .bind(jobId)
       .run();
 
@@ -729,14 +729,14 @@ async function processProductImport(env: Env, jobId: string) {
       result.imported.push({ id, title: product.title, sku: product.sku });
     }
     if (insertStatements.length) await env.DB.batch(insertStatements);
-    await env.DB.prepare(`UPDATE product_import_jobs SET status = 'completed', result_json = ?,
+    await env.DB.prepare(`UPDATE product_import_jobs_v2 SET status = 'completed', result_json = ?,
       updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
       .bind(JSON.stringify(result), jobId)
       .run();
   } catch (error) {
     const message = errorMessage(error).slice(0, 1000);
     console.error(`Product import job ${jobId} failed:`, error);
-    await env.DB.prepare(`UPDATE product_import_jobs SET status = 'failed', error = ?,
+    await env.DB.prepare(`UPDATE product_import_jobs_v2 SET status = 'failed', error = ?,
       updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
       .bind(message, jobId)
       .run();
@@ -1593,7 +1593,7 @@ async function route(
     const jobId = path.slice("/admin/products/import/".length);
     if (!jobId || jobId.includes("/") || jobId.length > 100) throw new ApiError("Import job was not found.", 404);
     const job = await env.DB!.prepare(`SELECT id, status, result_json, error, created_at, updated_at
-      FROM product_import_jobs WHERE id = ?`).bind(jobId).first<{
+      FROM product_import_jobs_v2 WHERE id = ?`).bind(jobId).first<{
         id: string;
         status: "pending" | "processing" | "completed" | "failed";
         result_json: string | null;
@@ -1660,7 +1660,7 @@ async function route(
       }
     }
     const jobId = crypto.randomUUID();
-    await env.DB!.prepare(`INSERT INTO product_import_jobs (id, status, payload_json)
+    await env.DB!.prepare(`INSERT INTO product_import_jobs_v2 (id, status, payload_json)
       VALUES (?, 'pending', ?)`).bind(jobId, JSON.stringify(importedProducts)).run();
     waitUntil(processProductImport(env, jobId));
     return json({ job_id: jobId, status: "pending" }, 202);
