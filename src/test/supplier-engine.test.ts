@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   configuredSupplierRecords,
   configuredSupplierRequest,
+  eproloProductListRequest,
   eproloSignature,
   md5,
   normalizeEproloProducts,
@@ -50,6 +51,20 @@ describe("EPROLO integration", () => {
     expect(md5("")).toBe("d41d8cd98f00b204e9800998ecf8427e");
     expect(md5("abc")).toBe("900150983cd24fb0d6963f7d28e17f72");
     expect(eproloSignature("TEST_8888888_Key", "1720000000000", "TEST_8888888_Secret")).toBe("b05dda2863f935b6cf67c0af0dc30164");
+  });
+
+  it("builds the documented EPROLO catalog request", () => {
+    const request = eproloProductListRequest(
+      new URL("https://openapi.eprolo.com/product_list.html?status=1"),
+      { apiKey: "TEST_8888888_Key", apiSecret: "TEST_8888888_Secret" },
+      "1720000000000",
+    );
+
+    expect(request.url.toString()).toBe("https://openapi.eprolo.com/eprolo_product_list.html?page=1&timestamp=1720000000000&sign=b05dda2863f935b6cf67c0af0dc30164");
+    expect(request.init).toMatchObject({
+      method: "GET",
+      headers: { Accept: "application/json", "Content-Type": "application/json", apiKey: "TEST_8888888_Key" },
+    });
   });
 
   it("normalizes EPROLO products, variants, options, stock, and images", () => {

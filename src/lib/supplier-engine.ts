@@ -147,6 +147,30 @@ export function eproloSignature(apiKey: string, timestamp: string, apiSecret: st
   return md5(`${apiKey}${timestamp}${apiSecret}`);
 }
 
+export function eproloProductListRequest(baseUrl: URL, credentials: SupplierCredentials, timestamp = String(Date.now()), page = 1) {
+  const url = new URL(baseUrl.toString());
+  const endpoint = "eprolo_product_list.html";
+  if (!url.pathname.toLowerCase().endsWith(`/${endpoint}`)) {
+    const basePath = url.pathname.replace(/\/+$/, "");
+    const directoryPath = basePath.toLowerCase().endsWith(".html")
+      ? basePath.slice(0, basePath.lastIndexOf("/") + 1)
+      : `${basePath}/`;
+    url.pathname = `${directoryPath}${endpoint}`.replace(/\/{2,}/g, "/");
+  }
+  url.search = "";
+  url.hash = "";
+  url.searchParams.set("page", String(Math.max(1, Math.floor(page))));
+  url.searchParams.set("timestamp", timestamp);
+  url.searchParams.set("sign", eproloSignature(credentials.apiKey, timestamp, credentials.apiSecret));
+  return {
+    url,
+    init: {
+      method: "GET",
+      headers: { Accept: "application/json", "Content-Type": "application/json", apiKey: credentials.apiKey },
+    } satisfies RequestInit,
+  };
+}
+
 function absoluteImageUrl(value: unknown) {
   const url = String(value || "").trim();
   return url.startsWith("//") ? `https:${url}` : url.replace(/^http:\/\//i, "https://");

@@ -34,11 +34,12 @@ import { readSupplierJsonResponse, supplierUrlValidationError, SUPPLIER_AUTHENTI
 import { cjAccessTokenFromPayload, cjProductRecordsFromPayload } from "../../src/lib/cj-auth";
 import { cjCategoriesFromPayload, cjImportProductFromDetail, cjSearchResultsFromPayload, type SupplierCategory, type SupplierProductSearchResult } from "../../src/lib/cj-import";
 import { normalizeDeliveryAddress } from "../../src/lib/delivery-address";
+import { calculateCheckoutAmounts } from "../../src/lib/checkout";
 import { createYocoCheckout, registerYocoWebhook, verifyYocoWebhookSignature } from "../lib/yoco";
 import {
   configuredSupplierRecords,
   configuredSupplierRequest,
-  eproloSignature,
+  eproloProductListRequest,
   normalizeEproloProducts,
   parseSupplierConfiguration,
   pathValue,
@@ -821,8 +822,6 @@ type CheckoutItem = {
   quantity: number;
 };
 
-const STANDARD_SHIPPING_FEE_CENTS = 9_900;
-
 function savedDeliveryAddress(user: StoreUser) {
   let input: unknown;
   try { input = user.deliveryAddressJson ? JSON.parse(user.deliveryAddressJson) : null; }
@@ -833,10 +832,9 @@ function savedDeliveryAddress(user: StoreUser) {
 }
 
 function checkoutAmounts(items: CheckoutItem[]) {
-  const subtotalCents = items.reduce((sum, item) => sum + Math.round(item.price * 100) * item.quantity, 0);
-  const totalCents = subtotalCents + STANDARD_SHIPPING_FEE_CENTS;
+  const { subtotalCents, shippingCents, totalCents } = calculateCheckoutAmounts(items);
   if (!Number.isSafeInteger(totalCents) || subtotalCents < 1) throw new ApiError("The order subtotal must be at least R0.01.", 400);
-  return { subtotalCents, shippingCents: STANDARD_SHIPPING_FEE_CENTS, totalCents };
+  return { subtotalCents, shippingCents, totalCents };
 }
 
 async function resolveCheckoutItems(env: Env, input: unknown) {
@@ -956,14 +954,9 @@ async function supplierFetch(supplier: SupplierRecord, credentials: SupplierCred
       init.headers = { Accept: "application/json", "CJ-Access-Token": requestToken };
     } else if (supplier.adapter === "eprolo") {
       if (!credentials.apiKey || !credentials.apiSecret) throw new ApiError("EPROLO API Key and Secret are required.", 400);
-      if (url.pathname === "/" || !url.pathname.endsWith(".html")) url = new URL("product_list.html", `${url.toString().replace(/\/$/, "")}/`);
-      const timestamp = String(Date.now());
-      url.searchParams.set("page_index", "0");
-      url.searchParams.set("page_size", validateOnly ? "1" : "50");
-      url.searchParams.set("status", "1");
-      url.searchParams.set("timestamp", timestamp);
-      url.searchParams.set("sign", eproloSignature(credentials.apiKey, timestamp, credentials.apiSecret));
-      init.headers = { Accept: "application/json", "Content-Type": "application/json", apiKey: credentials.apiKey };
+      const request = eproloProductListRequest(url, credentials);
+      url = request.url;
+      init = request.init;
     } else {
       const configured = configuredSupplierRequest(base, parseSupplierConfiguration(supplier.fieldMappingJson), credentials);
       url = configured.url;
@@ -1327,7 +1320,7 @@ async function route(
     const deliveryAddress = normalizeDeliveryAddress(body.delivery_address);
     if (!deliveryAddress.ok) throw new ApiError(deliveryAddress.error, 400);
     const [updated] = await db.update(users)
-      .set({ deliveryAddressJson: JSON.stringify(deliveryAddress.address), fullName: deliveryAddress.address.recipientName })
+      .set({ deliveryAddressJson: JSON.stringify(deliveryAddress.address) })
       .where(eq(users.id, user.id))
       .returning({ id: users.id, email: users.email, role: users.role, fullName: users.fullName, deliveryAddressJson: users.deliveryAddressJson });
     return json({ user: updated });
