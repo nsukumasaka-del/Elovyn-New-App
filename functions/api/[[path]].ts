@@ -1584,17 +1584,26 @@ async function route(
       throw new ApiError("Select between 1 and 500 products.", 400);
     }
     const ids = [...new Set(body.ids.map((id) => requiredString(id, "Product id", 100)))];
-    const updates: { isListed?: boolean; category?: string | null; updatedAt: ReturnType<typeof sql> } = {
+    const updates: { isListed?: boolean; category?: string | null; price?: number; updatedAt: ReturnType<typeof sql> } = {
       updatedAt: sql`CURRENT_TIMESTAMP`,
     };
+    let variantPrice: number | null = null;
     if (typeof body.is_listed === "boolean") updates.isListed = body.is_listed;
     if (Object.prototype.hasOwnProperty.call(body, "category")) {
       updates.category = optionalText(body.category, "Category", 100);
     }
-    if (updates.isListed === undefined && !Object.prototype.hasOwnProperty.call(updates, "category")) {
+    if (Object.prototype.hasOwnProperty.call(body, "variant_price")) {
+      variantPrice = nonNegativeAmount(body.variant_price, "Variant price");
+      if (variantPrice === null) throw new ApiError("Variant price is required.", 400);
+      updates.price = variantPrice;
+    }
+    if (updates.isListed === undefined && !Object.prototype.hasOwnProperty.call(updates, "category") && variantPrice === null) {
       throw new ApiError("Choose at least one product field to update.", 400);
     }
     await db.update(products).set(updates).where(inArray(products.id, ids));
+    if (variantPrice !== null) {
+      await db.update(variants).set({ price: variantPrice, updatedAt: sql`CURRENT_TIMESTAMP` }).where(inArray(variants.productId, ids));
+    }
     return json({ updated: ids.length });
   }
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Navigate, Link } from "react-router-dom";
-import { ArrowDownToLine, ArrowUpFromLine, Boxes, LayoutDashboard, PackagePlus, Pencil, Plus, Search, Settings2, Trash2, Upload, X } from "lucide-react";
+import { ArrowDownToLine, Boxes, LayoutDashboard, PackagePlus, Pencil, Plus, Search, Settings2, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest, isPrimaryAdmin, type StoreUser } from "@/lib/store-api";
 import { useStore } from "@/lib/store";
@@ -144,18 +144,6 @@ export function AdminPage() {
   if (!verifiedUser || !user) return <Navigate to="/login" replace />;
   if (!isPrimaryAdmin(verifiedUser) || !isPrimaryAdmin(user)) return <Navigate to="/" replace />;
 
-  async function changeStock(product: Product, change: number) {
-    try {
-      await apiRequest(`/admin/inventory/stock`, {
-        method: "PATCH",
-        body: JSON.stringify({ id: product.id, change }),
-      });
-      await loadData();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not update stock.");
-    }
-  }
-
   async function deleteProduct(product: Product) {
     if (!window.confirm(`Delete ${product.title} (${product.sku})? This permanently removes the product, all of its variants, and its inventory from the storefront.`)) return;
     setDeletingProductId(product.id);
@@ -171,7 +159,7 @@ export function AdminPage() {
     }
   }
 
-  async function updateProducts(ids: string[], updates: { is_listed?: boolean; category?: string | null }, message: string) {
+  async function updateProducts(ids: string[], updates: { is_listed?: boolean; category?: string | null; variant_price?: number }, message: string) {
     if (!ids.length) return false;
     setBulkBusy(true);
     try {
@@ -360,8 +348,6 @@ export function AdminPage() {
                       <td className="px-4 py-4"><div className="flex gap-2">
                         <button disabled={bulkBusy} onClick={() => void updateProducts([product.id], { is_listed: !product.is_listed }, `${product.title} is now ${product.is_listed ? "unlisted" : "listed"}.`)} className="whitespace-nowrap rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium hover:bg-neutral-100 disabled:opacity-50">{product.is_listed ? "Unlist" : "List"}</button>
                         <button aria-label={`Edit ${product.title}`} onClick={() => setEditProductId(product.id)} className="rounded-lg border border-neutral-300 p-2 hover:bg-neutral-100"><Pencil className="h-4 w-4" /></button>
-                        <button aria-label={`Decrease ${product.title} stock`} onClick={() => void changeStock(product, -1)} className="rounded-lg border border-neutral-300 p-2 hover:bg-neutral-100"><ArrowDownToLine className="h-4 w-4" /></button>
-                        <button aria-label={`Increase ${product.title} stock`} onClick={() => void changeStock(product, 1)} className="rounded-lg border border-neutral-300 p-2 hover:bg-neutral-100"><ArrowUpFromLine className="h-4 w-4" /></button>
                         <button aria-label={`Delete ${product.title}`} disabled={deletingProductId === product.id} onClick={() => void deleteProduct(product)} className="rounded-lg border border-red-200 p-2 text-red-700 hover:bg-red-50 disabled:opacity-50"><Trash2 className="h-4 w-4" /></button>
                       </div></td>
                     </tr>)}
@@ -417,11 +403,15 @@ export function AdminPage() {
   );
 }
 
-function BulkEditDialog({ count, busy, onClose, onSave }: { count: number; busy: boolean; onClose: () => void; onSave: (updates: { is_listed?: boolean; category?: string | null }) => Promise<void> }) {
+function BulkEditDialog({ count, busy, onClose, onSave }: { count: number; busy: boolean; onClose: () => void; onSave: (updates: { is_listed?: boolean; category?: string | null; variant_price?: number }) => Promise<void> }) {
   const [listing, setListing] = useState<"unchanged" | "listed" | "unlisted">("unchanged");
   const [changeCategory, setChangeCategory] = useState(false);
   const [category, setCategory] = useState("");
-  const canSave = listing !== "unchanged" || changeCategory;
+  const [changeVariantPrice, setChangeVariantPrice] = useState(false);
+  const [variantPrice, setVariantPrice] = useState("");
+  const parsedVariantPrice = Number(variantPrice);
+  const variantPriceValid = variantPrice.trim() !== "" && Number.isFinite(parsedVariantPrice) && parsedVariantPrice >= 0;
+  const canSave = (listing !== "unchanged" || changeCategory || changeVariantPrice) && (!changeVariantPrice || variantPriceValid);
   return <div className="fixed inset-0 z-[95] grid place-items-center bg-black/45 p-4" onMouseDown={() => { if (!busy) onClose(); }}>
     <section role="dialog" aria-modal="true" aria-labelledby="bulk-edit-title" className="w-full max-w-lg rounded-3xl bg-white p-7 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
       <header className="flex items-center justify-between"><div><p className="eyebrow">Inventory</p><h2 id="bulk-edit-title" className="mt-1 text-2xl font-bold">Edit {count} selected product{count === 1 ? "" : "s"}</h2></div><button disabled={busy} aria-label="Close bulk editor" onClick={onClose} className="rounded-full p-2 hover:bg-neutral-100 disabled:opacity-50"><X className="h-5 w-5" /></button></header>
@@ -431,7 +421,11 @@ function BulkEditDialog({ count, busy, onClose, onSave }: { count: number; busy:
           <label className="flex items-center gap-3 text-sm font-medium"><input type="checkbox" checked={changeCategory} onChange={(event) => setChangeCategory(event.target.checked)} className="h-4 w-4 accent-neutral-950" />Change category for every selected product</label>
           {changeCategory && <input value={category} maxLength={100} onChange={(event) => setCategory(event.target.value)} placeholder="Category (leave blank to clear)" className="mt-2 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm" />}
         </div>
-        <div className="flex justify-end gap-3"><button disabled={busy} onClick={onClose} className="btn-secondary disabled:opacity-50">Cancel</button><button disabled={busy || !canSave} onClick={() => void onSave({ ...(listing !== "unchanged" ? { is_listed: listing === "listed" } : {}), ...(changeCategory ? { category: category.trim() || null } : {}) })} className="btn-primary disabled:opacity-50">{busy ? "Saving…" : "Save changes"}</button></div>
+        <div>
+          <label className="flex items-center gap-3 text-sm font-medium"><input type="checkbox" checked={changeVariantPrice} onChange={(event) => setChangeVariantPrice(event.target.checked)} className="h-4 w-4 accent-neutral-950" />Set one price for all variants of every selected product</label>
+          {changeVariantPrice && <><div className="relative mt-2"><span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-neutral-500">R</span><input aria-label="Price for all selected product variants" type="number" min="0" step="0.01" value={variantPrice} onChange={(event) => setVariantPrice(event.target.value)} placeholder="0.00" className="h-11 w-full rounded-xl border border-neutral-300 pl-8 pr-3 text-sm" /></div><p className="mt-1.5 text-xs text-neutral-500">This also updates each selected product’s displayed base price.</p></>}
+        </div>
+        <div className="flex justify-end gap-3"><button disabled={busy} onClick={onClose} className="btn-secondary disabled:opacity-50">Cancel</button><button disabled={busy || !canSave} onClick={() => void onSave({ ...(listing !== "unchanged" ? { is_listed: listing === "listed" } : {}), ...(changeCategory ? { category: category.trim() || null } : {}), ...(changeVariantPrice ? { variant_price: parsedVariantPrice } : {}) })} className="btn-primary disabled:opacity-50">{busy ? "Saving…" : "Save changes"}</button></div>
       </div>
     </section>
   </div>;
@@ -448,6 +442,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
   const [images, setImages] = useState<File[]>([]);
   const [optionRows, setOptionRows] = useState(productId ? [] : [{ name: "Size", values: "S, M, L" }]);
   const [variantFields, setVariantFields] = useState<Record<string, VariantFields>>({});
+  const [allVariantPrice, setAllVariantPrice] = useState("");
   const [existingImageUrls, setExistingImageUrls] = useState<string[]>([]);
   const [colorImageFiles, setColorImageFiles] = useState<Record<string, File | null>>({});
   const [colorImageUrls, setColorImageUrls] = useState<Record<string, string>>({});
@@ -555,6 +550,26 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
     }));
   }
 
+  function applyPriceToAllVariants() {
+    const nextPrice = Number(allVariantPrice);
+    if (!Number.isFinite(nextPrice) || nextPrice < 0 || allVariantPrice.trim() === "") return;
+    setPrice(allVariantPrice);
+    setVariantFields((current) => {
+      const next = { ...current };
+      matrix.combinations.forEach((optionValues, index) => {
+        const key = JSON.stringify(optionValues);
+        next[key] = {
+          sku: current[key]?.sku ?? (matrix.combinations.length === 1 && !matrix.options.length ? sku : `${sku}-${index + 1}`),
+          price: allVariantPrice,
+          compareAt: current[key]?.compareAt ?? "",
+          barcode: current[key]?.barcode ?? "",
+          stock: current[key]?.stock ?? (matrix.options.length ? "0" : stock),
+        };
+      });
+      return next;
+    });
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (matrix.tooMany) {
@@ -646,6 +661,10 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
                 <input aria-label={`Option ${index + 1} values`} placeholder="Values, separated by commas" value={option.values} onChange={(event) => setOptionRows((current) => current.map((entry, row) => row === index ? { ...entry, values: event.target.value } : entry))} className="h-10 rounded-lg border border-neutral-300 px-3 text-sm" />
                 <button type="button" aria-label={`Remove option ${index + 1}`} onClick={() => setOptionRows((current) => current.filter((_, row) => row !== index))} className="rounded-lg border border-neutral-300 px-3 text-sm text-neutral-500">Remove</button>
               </div>)}
+            </div>
+            <div className="mt-5 flex flex-wrap items-end gap-3 rounded-xl bg-neutral-50 p-4">
+              <label className="min-w-[180px] flex-1 text-sm font-medium">Price for all variants (ZAR)<input aria-label="Price for all variants" type="number" min="0" step="0.01" value={allVariantPrice} onChange={(event) => setAllVariantPrice(event.target.value)} placeholder="0.00" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-300 bg-white px-3" /></label>
+              <button type="button" disabled={allVariantPrice.trim() === "" || !Number.isFinite(Number(allVariantPrice)) || Number(allVariantPrice) < 0 || matrix.tooMany} onClick={applyPriceToAllVariants} className="rounded-full bg-neutral-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">Apply to all variants</button>
             </div>
             {colorOption && <div className="mt-5 rounded-xl bg-neutral-50 p-4"><h4 className="text-sm font-semibold">Images by {colorOption.name}</h4><p className="mt-1 text-xs text-neutral-500">Assign one image to each colour. Every size using that colour will use the same image.</p><div className="mt-3 grid gap-3 sm:grid-cols-2">{colorOption.values.map((color) => <label key={color} className="rounded-xl border border-neutral-200 bg-white p-3 text-sm font-medium"><span className="flex items-center gap-2">{colorImageUrls[color] && <img src={colorImageUrls[color]} alt="" className="h-10 w-10 rounded-lg object-cover" />}{color}</span><input accept="image/jpeg,image/png,image/webp,image/gif" type="file" onChange={(event) => setColorImageFiles((current) => ({ ...current, [color]: event.target.files?.[0] ?? null }))} className="mt-2 block w-full text-xs file:mr-2 file:rounded-full file:border-0 file:bg-neutral-100 file:px-3 file:py-1.5" /></label>)}</div></div>}
             {matrix.combinations.length > 0 && <div className="mt-5 overflow-x-auto">
