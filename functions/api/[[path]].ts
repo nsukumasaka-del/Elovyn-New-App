@@ -73,6 +73,7 @@ const productColumns = {
   handle: products.handle,
   image_url: products.imageUrl,
   images_json: products.imagesJson,
+  is_listed: products.isListed,
   updated_at: products.updatedAt,
 };
 
@@ -823,11 +824,12 @@ async function resolveCheckoutItems(env: Env, input: unknown) {
     const variantQuery = `SELECT v.id AS variant_id, p.id AS product_id, v.sku, p.title, v.title AS variant_title,
       v.price, COALESCE(i.quantity, 0) AS available, COALESCE(i.track_quantity, 1) AS track_quantity
       FROM variants v INNER JOIN products p ON p.id = v.product_id
-      LEFT JOIN inventory_items i ON i.variant_id = v.id`;
-    let row = await env.DB!.prepare(`${variantQuery} WHERE v.id = ? LIMIT 1`).bind(requestItem.id).first<{
+      LEFT JOIN inventory_items i ON i.variant_id = v.id
+      WHERE p.is_listed = 1`;
+    let row = await env.DB!.prepare(`${variantQuery} AND v.id = ? LIMIT 1`).bind(requestItem.id).first<{
       variant_id: string; product_id: string; sku: string; title: string; variant_title: string; price: number; available: number; track_quantity: number;
     }>();
-    if (!row) row = await env.DB!.prepare(`${variantQuery} WHERE p.id = ? ORDER BY COALESCE(i.quantity, 0) DESC, v.created_at ASC LIMIT 1`).bind(requestItem.id).first();
+    if (!row) row = await env.DB!.prepare(`${variantQuery} AND p.id = ? ORDER BY COALESCE(i.quantity, 0) DESC, v.created_at ASC LIMIT 1`).bind(requestItem.id).first();
     if (!row) throw new ApiError("A product in your bag is no longer available.", 409);
     if (row.track_quantity && row.available < requestItem.quantity) throw new ApiError(`${row.title} does not have enough stock for this order.`, 409);
     const existing = resolved.find((item) => item.variant_id === row.variant_id);
@@ -1255,7 +1257,9 @@ async function route(
   }
 
   if (path === "/products" && method === "GET") {
-    const rows = await db.select(productColumns).from(products).orderBy(desc(products.updatedAt));
+    const rows = await db.select(productColumns).from(products)
+      .where(eq(products.isListed, true))
+      .orderBy(desc(products.updatedAt));
     return json({ products: rows }, 200, { "Cache-Control": "no-store" });
   }
 
@@ -1269,9 +1273,11 @@ async function route(
     if (!productKey || productKey.length > 120 || productKey.includes("/")) {
       throw new ApiError("Product was not found.", 404);
     }
+    const productIdentity = or(eq(products.id, productKey), eq(products.handle, productKey));
+    const currentUser = await getSessionUser(db, request);
     const [product] = await db.select(productColumns)
       .from(products)
-      .where(or(eq(products.id, productKey), eq(products.handle, productKey)))
+      .where(isConfiguredAdmin(currentUser, env) ? productIdentity : and(eq(products.isListed, true), productIdentity))
       .limit(1);
     if (!product) throw new ApiError("Product was not found.", 404);
     const [productOptions, productVariants] = await Promise.all([
@@ -1479,6 +1485,38 @@ async function route(
       status: products.status,
     }).from(products).where(eq(products.id, id)).limit(1);
     return json({ product: updated });
+  }
+
+  if (path === "/admin/products/bulk" && method === "PATCH") {
+    await requireAdmin(db, request, env);
+    const body = await bodyAsJson(request);
+    if (!Array.isArray(body.ids) || body.ids.length < 1 || body.ids.length > 500) {
+      throw new ApiError("Select between 1 and 500 products.", 400);
+    }
+    const ids = [...new Set(body.ids.map((id) => requiredString(id, "Product id", 100)))];
+    const updates: { isListed?: boolean; category?: string | null; updatedAt: ReturnType<typeof sql> } = {
+      updatedAt: sql`CURRENT_TIMESTAMP`,
+    };
+    if (typeof body.is_listed === "boolean") updates.isListed = body.is_listed;
+    if (Object.prototype.hasOwnProperty.call(body, "category")) {
+      updates.category = optionalText(body.category, "Category", 100);
+    }
+    if (updates.isListed === undefined && !Object.prototype.hasOwnProperty.call(updates, "category")) {
+      throw new ApiError("Choose at least one product field to update.", 400);
+    }
+    await db.update(products).set(updates).where(inArray(products.id, ids));
+    return json({ updated: ids.length });
+  }
+
+  if (path === "/admin/products/bulk" && method === "DELETE") {
+    await requireAdmin(db, request, env);
+    const body = await bodyAsJson(request);
+    if (!Array.isArray(body.ids) || body.ids.length < 1 || body.ids.length > 500) {
+      throw new ApiError("Select between 1 and 500 products.", 400);
+    }
+    const ids = [...new Set(body.ids.map((id) => requiredString(id, "Product id", 100)))];
+    await db.delete(products).where(inArray(products.id, ids));
+    return json({ deleted: ids.length });
   }
 
   if (path === "/admin/products" && method === "POST") {

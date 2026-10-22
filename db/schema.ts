@@ -39,11 +39,13 @@ export const products = sqliteTable("products", {
   imagesJson: text("images_json").notNull().default("[]"),
   supplierId: text("supplier_id"),
   supplierProductId: text("supplier_product_id"),
+  isListed: integer("is_listed", { mode: "boolean" }).notNull().default(true),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   check("products_price_check", sql`${table.price} >= 0`),
   check("products_stock_quantity_check", sql`${table.stockQuantity} >= 0`),
   check("products_status_check", sql`${table.status} IN ('In Stock', 'Low Stock', 'Out of Stock')`),
+  index("products_is_listed_idx").on(table.isListed),
   uniqueIndex("products_handle_idx").on(table.handle),
   uniqueIndex("products_supplier_external_idx").on(table.supplierId, table.supplierProductId),
 ]);

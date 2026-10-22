@@ -16,6 +16,7 @@ type Product = {
   status: "In Stock" | "Low Stock" | "Out of Stock";
   category: string | null;
   image_url: string | null;
+  is_listed: boolean;
 };
 type Stats = { total_sales: number | string; order_count: number | string; product_count: number | string };
 type Supplier = {
@@ -70,6 +71,9 @@ export function AdminPage() {
   const [syncingSupplierIds, setSyncingSupplierIds] = useState<Set<string>>(() => new Set());
   const [deletingSupplierId, setDeletingSupplierId] = useState("");
   const [deletingProductId, setDeletingProductId] = useState("");
+  const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(() => new Set());
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   function resetSupplierForm() {
     setSupplierId("");
@@ -101,6 +105,10 @@ export function AdminPage() {
   const loadData = useCallback(async () => {
     const inventory = await apiRequest<{ products: Product[]; stats: Stats }>("/admin/inventory");
     setProducts(inventory.products);
+    setSelectedProductIds((current) => {
+      const available = new Set(inventory.products.map((product) => product.id));
+      return new Set([...current].filter((id) => available.has(id)));
+    });
     setStats(inventory.stats);
     const supplierData = await apiRequest<{ suppliers: Supplier[] }>("/admin/suppliers");
     setSuppliers(supplierData.suppliers);
@@ -139,6 +147,41 @@ export function AdminPage() {
       toast.error(error instanceof Error ? error.message : "Could not delete the product.");
     } finally {
       setDeletingProductId("");
+    }
+  }
+
+  async function updateProducts(ids: string[], updates: { is_listed?: boolean; category?: string | null }, message: string) {
+    if (!ids.length) return false;
+    setBulkBusy(true);
+    try {
+      await apiRequest("/admin/products/bulk", {
+        method: "PATCH",
+        body: JSON.stringify({ ids, ...updates }),
+      });
+      await Promise.all([loadData(), refreshProducts()]);
+      toast.success(message);
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update the selected products.");
+      return false;
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function deleteSelectedProducts() {
+    const ids = [...selectedProductIds];
+    if (!ids.length || !window.confirm(`Delete ${ids.length} selected product${ids.length === 1 ? "" : "s"}? This permanently removes their variants and inventory from the storefront.`)) return;
+    setBulkBusy(true);
+    try {
+      await apiRequest("/admin/products/bulk", { method: "DELETE", body: JSON.stringify({ ids }) });
+      setSelectedProductIds(new Set());
+      await Promise.all([loadData(), refreshProducts()]);
+      toast.success(`${ids.length} product${ids.length === 1 ? "" : "s"} deleted.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not delete the selected products.");
+    } finally {
+      setBulkBusy(false);
     }
   }
 
@@ -270,18 +313,29 @@ export function AdminPage() {
 
           {tab === "inventory" && (
             <section className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
-              <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4"><div><h2 className="font-semibold">Product inventory</h2><p className="mt-1 text-sm text-neutral-500">{products.length} products · {stockCount} units</p></div><button onClick={() => void loadData().catch((error: Error) => toast.error(error.message))} className="text-sm underline">Refresh</button></div>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 px-5 py-4"><div><h2 className="font-semibold">Product inventory</h2><p className="mt-1 text-sm text-neutral-500">{products.length} products · {stockCount} units</p></div><button onClick={() => void loadData().catch((error: Error) => toast.error(error.message))} className="text-sm underline">Refresh</button></div>
+              {selectedProductIds.size > 0 && <div className="flex flex-wrap items-center gap-2 border-b border-neutral-200 bg-neutral-50 px-5 py-3">
+                <span className="mr-auto text-sm font-medium">{selectedProductIds.size} selected</span>
+                <button disabled={bulkBusy} onClick={() => setBulkEditOpen(true)} className="rounded-full border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium disabled:opacity-50">Edit selected</button>
+                <button disabled={bulkBusy} onClick={() => void updateProducts([...selectedProductIds], { is_listed: true }, "Selected products are now listed.")} className="rounded-full border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium disabled:opacity-50">List</button>
+                <button disabled={bulkBusy} onClick={() => void updateProducts([...selectedProductIds], { is_listed: false }, "Selected products are now unlisted.")} className="rounded-full border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium disabled:opacity-50">Unlist</button>
+                <button disabled={bulkBusy} onClick={() => void deleteSelectedProducts()} className="rounded-full border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-700 disabled:opacity-50">Delete selected</button>
+                <button disabled={bulkBusy} onClick={() => setSelectedProductIds(new Set())} className="px-2 py-1.5 text-sm underline disabled:opacity-50">Clear</button>
+              </div>}
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] text-left text-sm">
-                  <thead className="bg-neutral-50 text-xs uppercase tracking-wider text-neutral-500"><tr><th className="px-5 py-3">Product</th><th className="px-4 py-3">SKU</th><th className="px-4 py-3">Price</th><th className="px-4 py-3">Stock</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Adjust</th></tr></thead>
+                <table className="w-full min-w-[960px] text-left text-sm">
+                  <thead className="bg-neutral-50 text-xs uppercase tracking-wider text-neutral-500"><tr><th className="px-4 py-3"><input type="checkbox" aria-label="Select all inventory products" checked={products.length > 0 && selectedProductIds.size === products.length} onChange={(event) => setSelectedProductIds(event.target.checked ? new Set(products.map((product) => product.id)) : new Set())} className="h-4 w-4 accent-neutral-950" /></th><th className="px-3 py-3">Product</th><th className="px-4 py-3">SKU</th><th className="px-4 py-3">Price</th><th className="px-4 py-3">Stock</th><th className="px-4 py-3">Inventory</th><th className="px-4 py-3">Listing</th><th className="px-4 py-3">Actions</th></tr></thead>
                   <tbody className="divide-y divide-neutral-100">
                     {products.map((product) => <tr key={product.id}>
-                      <td className="px-5 py-4"><div className="flex items-center gap-3"><div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-lg bg-neutral-100">{product.image_url ? <img src={product.image_url} alt="" className="h-full w-full object-cover" /> : <Boxes className="h-5 w-5 text-neutral-400" />}</div><div><p className="font-medium">{product.title}</p><p className="text-xs text-neutral-500">{product.category}</p></div></div></td>
+                      <td className="px-4 py-4"><input type="checkbox" aria-label={`Select ${product.title}`} checked={selectedProductIds.has(product.id)} onChange={(event) => setSelectedProductIds((current) => { const next = new Set(current); if (event.target.checked) next.add(product.id); else next.delete(product.id); return next; })} className="h-4 w-4 accent-neutral-950" /></td>
+                      <td className="px-3 py-4"><div className="flex items-center gap-3"><div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-lg bg-neutral-100">{product.image_url ? <img src={product.image_url} alt="" className="h-full w-full object-cover" /> : <Boxes className="h-5 w-5 text-neutral-400" />}</div><div><p className="font-medium">{product.title}</p><p className="text-xs text-neutral-500">{product.category}</p></div></div></td>
                       <td className="px-4 py-4 text-neutral-600">{product.sku}</td>
                       <td className="px-4 py-4">R {Number(product.price).toFixed(2)}</td>
                       <td className="px-4 py-4 font-medium">{product.stock_quantity}</td>
                       <td className="px-4 py-4"><span className={`rounded-full px-2.5 py-1 text-xs ${product.status === "In Stock" ? "bg-emerald-50 text-emerald-700" : product.status === "Low Stock" ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-700"}`}>{product.status}</span></td>
+                      <td className="px-4 py-4"><span className={`rounded-full px-2.5 py-1 text-xs ${product.is_listed ? "bg-sky-50 text-sky-700" : "bg-neutral-100 text-neutral-600"}`}>{product.is_listed ? "Listed" : "Unlisted"}</span></td>
                       <td className="px-4 py-4"><div className="flex gap-2">
+                        <button disabled={bulkBusy} onClick={() => void updateProducts([product.id], { is_listed: !product.is_listed }, `${product.title} is now ${product.is_listed ? "unlisted" : "listed"}.`)} className="whitespace-nowrap rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium hover:bg-neutral-100 disabled:opacity-50">{product.is_listed ? "Unlist" : "List"}</button>
                         <button aria-label={`Edit ${product.title}`} onClick={() => setEditProductId(product.id)} className="rounded-lg border border-neutral-300 p-2 hover:bg-neutral-100"><Pencil className="h-4 w-4" /></button>
                         <button aria-label={`Decrease ${product.title} stock`} onClick={() => void changeStock(product, -1)} className="rounded-lg border border-neutral-300 p-2 hover:bg-neutral-100"><ArrowDownToLine className="h-4 w-4" /></button>
                         <button aria-label={`Increase ${product.title} stock`} onClick={() => void changeStock(product, 1)} className="rounded-lg border border-neutral-300 p-2 hover:bg-neutral-100"><ArrowUpFromLine className="h-4 w-4" /></button>
@@ -329,13 +383,34 @@ export function AdminPage() {
             </div>
           )}
 
-          {tab === "imports" && <ImportProductsPanel suppliers={suppliers} onImported={() => void loadData()} />}
+          {tab === "imports" && <ImportProductsPanel suppliers={suppliers} onImported={() => void Promise.all([loadData(), refreshProducts()])} />}
         </main>
       </div>
       {addOpen && <AddProductDialog onClose={() => setAddOpen(false)} onCreated={() => { setAddOpen(false); void Promise.all([loadData(), refreshProducts()]); }} />}
       {editProductId && <AddProductDialog productId={editProductId} onClose={() => setEditProductId(null)} onCreated={() => { setEditProductId(null); void Promise.all([loadData(), refreshProducts()]); }} />}
+      {bulkEditOpen && <BulkEditDialog count={selectedProductIds.size} busy={bulkBusy} onClose={() => setBulkEditOpen(false)} onSave={async (updates) => { const saved = await updateProducts([...selectedProductIds], updates, `${selectedProductIds.size} selected product${selectedProductIds.size === 1 ? "" : "s"} updated.`); if (saved) setBulkEditOpen(false); }} />}
     </div>
   );
+}
+
+function BulkEditDialog({ count, busy, onClose, onSave }: { count: number; busy: boolean; onClose: () => void; onSave: (updates: { is_listed?: boolean; category?: string | null }) => Promise<void> }) {
+  const [listing, setListing] = useState<"unchanged" | "listed" | "unlisted">("unchanged");
+  const [changeCategory, setChangeCategory] = useState(false);
+  const [category, setCategory] = useState("");
+  const canSave = listing !== "unchanged" || changeCategory;
+  return <div className="fixed inset-0 z-[95] grid place-items-center bg-black/45 p-4" onMouseDown={() => { if (!busy) onClose(); }}>
+    <section role="dialog" aria-modal="true" aria-labelledby="bulk-edit-title" className="w-full max-w-lg rounded-3xl bg-white p-7 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
+      <header className="flex items-center justify-between"><div><p className="eyebrow">Inventory</p><h2 id="bulk-edit-title" className="mt-1 text-2xl font-bold">Edit {count} selected product{count === 1 ? "" : "s"}</h2></div><button disabled={busy} aria-label="Close bulk editor" onClick={onClose} className="rounded-full p-2 hover:bg-neutral-100 disabled:opacity-50"><X className="h-5 w-5" /></button></header>
+      <div className="mt-6 space-y-5">
+        <label className="block text-sm font-medium">Listing status<select value={listing} onChange={(event) => setListing(event.target.value as typeof listing)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 bg-white px-3"><option value="unchanged">Leave unchanged</option><option value="listed">List on storefront</option><option value="unlisted">Unlist from storefront</option></select></label>
+        <div>
+          <label className="flex items-center gap-3 text-sm font-medium"><input type="checkbox" checked={changeCategory} onChange={(event) => setChangeCategory(event.target.checked)} className="h-4 w-4 accent-neutral-950" />Change category for every selected product</label>
+          {changeCategory && <input value={category} maxLength={100} onChange={(event) => setCategory(event.target.value)} placeholder="Category (leave blank to clear)" className="mt-2 h-11 w-full rounded-xl border border-neutral-300 px-3 text-sm" />}
+        </div>
+        <div className="flex justify-end gap-3"><button disabled={busy} onClick={onClose} className="btn-secondary disabled:opacity-50">Cancel</button><button disabled={busy || !canSave} onClick={() => void onSave({ ...(listing !== "unchanged" ? { is_listed: listing === "listed" } : {}), ...(changeCategory ? { category: category.trim() || null } : {}) })} className="btn-primary disabled:opacity-50">{busy ? "Saving…" : "Save changes"}</button></div>
+      </div>
+    </section>
+  </div>;
 }
 
 function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => void; onCreated: () => void; productId?: string }) {
@@ -738,7 +813,16 @@ function ImportProductsPanel({ onImported, suppliers }: { onImported: () => void
         method: "POST",
         body: JSON.stringify({ action: "details", product_ids: [...selectedProductIds] }),
       });
-      populateSupplierFeed(response.products, response.supplier.name, response.warnings);
+      const nextHeaders = [...new Set(response.products.flatMap((product) => Object.keys(product)))];
+      setSource("json");
+      setJsonText(JSON.stringify(response.products, null, 2));
+      loadRecords(response.products, nextHeaders);
+      setSelectionOpen(false);
+      const imported = await submitImportProducts(buildImportProducts(response.products, suggestedMapping(nextHeaders)));
+      if (imported) {
+        const warning = response.warnings.length ? ` ${response.warnings.join(" ")}` : "";
+        setSupplierNotice(`${imported.imported_count} product${imported.imported_count === 1 ? "" : "s"} from ${response.supplier.name} imported into inventory.${warning}`);
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not load the selected products.");
       setSelectionOpen(false);
@@ -782,11 +866,10 @@ function ImportProductsPanel({ onImported, suppliers }: { onImported: () => void
     });
   }
 
-  async function importRecords() {
+  async function submitImportProducts(products: Record<string, unknown>[]) {
     setBusy(true);
     setError("");
     try {
-      const products = buildImportProducts(records, mapping);
       const response = await apiRequest<{ job_id: string; status: string }>("/admin/products/import", {
         method: "POST",
         body: JSON.stringify({ products }),
@@ -817,15 +900,25 @@ function ImportProductsPanel({ onImported, suppliers }: { onImported: () => void
           onImported();
           if (completed.imported_count) toast.success(`${completed.imported_count} product${completed.imported_count === 1 ? "" : "s"} imported.`);
           if (completed.skipped_count) toast.message(`${completed.skipped_count} duplicate product${completed.skipped_count === 1 ? "" : "s"} skipped.`);
-          return;
+          return completed;
         }
       }
       toast.message("The import is still processing in the background. Check its status in a moment.");
+      return null;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Product import failed.");
       setJobId("");
+      return null;
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function importRecords() {
+    try {
+      await submitImportProducts(buildImportProducts(records, mapping));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Product import failed.");
     }
   }
 
@@ -988,8 +1081,8 @@ function ImportProductsPanel({ onImported, suppliers }: { onImported: () => void
         </div>
         <footer className="flex flex-col-reverse gap-3 border-t border-neutral-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-end sm:px-7">
           <button type="button" disabled={loadingSelected} onClick={() => setSelectionOpen(false)} className="btn-secondary disabled:opacity-50">Cancel</button>
-          <button type="button" disabled={!selectedProductIds.size || loadingSelected} onClick={() => void addSelectedToJsonFeed()} className="btn-primary disabled:opacity-50">
-            {loadingSelected ? "Loading variants and inventory…" : `Import ${selectedProductIds.size || ""} Selected to JSON Feed`}
+          <button type="button" disabled={!selectedProductIds.size || loadingSelected || busy} onClick={() => void addSelectedToJsonFeed()} className="btn-primary disabled:opacity-50">
+            {loadingSelected || busy ? "Importing into inventory…" : `Import ${selectedProductIds.size || ""} Selected to Inventory`}
           </button>
         </footer>
       </section>
