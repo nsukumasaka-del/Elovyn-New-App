@@ -1071,7 +1071,10 @@ async function supplierProductDetails(supplier: SupplierRecord, credentials: Sup
         const detailUrl = new URL("product/query", `${base.toString().replace(/\/$/, "")}/`);
         detailUrl.searchParams.set("pid", productId);
         const detailPayload = await cjJsonRequest(detailUrl, accessToken, storeHostname, signal);
-        products.push({ ...cjImportProductFromDetail({ id: productId }, detailPayload), supplier_product_id: productId });
+        const inventoryUrl = new URL("product/stock/getInventoryByPid", `${base.toString().replace(/\/$/, "")}/`);
+        inventoryUrl.searchParams.set("pid", productId);
+        const inventoryPayload = await cjJsonRequest(inventoryUrl, accessToken, storeHostname, signal);
+        products.push({ ...cjImportProductFromDetail({ id: productId }, detailPayload, inventoryPayload), supplier_product_id: productId });
       } catch (error) {
         if (errorMessage(error) === SUPPLIER_AUTHENTICATION_ERROR) throw error;
         warnings.push(`Product details could not be loaded for ${productId}.`);
@@ -1110,7 +1113,10 @@ async function supplierDirectProduct(supplier: SupplierRecord, credentials: Supp
     const productId = String(productData?.pid || productData?.id || "").trim();
     if (!productId) throw new ApiError("No exact CJ product matched that Product ID or SKU.", 404);
     const listEntry = { id: productId, nameEn: productData?.productNameEn, sku: productData?.productSku, bigImage: productData?.bigImage, threeCategoryName: productData?.categoryName };
-    return { products: [{ ...cjImportProductFromDetail(listEntry, productPayload), supplier_product_id: productId }], warnings: [] as string[] };
+    const inventoryUrl = new URL("product/stock/getInventoryByPid", `${base.toString().replace(/\/$/, "")}/`);
+    inventoryUrl.searchParams.set("pid", productId);
+    const inventoryPayload = await cjJsonRequest(inventoryUrl, accessToken, storeHostname, signal);
+    return { products: [{ ...cjImportProductFromDetail(listEntry, productPayload, inventoryPayload), supplier_product_id: productId }], warnings: [] as string[] };
   });
 }
 

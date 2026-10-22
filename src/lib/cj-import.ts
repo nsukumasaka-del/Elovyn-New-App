@@ -43,19 +43,36 @@ function stringArray(value: unknown) {
   return trimmed ? [trimmed] : [];
 }
 
-export function cjImportProductFromDetail(listEntry: unknown, detailPayload: unknown) {
+export function cjImportProductFromDetail(listEntry: unknown, detailPayload: unknown, inventoryPayload?: unknown) {
   const list = record(listEntry);
   const detail = record(record(detailPayload).data);
+  const inventoryData = record(record(inventoryPayload).data);
   const rawVariants = Array.isArray(detail.stanProducts)
     ? detail.stanProducts.map(record)
     : Array.isArray(detail.variants) ? detail.variants.map(record) : [];
   const inventoryByVariant = new Map<string, number>();
-  if (Array.isArray(detail.variantInventory)) {
-    for (const entry of detail.variantInventory.map(record)) {
+  const authoritativeVariantInventory = Array.isArray(inventoryData.variantInventories)
+    ? inventoryData.variantInventories
+    : Array.isArray(inventoryData.variantInventory) ? inventoryData.variantInventory : null;
+  const variantInventory = authoritativeVariantInventory ?? (Array.isArray(detail.variantInventory) ? detail.variantInventory : []);
+  if (Array.isArray(variantInventory)) {
+    for (const entry of variantInventory.map(record)) {
       const inventory = Array.isArray(entry.inventory) ? entry.inventory.map(record) : [];
       const variantId = text(entry.vid || entry.variantId || entry.id);
       if (variantId) inventoryByVariant.set(variantId, inventory.reduce((sum, warehouse) => sum + number(warehouse.totalInventory), 0));
     }
+  }
+  const authoritativeProductStock = Array.isArray(inventoryData.inventories)
+    ? inventoryData.inventories.map(record).reduce((sum, warehouse) => sum + number(warehouse.totalInventoryNum), 0)
+    : null;
+  if (inventoryPayload !== undefined && rawVariants.length > 1 && rawVariants.some((variant) => {
+    const variantId = text(variant.vid || variant.id);
+    return !variantId || !inventoryByVariant.has(variantId);
+  })) {
+    throw new Error("CJ did not return real-time inventory for every product variant. The product was not imported with an assumed zero quantity.");
+  }
+  if (inventoryPayload !== undefined && rawVariants.length === 1 && inventoryByVariant.size === 0 && authoritativeProductStock === null) {
+    throw new Error("CJ did not return a usable real-time inventory quantity. The product was not imported with an assumed zero quantity.");
   }
   const rawNames = stringArray(detail.variantkeyen || detail.productKeyEn || detail.productKeySet || detail.variantkey)
     .flatMap((value) => value.split("-").filter(Boolean));
@@ -75,6 +92,7 @@ export function cjImportProductFromDetail(listEntry: unknown, detailPayload: unk
       compare_at_price: null,
       inventory_quantity: inventoryByVariant.get(text(variant.vid))
         ?? inventoryByVariant.get(text(variant.id))
+        ?? (rawVariants.length === 1 ? authoritativeProductStock : null)
         ?? (Array.isArray(variant.inventories) ? variant.inventories.map(record).reduce((sum, inventory) => sum + number(inventory.totalInventory), 0) : number(variant.totalInventory)),
       barcode: text(variant.barcode) || null,
       image_url: text(variant.img || variant.variantImage) || null,
@@ -91,7 +109,7 @@ export function cjImportProductFromDetail(listEntry: unknown, detailPayload: unk
     description: text(detail.description || list.description),
     category: text(detail.category || detail.categoryName || list.threeCategoryName),
     brand: text(detail.supplierNameEn || detail.supplierName || list.supplierName) || "CJ Dropshipping",
-    stock_quantity: variants.length ? variantStock : number(detail.totalInventory || list.warehouseInventoryNum),
+    stock_quantity: variants.length ? variantStock : authoritativeProductStock ?? number(detail.totalInventory || list.warehouseInventoryNum),
     image_url: images[0] || "",
     images,
     options: names.map((name, index) => ({ name, values: [...valuesByOption[index]] })).filter((option) => option.values.length),

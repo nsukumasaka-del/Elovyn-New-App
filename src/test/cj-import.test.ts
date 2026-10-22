@@ -54,6 +54,33 @@ describe("CJ importer normalization", () => {
     expect(product.variants[0].inventory_quantity).toBe(0);
   });
 
+  it("uses CJ's dedicated real-time inventory response during import", () => {
+    const product = cjImportProductFromDetail({}, { data: {
+      sku: "CJ-WAFFLE",
+      nameen: "Waffle polo",
+      stanProducts: [
+        { id: "v-green-2xl", sku: "CJ-WAFFLE-GREEN-2XL", totalInventory: 0 },
+        { id: "v-black-2xl", sku: "CJ-WAFFLE-BLACK-2XL", totalInventory: 0 },
+      ],
+    } }, { data: {
+      variantInventories: [
+        { vid: "v-green-2xl", inventory: [{ totalInventory: 6641 }] },
+        { vid: "v-black-2xl", inventory: [{ totalInventory: 120 }] },
+      ],
+    } });
+    expect(product.stock_quantity).toBe(6761);
+    expect(product.variants.map((variant) => variant.inventory_quantity)).toEqual([6641, 120]);
+  });
+
+  it("rejects imports when CJ omits real-time stock for a variant", () => {
+    expect(() => cjImportProductFromDetail({}, { data: {
+      sku: "CJ-INCOMPLETE",
+      nameen: "Incomplete inventory",
+      stanProducts: [{ id: "v1", sku: "ONE" }, { id: "v2", sku: "TWO" }],
+    } }, { data: { variantInventories: [{ vid: "v1", inventory: [{ totalInventory: 5 }] }] } }))
+      .toThrow("did not return real-time inventory for every product variant");
+  });
+
   it("maps searchable CJ list results", () => {
     expect(cjSearchResultsFromPayload({ data: { content: [{ productList: [{ id: "p1", sku: "CJ-HOOD", nameEn: "Everyday Hoodie", bigImage: "https://example.com/hoodie.jpg", sellPrice: "12.50", threeCategoryName: "Hoodies" }] }] } })).toEqual([
       { id: "p1", sku: "CJ-HOOD", title: "Everyday Hoodie", image_url: "https://example.com/hoodie.jpg", price: 12.5, category: "Hoodies", currency: "USD" },
