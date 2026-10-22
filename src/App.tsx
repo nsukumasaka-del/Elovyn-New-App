@@ -11,6 +11,7 @@ import { ProductDetailPage } from "./pages/ProductDetail";
 import { AccountPage, LoginPage, OrdersPage, WishlistPage } from "./pages/StoreAccount";
 import { CategoryPage } from "./pages/Category";
 import { PaymentResultPage } from "./pages/PaymentResult";
+import { RouteScrollManager } from "./components/RouteScrollManager";
 
 const queryClient = new QueryClient();
 
@@ -21,6 +22,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <StoreProvider>
+          <RouteScrollManager />
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/products/:productKey" element={<ProductDetailPage />} />
