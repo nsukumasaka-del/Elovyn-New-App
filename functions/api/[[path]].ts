@@ -35,6 +35,15 @@ import { cjAccessTokenFromPayload, cjProductRecordsFromPayload } from "../../src
 import { cjCategoriesFromPayload, cjImportProductFromDetail, cjSearchResultsFromPayload, type SupplierCategory, type SupplierProductSearchResult } from "../../src/lib/cj-import";
 import { normalizeDeliveryAddress } from "../../src/lib/delivery-address";
 import { createYocoCheckout, registerYocoWebhook, verifyYocoWebhookSignature } from "../lib/yoco";
+import {
+  configuredSupplierRecords,
+  configuredSupplierRequest,
+  eproloSignature,
+  normalizeEproloProducts,
+  parseSupplierConfiguration,
+  pathValue,
+  type SupplierCredentials,
+} from "../../src/lib/supplier-engine";
 
 export interface Env {
   DB?: D1Database;
@@ -86,6 +95,7 @@ const supplierColumns = {
   auto_sync: supplierIntegrations.autoSync,
   is_active: supplierIntegrations.isActive,
   has_api_key: sql<boolean>`(${supplierIntegrations.encryptedApiKey} IS NOT NULL)`.as("has_api_key"),
+  has_api_secret: sql<boolean>`(${supplierIntegrations.encryptedApiSecret} IS NOT NULL)`.as("has_api_secret"),
   adapter: supplierIntegrations.adapter,
   field_mapping_json: supplierIntegrations.fieldMappingJson,
   connection_status: supplierIntegrations.connectionStatus,
@@ -845,6 +855,19 @@ async function resolveCheckoutItems(env: Env, input: unknown) {
 
 type SupplierRecord = typeof supplierIntegrations.$inferSelect;
 const CJ_AUTHENTICATION_URL = "https://developers.cjdropshipping.com/api2.0/v1/authentication/getAccessToken";
+const EPROLO_API_BASE_URL = "https://openapi.eprolo.com/";
+
+async function credentialsForSupplier(supplier: SupplierRecord, env: Env): Promise<SupplierCredentials> {
+  return {
+    apiKey: supplier.encryptedApiKey ? await decryptSecret(supplier.encryptedApiKey, env.SUPPLIER_SECRET_ENCRYPTION_KEY) : "",
+    apiSecret: supplier.encryptedApiSecret ? await decryptSecret(supplier.encryptedApiSecret, env.SUPPLIER_SECRET_ENCRYPTION_KEY) : "",
+  };
+}
+
+function requireSupplierCredentials(supplier: SupplierRecord) {
+  if (supplier.adapter === "cj" && !supplier.encryptedApiKey) throw new ApiError("CJ API credentials are not configured.", 400);
+  if (supplier.adapter === "eprolo" && (!supplier.encryptedApiKey || !supplier.encryptedApiSecret)) throw new ApiError("EPROLO API Key and Secret are not configured.", 400);
+}
 
 function safeSupplierUrl(value: string, storeHostname = "") {
   const validationError = supplierUrlValidationError(value, storeHostname);
@@ -898,25 +921,45 @@ async function cjJsonRequest(url: URL, accessToken: string, storeHostname: strin
   return checkedCjPayload(result.payload);
 }
 
-async function supplierFetch(supplier: SupplierRecord, token: string, validateOnly = false, storeHostname = "") {
-  const base = safeSupplierUrl(supplier.apiBaseUrl || (supplier.adapter === "cj" ? "https://developers.cjdropshipping.com/api2.0/v1" : ""), storeHostname);
-  const url = supplier.adapter === "cj"
+async function supplierFetch(supplier: SupplierRecord, credentials: SupplierCredentials, validateOnly = false, storeHostname = "") {
+  const defaultBase = supplier.adapter === "cj" ? "https://developers.cjdropshipping.com/api2.0/v1" : supplier.adapter === "eprolo" ? EPROLO_API_BASE_URL : "";
+  const base = safeSupplierUrl(supplier.apiBaseUrl || defaultBase, storeHostname);
+  let url = supplier.adapter === "cj"
     ? new URL(validateOnly ? "setting/get" : "product/listV2?page=1&size=50", `${base.toString().replace(/\/$/, "")}/`)
     : base;
+  let init: RequestInit = { method: "GET", headers: { Accept: "application/json" } };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15000);
   try {
-    let requestToken = token;
     if (supplier.adapter === "cj") {
-      requestToken = await cjAccessTokenForSupplier(supplier, token, storeHostname, controller.signal);
+      const requestToken = await cjAccessTokenForSupplier(supplier, credentials.apiKey, storeHostname, controller.signal);
+      init.headers = { Accept: "application/json", "CJ-Access-Token": requestToken };
+    } else if (supplier.adapter === "eprolo") {
+      if (!credentials.apiKey || !credentials.apiSecret) throw new ApiError("EPROLO API Key and Secret are required.", 400);
+      if (url.pathname === "/" || !url.pathname.endsWith(".html")) url = new URL("product_list.html", `${url.toString().replace(/\/$/, "")}/`);
+      const timestamp = String(Date.now());
+      url.searchParams.set("page_index", "0");
+      url.searchParams.set("page_size", validateOnly ? "1" : "50");
+      url.searchParams.set("status", "1");
+      url.searchParams.set("timestamp", timestamp);
+      url.searchParams.set("sign", eproloSignature(credentials.apiKey, timestamp, credentials.apiSecret));
+      init.headers = { Accept: "application/json", "Content-Type": "application/json", apiKey: credentials.apiKey };
+    } else {
+      const configured = configuredSupplierRequest(base, parseSupplierConfiguration(supplier.fieldMappingJson), credentials);
+      url = configured.url;
+      init = configured.init;
     }
-    const response = await fetch(url, { headers: requestToken ? { [supplier.adapter === "cj" ? "CJ-Access-Token" : "Authorization"]: supplier.adapter === "cj" ? requestToken : `Bearer ${requestToken}`, Accept: "application/json" } : { Accept: "application/json" }, redirect: "manual", signal: controller.signal });
+    const response = await fetch(url, { ...init, redirect: "manual", signal: controller.signal });
     const redirectedUrlError = supplierUrlValidationError(response.url || url.toString(), storeHostname);
     if (redirectedUrlError) throw new ApiError(`Supplier request was redirected to an invalid destination. ${redirectedUrlError}`, 400);
     const result = await readSupplierJsonResponse(response);
     if (!result.ok) throw new ApiError(result.error, 400);
     const payload = result.payload;
-    return supplier.adapter === "cj" ? checkedCjPayload(payload) : payload;
+    if (supplier.adapter === "cj") return checkedCjPayload(payload);
+    if (supplier.adapter === "eprolo" && (!payload || typeof payload !== "object" || String((payload as { code?: unknown }).code) !== "0")) {
+      throw new ApiError(`EPROLO rejected the request: ${String((payload as { msg?: unknown })?.msg || "unknown error")}`, 400);
+    }
+    return payload;
   } catch (error) {
     if (error instanceof ApiError) throw error;
     throw new ApiError(error instanceof Error && error.name === "AbortError" ? "Supplier request timed out." : `Could not reach supplier: ${errorMessage(error)}`, 400);
@@ -936,14 +979,14 @@ async function withCjSession<T>(supplier: SupplierRecord, token: string, storeHo
   } finally { clearTimeout(timer); }
 }
 
-async function supplierProductSearch(supplier: SupplierRecord, token: string, storeHostname: string, keyword = "", categoryId = "") {
+async function supplierProductSearch(supplier: SupplierRecord, credentials: SupplierCredentials, storeHostname: string, keyword = "", categoryId = "") {
   if (supplier.adapter !== "cj") {
-    const incoming = supplierProducts(await supplierFetch(supplier, token, false, storeHostname), supplier);
+    const incoming = supplierProducts(await supplierFetch(supplier, credentials, false, storeHostname), supplier);
     const normalizedKeyword = keyword.toLowerCase();
     return incoming.filter(({ product }) => (!normalizedKeyword || `${product.title} ${product.sku}`.toLowerCase().includes(normalizedKeyword)) && (!categoryId || product.category === categoryId))
       .map(({ externalId, product }): SupplierProductSearchResult => ({ id: externalId, sku: product.sku, title: product.title, image_url: product.image_url || "", price: product.price, category: product.category || "", currency: "" }));
   }
-  return withCjSession(supplier, token, storeHostname, async (base, accessToken, signal) => {
+  return withCjSession(supplier, credentials.apiKey, storeHostname, async (base, accessToken, signal) => {
     const listUrl = new URL("product/listV2", `${base.toString().replace(/\/$/, "")}/`);
     listUrl.searchParams.set("page", "1");
     listUrl.searchParams.set("size", "24");
@@ -954,23 +997,23 @@ async function supplierProductSearch(supplier: SupplierRecord, token: string, st
   });
 }
 
-async function supplierCategoryOptions(supplier: SupplierRecord, token: string, storeHostname: string) {
+async function supplierCategoryOptions(supplier: SupplierRecord, credentials: SupplierCredentials, storeHostname: string) {
   if (supplier.adapter !== "cj") {
-    const names = [...new Set(supplierProducts(await supplierFetch(supplier, token, false, storeHostname), supplier).map(({ product }) => product.category).filter(Boolean))] as string[];
+    const names = [...new Set(supplierProducts(await supplierFetch(supplier, credentials, false, storeHostname), supplier).map(({ product }) => product.category).filter(Boolean))] as string[];
     return names.map((name): SupplierCategory => ({ id: name, name, group: "Supplier categories" }));
   }
-  return withCjSession(supplier, token, storeHostname, async (base, accessToken, signal) => {
+  return withCjSession(supplier, credentials.apiKey, storeHostname, async (base, accessToken, signal) => {
     const categoryUrl = new URL("product/getCategory", `${base.toString().replace(/\/$/, "")}/`);
     return cjCategoriesFromPayload(await cjJsonRequest(categoryUrl, accessToken, storeHostname, signal));
   });
 }
 
-async function supplierProductDetails(supplier: SupplierRecord, token: string, storeHostname: string, productIds: string[]) {
+async function supplierProductDetails(supplier: SupplierRecord, credentials: SupplierCredentials, storeHostname: string, productIds: string[]) {
   if (supplier.adapter !== "cj") {
     const selected = new Set(productIds);
-    return { products: supplierProducts(await supplierFetch(supplier, token, false, storeHostname), supplier).filter(({ externalId }) => selected.has(externalId)).map(({ product }) => product), warnings: [] as string[] };
+    return { products: supplierProducts(await supplierFetch(supplier, credentials, false, storeHostname), supplier).filter(({ externalId }) => selected.has(externalId)).map(({ product }) => product), warnings: [] as string[] };
   }
-  return withCjSession(supplier, token, storeHostname, async (base, accessToken, signal) => {
+  return withCjSession(supplier, credentials.apiKey, storeHostname, async (base, accessToken, signal) => {
     const products: ReturnType<typeof cjImportProductFromDetail>[] = [];
     const warnings: string[] = [];
     for (const productId of productIds) {
@@ -990,14 +1033,14 @@ async function supplierProductDetails(supplier: SupplierRecord, token: string, s
   }, 45000);
 }
 
-async function supplierDirectProduct(supplier: SupplierRecord, token: string, storeHostname: string, query: string) {
+async function supplierDirectProduct(supplier: SupplierRecord, credentials: SupplierCredentials, storeHostname: string, query: string) {
   if (supplier.adapter !== "cj") {
-    const incoming = supplierProducts(await supplierFetch(supplier, token, false, storeHostname), supplier);
+    const incoming = supplierProducts(await supplierFetch(supplier, credentials, false, storeHostname), supplier);
     const match = incoming.find(({ externalId, product }) => externalId.toLowerCase() === query.toLowerCase() || product.sku.toLowerCase() === query.toLowerCase());
     if (!match) throw new ApiError("No exact product matched that supplier product ID or SKU.", 404);
     return { products: [match.product], warnings: [] as string[] };
   }
-  return withCjSession(supplier, token, storeHostname, async (base, accessToken, signal) => {
+  return withCjSession(supplier, credentials.apiKey, storeHostname, async (base, accessToken, signal) => {
     let productData: Record<string, unknown> | null = null;
     let productPayload: unknown = null;
     for (const parameter of ["pid", "productSku"] as const) {
@@ -1022,18 +1065,20 @@ async function supplierDirectProduct(supplier: SupplierRecord, token: string, st
   });
 }
 
-function pathValue(record: unknown, path: string) {
-  return path.split(".").reduce<unknown>((value, key) => value && typeof value === "object" ? (value as Record<string, unknown>)[key] : undefined, record);
-}
-
 function supplierProducts(payload: unknown, supplier: SupplierRecord) {
+  if (supplier.adapter === "eprolo") {
+    return normalizeEproloProducts(payload).slice(0, 50).map(({ externalId, product }) => {
+      try { return { externalId, product: normalizeProductInput(product) }; }
+      catch (error) { throw new ApiError(`${product.title || `EPROLO product ${externalId}`}: ${errorMessage(error)}`, 400); }
+    });
+  }
   let records: unknown[] | undefined;
   if (supplier.adapter === "cj") records = cjProductRecordsFromPayload(payload) ?? undefined;
-  else records = Array.isArray(payload) ? payload : (pathValue(payload, "products") || pathValue(payload, "data.products") || pathValue(payload, "data")) as unknown[] | undefined;
+  else records = configuredSupplierRecords(payload, parseSupplierConfiguration(supplier.fieldMappingJson));
   if (!Array.isArray(records)) throw new ApiError("Supplier response does not contain a product array.", 400);
-  let mapping: Record<string, string> = {};
-  try { mapping = JSON.parse(supplier.fieldMappingJson || "{}"); } catch { throw new ApiError("Saved supplier field mapping is invalid.", 500); }
-  const defaults = supplier.adapter === "cj" ? { external_id: "id", title: "nameEn", sku: "sku", price: "sellPrice", category: "threeCategoryName", image_url: "bigImage", stock_quantity: "warehouseInventoryNum" } : { external_id: "id", title: "title", sku: "sku", price: "price", category: "category", image_url: "image_url", stock_quantity: "stock_quantity", variants: "variants", options: "options" };
+  const configuration = parseSupplierConfiguration(supplier.fieldMappingJson);
+  const mapping = configuration.fields;
+  const defaults = supplier.adapter === "cj" ? { external_id: "id", title: "nameEn", sku: "sku", price: "sellPrice", category: "threeCategoryName", image_url: "bigImage", stock_quantity: "warehouseInventoryNum" } : { external_id: "id", title: "title", description: "description", sku: "sku", price: "price", category: "category", image_url: "image_url", images: "images", stock_quantity: "stock_quantity", variants: "variants", options: "options" };
   return records.slice(0, 50).map((entry, index) => {
     const mapped = Object.fromEntries(Object.entries({ ...defaults, ...mapping }).map(([key, path]) => [key, pathValue(entry, path)]));
     const rawPrice = typeof mapped.price === "string" ? mapped.price.split("-")[0] : mapped.price;
@@ -1041,13 +1086,13 @@ function supplierProducts(payload: unknown, supplier: SupplierRecord) {
   });
 }
 
-async function syncSupplier(env: Env, db: ReturnType<typeof createDb>, supplier: SupplierRecord, token: string, storeHostname = "") {
+async function syncSupplier(env: Env, db: ReturnType<typeof createDb>, supplier: SupplierRecord, credentials: SupplierCredentials, storeHostname = "") {
   const historyId = crypto.randomUUID();
   let imported = 0, updated = 0, total = 0;
   await db.insert(supplierSyncHistory).values({ id: historyId, supplierId: supplier.id, status: "running" });
   await db.update(supplierIntegrations).set({ connectionStatus: "syncing", lastSyncError: null, updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(supplierIntegrations.id, supplier.id));
   try {
-    const incoming = supplierProducts(await supplierFetch(supplier, token, false, storeHostname), supplier);
+    const incoming = supplierProducts(await supplierFetch(supplier, credentials, false, storeHostname), supplier);
     total = incoming.length;
     for (const item of incoming) {
       const existing = await env.DB!.prepare("SELECT id, supplier_id FROM products WHERE (supplier_id = ? AND supplier_product_id = ?) OR lower(sku) = lower(?) LIMIT 1").bind(supplier.id, item.externalId, item.product.sku).first<{ id: string; supplier_id: string | null }>();
@@ -1691,7 +1736,7 @@ async function route(
     const body = await bodyAsJson(request);
     const name = requiredString(body.name, "Supplier name", 100);
     const id = typeof body.id === "string" && body.id.trim() ? body.id.trim() : crypto.randomUUID();
-    const adapter = body.adapter === "cj" ? "cj" : "generic_json";
+    const adapter = body.adapter === "cj" || body.adapter === "eprolo" ? body.adapter : "generic_json";
     const apiBaseUrl = typeof body.api_base_url === "string" ? body.api_base_url.trim() : "";
     const webhookUrl = typeof body.webhook_url === "string" ? body.webhook_url.trim() : "";
     if (apiBaseUrl) safeSupplierUrl(apiBaseUrl, url.hostname);
@@ -1701,15 +1746,24 @@ async function route(
         if (parsed.protocol !== "https:") throw new Error("https required");
       } catch { throw new ApiError("Webhook URL must be a valid HTTPS URL.", 400); }
     }
-    if (!apiBaseUrl && adapter !== "cj") throw new ApiError("A product feed URL is required.", 400);
+    if (!apiBaseUrl && adapter === "generic_json") throw new ApiError("A product feed URL is required.", 400);
     const apiKey = typeof body.api_key === "string" ? body.api_key.trim() : "";
+    const apiSecret = typeof body.api_secret === "string" ? body.api_secret.trim() : "";
     const accountEmail = typeof body.account_email === "string" ? body.account_email.trim().toLowerCase() : "";
     if (adapter === "cj" && accountEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(accountEmail)) throw new ApiError("CJ account email must be a valid email address.", 400);
     const [saved] = await db.select().from(supplierIntegrations).where(eq(supplierIntegrations.id, id)).limit(1);
-    const token = apiKey || (saved?.encryptedApiKey ? await decryptSecret(saved.encryptedApiKey, env.SUPPLIER_SECRET_ENCRYPTION_KEY) : "");
-    if (!token && adapter === "cj") throw new ApiError("A CJ API key is required to request an access token.", 400);
+    const credentials: SupplierCredentials = {
+      apiKey: apiKey || (saved?.encryptedApiKey ? await decryptSecret(saved.encryptedApiKey, env.SUPPLIER_SECRET_ENCRYPTION_KEY) : ""),
+      apiSecret: apiSecret || (saved?.encryptedApiSecret ? await decryptSecret(saved.encryptedApiSecret, env.SUPPLIER_SECRET_ENCRYPTION_KEY) : ""),
+    };
+    if (!credentials.apiKey && adapter === "cj") throw new ApiError("A CJ API key is required to request an access token.", 400);
+    if (adapter === "eprolo" && (!credentials.apiKey || !credentials.apiSecret)) throw new ApiError("EPROLO API Key and Secret are required.", 400);
     const encryptedKey = apiKey ? await encryptSecret(apiKey, env.SUPPLIER_SECRET_ENCRYPTION_KEY) : null;
+    const encryptedSecret = apiSecret ? await encryptSecret(apiSecret, env.SUPPLIER_SECRET_ENCRYPTION_KEY) : null;
     const fieldMapping = body.field_mapping && typeof body.field_mapping === "object" && !Array.isArray(body.field_mapping) ? body.field_mapping : {};
+    if (adapter === "generic_json") {
+      try { parseSupplierConfiguration(JSON.stringify(fieldMapping)); } catch (error) { throw new ApiError(errorMessage(error), 400); }
+    }
     const autoSync = body.auto_sync === true;
     const isActive = body.is_active !== false;
     const values = {
@@ -1723,6 +1777,7 @@ async function route(
       autoSync,
       isActive,
       ...(encryptedKey ? { encryptedApiKey: encryptedKey } : {}),
+      ...(encryptedSecret ? { encryptedApiSecret: encryptedSecret } : {}),
     };
     const rows = await db
       .insert(supplierIntegrations)
@@ -1735,8 +1790,8 @@ async function route(
     const stored = await db.select().from(supplierIntegrations).where(eq(supplierIntegrations.id, id)).limit(1);
     let sync = { imported: 0, updated: 0, total: 0 };
     try {
-      if (isActive) sync = await syncSupplier(env, db, stored[0], token, url.hostname);
-      else await supplierFetch(stored[0], token, true, url.hostname);
+      if (isActive) sync = await syncSupplier(env, db, stored[0], credentials, url.hostname);
+      else await supplierFetch(stored[0], credentials, true, url.hostname);
     } catch (error) {
       await db.update(supplierIntegrations).set({ connectionStatus: "error", lastSyncError: errorMessage(error).slice(0, 1000), updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(supplierIntegrations.id, id));
       throw error;
@@ -1752,9 +1807,8 @@ async function route(
     const [supplier] = await db.select().from(supplierIntegrations).where(eq(supplierIntegrations.id, id)).limit(1);
     if (!supplier) throw new ApiError("Supplier was not found.", 404);
     if (!supplier.isActive) throw new ApiError("This supplier is inactive. Enable it before syncing.", 400);
-    if (!supplier.encryptedApiKey && supplier.adapter === "cj") throw new ApiError("Supplier credentials are not configured.", 400);
-    const token = supplier.encryptedApiKey ? await decryptSecret(supplier.encryptedApiKey, env.SUPPLIER_SECRET_ENCRYPTION_KEY) : "";
-    const sync = await syncSupplier(env, db, supplier, token, url.hostname);
+    requireSupplierCredentials(supplier);
+    const sync = await syncSupplier(env, db, supplier, await credentialsForSupplier(supplier, env), url.hostname);
     const refreshed = await db.select(supplierColumns).from(supplierIntegrations).where(eq(supplierIntegrations.id, id)).limit(1);
     return json({ supplier: refreshed[0], sync });
   }
@@ -1765,9 +1819,8 @@ async function route(
     const [supplier] = await db.select().from(supplierIntegrations).where(eq(supplierIntegrations.id, id)).limit(1);
     if (!supplier) throw new ApiError("Supplier was not found.", 404);
     if (!supplier.isActive) throw new ApiError("This supplier is inactive. Enable it before loading categories.", 400);
-    if (!supplier.encryptedApiKey && supplier.adapter === "cj") throw new ApiError("Supplier credentials are not configured.", 400);
-    const token = supplier.encryptedApiKey ? await decryptSecret(supplier.encryptedApiKey, env.SUPPLIER_SECRET_ENCRYPTION_KEY) : "";
-    return json({ categories: await supplierCategoryOptions(supplier, token, url.hostname) });
+    requireSupplierCredentials(supplier);
+    return json({ categories: await supplierCategoryOptions(supplier, await credentialsForSupplier(supplier, env), url.hostname) });
   }
 
   if (path.startsWith("/admin/suppliers/") && path.endsWith("/fetch-products") && method === "POST") {
@@ -1776,25 +1829,25 @@ async function route(
     const [supplier] = await db.select().from(supplierIntegrations).where(eq(supplierIntegrations.id, id)).limit(1);
     if (!supplier) throw new ApiError("Supplier was not found.", 404);
     if (!supplier.isActive) throw new ApiError("This supplier is inactive. Enable it before fetching products.", 400);
-    if (!supplier.encryptedApiKey && supplier.adapter === "cj") throw new ApiError("Supplier credentials are not configured.", 400);
-    const token = supplier.encryptedApiKey ? await decryptSecret(supplier.encryptedApiKey, env.SUPPLIER_SECRET_ENCRYPTION_KEY) : "";
+    requireSupplierCredentials(supplier);
+    const credentials = await credentialsForSupplier(supplier, env);
     const body = await bodyAsJson(request);
     const action = typeof body.action === "string" ? body.action : "search";
     const supplierSummary = { id: supplier.id, name: supplier.name, adapter: supplier.adapter };
     if (action === "search") {
       const keyword = typeof body.keyword === "string" ? body.keyword.trim().slice(0, 200) : "";
       const categoryId = typeof body.category_id === "string" ? body.category_id.trim().slice(0, 200) : "";
-      return json({ supplier: supplierSummary, products: await supplierProductSearch(supplier, token, url.hostname, keyword, categoryId) });
+      return json({ supplier: supplierSummary, products: await supplierProductSearch(supplier, credentials, url.hostname, keyword, categoryId) });
     }
     if (action === "details") {
       if (!Array.isArray(body.product_ids) || !body.product_ids.length || body.product_ids.length > 20) throw new ApiError("Select between 1 and 20 products to import.", 400);
       const productIds = [...new Set(body.product_ids.map((value) => typeof value === "string" ? value.trim() : "").filter(Boolean))];
       if (!productIds.length) throw new ApiError("Selected product IDs are invalid.", 400);
-      return json({ supplier: supplierSummary, ...await supplierProductDetails(supplier, token, url.hostname, productIds) });
+      return json({ supplier: supplierSummary, ...await supplierProductDetails(supplier, credentials, url.hostname, productIds) });
     }
     if (action === "direct") {
       const query = requiredString(body.query, "CJ Product ID or SKU", 200);
-      return json({ supplier: supplierSummary, ...await supplierDirectProduct(supplier, token, url.hostname, query) });
+      return json({ supplier: supplierSummary, ...await supplierDirectProduct(supplier, credentials, url.hostname, query) });
     }
     throw new ApiError("Supplier product action is invalid.", 400);
   }

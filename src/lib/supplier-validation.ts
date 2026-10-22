@@ -36,7 +36,7 @@ export async function readSupplierJsonResponse(response: Response) {
     return { ok: false as const, error: `Supplier returned HTTP ${response.status}. Check the URL and credentials.` };
   }
   const contentType = response.headers.get("content-type")?.toLowerCase() || "";
-  if (!contentType.includes("application/json")) {
+  if (!/(?:application|text)\/(?:[\w.-]+\+)?json\b/.test(contentType)) {
     return { ok: false as const, error: `Supplier returned ${contentType || "an unknown content type"} instead of JSON. Make sure the URL points directly to a JSON feed or API endpoint, not a web page.` };
   }
   try {

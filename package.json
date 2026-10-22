@@ -9,11 +9,13 @@
     "dev:cloudflare": "npm run build && wrangler --config wrangler.local.toml d1 migrations apply elovyn-store --local && wrangler pages dev dist --config wrangler.local.toml",
     "build": "vite build",
     "build:dev": "vite build --mode development",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build",
     "deploy:cloudflare": "npm run build && wrangler pages deploy dist --project-name elovyn-new-app",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "typecheck": "tsc --project tsconfig.app.json && npm run typecheck:worker",
     "typecheck:worker": "tsc --project tsconfig.node.json"
   },
   "dependencies": {

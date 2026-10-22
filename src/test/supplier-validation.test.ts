@@ -31,6 +31,9 @@ describe("supplier feed safeguards", () => {
 
     const valid = await readSupplierJsonResponse(new Response('{"products":[]}', { headers: { "Content-Type": "application/json; charset=utf-8" } }));
     expect(valid).toEqual({ ok: true, payload: { products: [] } });
+
+    const eproloStyle = await readSupplierJsonResponse(new Response('{"code":"0","data":[]}', { headers: { "Content-Type": "text/json;charset=utf-8" } }));
+    expect(eproloStyle).toEqual({ ok: true, payload: { code: "0", data: [] } });
   });
 });
 

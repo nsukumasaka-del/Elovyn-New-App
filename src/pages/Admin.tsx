@@ -28,7 +28,8 @@ type Supplier = {
   auto_sync: boolean;
   is_active: boolean;
   has_api_key: boolean;
-  adapter: "cj" | "generic_json";
+  has_api_secret: boolean;
+  adapter: "cj" | "eprolo" | "generic_json";
   field_mapping_json: string;
   connection_status: "pending" | "syncing" | "connected" | "error";
   last_sync_at: string | null;
@@ -38,6 +39,24 @@ type Supplier = {
 type VariantFields = { sku: string; price: string; compareAt: string; barcode: string; stock: string };
 type SupplierSearchProduct = { id: string; sku: string; title: string; image_url: string; price: number; category: string; currency: string };
 type SupplierCategory = { id: string; name: string; group: string };
+
+const customSupplierPresets = {
+  "API key headers": {
+    products_path: "data.list",
+    request: { method: "GET", headers: { "X-Api-Key": "{{api_key}}", "X-Api-Secret": "{{api_secret}}" }, query: { page: 1, limit: 50 } },
+    fields: { external_id: "id", title: "product_name", description: "description", sku: "sku", price: "sale_price", stock_quantity: "inventory", image_url: "image", images: "images", category: "category", variants: "variants", options: "options" },
+  },
+  "Bearer token": {
+    products_path: "result.items",
+    request: { method: "GET", headers: { Authorization: "Bearer {{api_key}}" }, query: { page: 1, page_size: 50 } },
+    fields: { external_id: "id", title: "name", description: "description", sku: "sku", price: "price", stock_quantity: "stock", image_url: "image_url", category: "category" },
+  },
+  "POST JSON": {
+    products_path: "data.products",
+    request: { method: "POST", headers: { "app-key": "{{api_key}}", "app-secret": "{{api_secret}}" }, body: { page: 1, limit: 50 } },
+    fields: { external_id: "product_id", title: "title", description: "description", sku: "sku", price: "price", stock_quantity: "quantity", image_url: "image", category: "category" },
+  },
+} as const;
 
 const tabs = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -62,10 +81,11 @@ export function AdminPage() {
   const [apiBaseUrl, setApiBaseUrl] = useState("");
   const [webhookUrl, setWebhookUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [apiSecret, setApiSecret] = useState("");
   const [supplierAccountEmail, setSupplierAccountEmail] = useState("");
   const [autoSync, setAutoSync] = useState(false);
   const [supplierActive, setSupplierActive] = useState(true);
-  const [supplierAdapter, setSupplierAdapter] = useState<"cj" | "generic_json">("cj");
+  const [supplierAdapter, setSupplierAdapter] = useState<"cj" | "eprolo" | "generic_json">("cj");
   const [fieldMapping, setFieldMapping] = useState("{}");
   const [savingSupplier, setSavingSupplier] = useState(false);
   const [syncingSupplierIds, setSyncingSupplierIds] = useState<Set<string>>(() => new Set());
@@ -81,6 +101,7 @@ export function AdminPage() {
     setApiBaseUrl("");
     setWebhookUrl("");
     setApiKey("");
+    setApiSecret("");
     setSupplierAccountEmail("");
     setAutoSync(false);
     setSupplierActive(true);
@@ -204,6 +225,7 @@ export function AdminPage() {
           api_base_url: apiBaseUrl,
           webhook_url: webhookUrl,
           api_key: apiKey,
+          api_secret: apiSecret,
           account_email: supplierAccountEmail,
           auto_sync: autoSync,
           is_active: supplierActive,
@@ -226,6 +248,7 @@ export function AdminPage() {
     setApiBaseUrl(supplier.api_base_url ?? "");
     setWebhookUrl(supplier.webhook_url ?? "");
     setApiKey("");
+    setApiSecret("");
     setSupplierAccountEmail(supplier.account_email ?? "");
     setAutoSync(supplier.auto_sync);
     setSupplierActive(supplier.is_active);
@@ -354,13 +377,14 @@ export function AdminPage() {
                 <div className="flex items-center justify-between gap-3"><h2 className="font-semibold">{supplierId ? "Edit supplier" : "Add a new supplier"}</h2>{supplierId && <button type="button" onClick={beginNewSupplier} className="text-sm font-medium underline">Add another</button>}</div>
                 <p className="mt-1 text-sm text-neutral-500">Supplier credentials are encrypted at rest and never returned to the browser.</p>
                 <form onSubmit={(event) => void saveSupplier(event)} className="mt-5 space-y-4">
-                  <label className="block text-sm font-medium">Integration type<select value={supplierAdapter} onChange={(event) => setSupplierAdapter(event.target.value as typeof supplierAdapter)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 bg-white px-3"><option value="cj">CJ Dropshipping</option><option value="generic_json">Custom or ZA supplier (JSON/API feed)</option></select><span className="mt-1 block text-xs font-normal text-neutral-500">Choose the custom option for ZA Dropshipping or any supplier that provides a JSON product API/feed.</span></label>
+                  <label className="block text-sm font-medium">Integration type<select value={supplierAdapter} onChange={(event) => setSupplierAdapter(event.target.value as typeof supplierAdapter)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 bg-white px-3"><option value="cj">CJ Dropshipping</option><option value="eprolo">EPROLO</option><option value="generic_json">Custom or ZA supplier (JSON/API feed)</option></select><span className="mt-1 block text-xs font-normal text-neutral-500">EPROLO uses its native signed API. Custom feeds can configure methods, headers, query parameters, request bodies, and response paths without backend changes.</span></label>
                   <label className="block text-sm font-medium">Supplier name<input required value={supplierName} onChange={(event) => setSupplierName(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
                   {supplierAdapter === "cj" && <label className="block text-sm font-medium">CJ account email (optional)<input type="email" autoComplete="email" value={supplierAccountEmail} onChange={(event) => setSupplierAccountEmail(event.target.value)} placeholder="you@example.com" className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /><span className="mt-1 block text-xs font-normal text-neutral-500">Included in CJ token authentication when supplied. CJ currently requires the API key.</span></label>}
-                  <label className="block text-sm font-medium">{supplierAdapter === "cj" ? "API base URL (optional)" : "Product API / JSON feed URL"}<input type="url" value={apiBaseUrl} onChange={(event) => setApiBaseUrl(event.target.value)} placeholder={supplierAdapter === "cj" ? "https://developers.cjdropshipping.com/api2.0/v1" : "https://supplier.example/products.json"} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
-                  <label className="block text-sm font-medium">API key{supplierAdapter === "generic_json" ? " (optional)" : ""}<input type="password" autoComplete="new-password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={supplierId ? "Leave blank to keep the saved key" : supplierAdapter === "cj" ? "Enter API key" : "Only needed for protected feeds"} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
+                  <label className="block text-sm font-medium">{supplierAdapter === "generic_json" ? "Product API / JSON feed URL" : "API base URL (optional)"}<input type="url" value={apiBaseUrl} onChange={(event) => setApiBaseUrl(event.target.value)} placeholder={supplierAdapter === "cj" ? "https://developers.cjdropshipping.com/api2.0/v1" : supplierAdapter === "eprolo" ? "https://openapi.eprolo.com/" : "https://supplier.example/products.json"} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
+                  <label className="block text-sm font-medium">API key{supplierAdapter === "generic_json" ? " (optional)" : ""}<input type="password" autoComplete="new-password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={supplierId ? "Leave blank to keep the saved key" : supplierAdapter === "generic_json" ? "Use {{api_key}} in custom headers" : "Enter API key"} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
+                  {supplierAdapter !== "cj" && <label className="block text-sm font-medium">API secret{supplierAdapter === "generic_json" ? " (optional)" : ""}<input type="password" autoComplete="new-password" value={apiSecret} onChange={(event) => setApiSecret(event.target.value)} placeholder={supplierId ? "Leave blank to keep the saved secret" : supplierAdapter === "eprolo" ? "Enter EPROLO API Secret" : "Use {{api_secret}} in custom headers or payloads"} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>}
                   <label className="block text-sm font-medium">Webhook URL<input type="url" value={webhookUrl} onChange={(event) => setWebhookUrl(event.target.value)} placeholder="https://your-store.com/api/supplier-webhook" className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
-                  {supplierAdapter === "generic_json" && <label className="block text-sm font-medium">Field mapping (JSON)<textarea value={fieldMapping} onChange={(event) => setFieldMapping(event.target.value)} rows={5} placeholder={'{"title":"name","sku":"code","price":"retailPrice","stock_quantity":"inventory"}'} className="mt-1.5 w-full rounded-xl border border-neutral-300 p-3 font-mono text-xs" /><span className="mt-1 block text-xs font-normal text-neutral-500">Map Elovyn fields to dot-separated paths in each feed item.</span></label>}
+                  {supplierAdapter === "generic_json" && <div className="rounded-xl border border-neutral-200 p-4"><label className="block text-sm font-medium">Request configuration & field mapping (JSON)<textarea value={fieldMapping} onChange={(event) => setFieldMapping(event.target.value)} rows={14} placeholder={'{"products_path":"data.list","request":{"method":"GET","headers":{"X-Api-Key":"{{api_key}}"},"query":{"limit":50}},"fields":{"title":"product_name","sku":"sku","price":"sale_price"}}'} className="mt-1.5 w-full rounded-xl border border-neutral-300 p-3 font-mono text-xs" /><span className="mt-1 block text-xs font-normal text-neutral-500">Paths support dot notation and array indexes. Secrets remain encrypted: reference them with <code>{"{{api_key}}"}</code> and <code>{"{{api_secret}}"}</code>. Methods: GET, POST, or PUT.</span></label><div className="mt-3 flex flex-wrap gap-2"><span className="w-full text-xs font-semibold uppercase tracking-wider text-neutral-500">Start from a preset</span>{Object.entries(customSupplierPresets).map(([name, preset]) => <button key={name} type="button" onClick={() => setFieldMapping(JSON.stringify(preset, null, 2))} className="rounded-full border border-neutral-300 px-3 py-1.5 text-xs font-medium hover:bg-neutral-50">{name}</button>)}</div></div>}
                   <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={supplierActive} onChange={(event) => setSupplierActive(event.target.checked)} className="h-4 w-4 accent-neutral-950" />Supplier is active</label>
                   <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={autoSync} onChange={(event) => setAutoSync(event.target.checked)} className="h-4 w-4 accent-neutral-950" />Enable automatic stock sync</label>
                   <button disabled={savingSupplier} className="btn-primary w-full disabled:opacity-60">{savingSupplier ? "Validating and syncing…" : supplierActive ? "Save, validate & sync" : "Save and validate"}</button>
@@ -373,7 +397,7 @@ export function AdminPage() {
                 {suppliers.length === 0 && <div className="rounded-2xl border border-neutral-200 bg-white p-6 text-sm text-neutral-500">No supplier integrations configured.</div>}
                 {suppliers.map((supplier) => (
                   <article key={supplier.id} className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-                    <div className="flex items-start justify-between gap-4"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold">{supplier.name}</h3><span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-600">{supplier.adapter === "cj" ? "CJ Dropshipping" : "JSON feed"}</span></div><p className="mt-1 break-all text-sm text-neutral-500">{supplier.api_base_url || "CJ default API endpoint"}</p></div><span className={`shrink-0 rounded-full px-2.5 py-1 text-xs ${!supplier.is_active ? "bg-neutral-100 text-neutral-500" : supplier.connection_status === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>{!supplier.is_active ? "Inactive" : supplier.connection_status === "syncing" ? "Syncing" : supplier.connection_status === "connected" ? "Connected" : supplier.connection_status === "error" ? "Error" : "Pending"}</span></div>
+                    <div className="flex items-start justify-between gap-4"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold">{supplier.name}</h3><span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-600">{supplier.adapter === "cj" ? "CJ Dropshipping" : supplier.adapter === "eprolo" ? "EPROLO" : "JSON API"}</span></div><p className="mt-1 break-all text-sm text-neutral-500">{supplier.api_base_url || (supplier.adapter === "eprolo" ? "EPROLO default API endpoint" : "CJ default API endpoint")}</p></div><span className={`shrink-0 rounded-full px-2.5 py-1 text-xs ${!supplier.is_active ? "bg-neutral-100 text-neutral-500" : supplier.connection_status === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>{!supplier.is_active ? "Inactive" : supplier.connection_status === "syncing" ? "Syncing" : supplier.connection_status === "connected" ? "Connected" : supplier.connection_status === "error" ? "Error" : "Pending"}</span></div>
                     {supplier.last_sync_error && <p className="mt-3 rounded-lg bg-red-50 p-2 text-xs text-red-700">{supplier.last_sync_error}</p>}
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 pt-4"><span className="text-sm text-neutral-600">{supplier.last_sync_at ? `Last synced ${new Date(supplier.last_sync_at).toLocaleString()}` : "Not synced yet"}</span><div className="flex flex-wrap gap-3"><button disabled={!supplier.is_active || syncingSupplierIds.has(supplier.id)} onClick={() => void syncSupplier(supplier.id)} className="text-sm font-medium underline disabled:opacity-40">{syncingSupplierIds.has(supplier.id) ? "Syncing…" : "Sync now"}</button><button onClick={() => editSupplier(supplier)} className="text-sm font-medium underline">Edit</button><button onClick={() => void setSupplierEnabled(supplier, !supplier.is_active)} className="text-sm font-medium underline">{supplier.is_active ? "Disable" : "Enable"}</button><button disabled={deletingSupplierId === supplier.id} onClick={() => void deleteSupplier(supplier)} className="inline-flex items-center gap-1 text-sm font-medium text-red-700 underline disabled:opacity-40"><Trash2 className="h-3.5 w-3.5" />{deletingSupplierId === supplier.id ? "Deleting…" : "Delete"}</button></div></div>
                     <details className="mt-4 border-t border-neutral-100 pt-3"><summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-neutral-500">Sync history ({supplier.sync_history.length})</summary>{supplier.sync_history.length ? <div className="mt-3 space-y-2">{supplier.sync_history.map((entry) => <div key={entry.id} className="flex items-start justify-between gap-3 rounded-lg bg-neutral-50 p-2.5 text-xs"><div><p className="font-medium">{entry.status === "success" ? `${entry.imported_count} added · ${entry.updated_count} updated` : entry.status === "running" ? "Sync in progress" : entry.error_message || "Sync failed"}</p><p className="mt-1 text-neutral-500">{new Date(entry.started_at).toLocaleString()}</p></div><span className={`rounded-full px-2 py-0.5 capitalize ${entry.status === "success" ? "bg-emerald-100 text-emerald-700" : entry.status === "error" ? "bg-red-100 text-red-700" : "bg-sky-100 text-sky-700"}`}>{entry.status}</span></div>)}</div> : <p className="mt-2 text-xs text-neutral-500">No sync attempts recorded yet.</p>}</details>
@@ -682,7 +706,12 @@ function ImportProductsPanel({ onImported, suppliers }: { onImported: () => void
   const [jobId, setJobId] = useState("");
   const [jobStatus, setJobStatus] = useState("");
   const [result, setResult] = useState<{ imported_count: number; skipped_count: number; skipped: { title: string; sku: string; reason: string }[] } | null>(null);
-  const availableSuppliers = useMemo(() => suppliers.filter((supplier) => supplier.is_active && (supplier.adapter !== "cj" || supplier.has_api_key)), [suppliers]);
+  const availableSuppliers = useMemo(() => suppliers.filter((supplier) => {
+    if (!supplier.is_active) return false;
+    if (supplier.adapter === "cj") return supplier.has_api_key;
+    if (supplier.adapter === "eprolo") return supplier.has_api_key && supplier.has_api_secret;
+    return true;
+  }), [suppliers]);
   const selectedSupplier = useMemo(() => availableSuppliers.find((supplier) => supplier.id === selectedSupplierId), [availableSuppliers, selectedSupplierId]);
 
   useEffect(() => {
@@ -1049,7 +1078,7 @@ function ImportProductsPanel({ onImported, suppliers }: { onImported: () => void
         <header className="flex items-start justify-between gap-4 border-b border-neutral-200 px-5 py-4 sm:px-7">
           <div>
             <h2 id="supplier-results-title" className="text-lg font-semibold">Choose products to import</h2>
-            <p className="mt-1 text-sm text-neutral-500">{searchResults.length} matching products · {selectedProductIds.size} selected · prices supplied by CJ in USD</p>
+            <p className="mt-1 text-sm text-neutral-500">{searchResults.length} matching products · {selectedProductIds.size} selected · prices supplied by {selectedSupplier?.name || "the supplier"}</p>
           </div>
           <button type="button" disabled={loadingSelected} onClick={() => setSelectionOpen(false)} aria-label="Close product selection" className="rounded-full border border-neutral-200 p-2 disabled:opacity-50"><X className="h-5 w-5" /></button>
         </header>

@@ -148,6 +148,7 @@ export const supplierIntegrations = sqliteTable("supplier_integrations", {
   webhookUrl: text("webhook_url"),
   accountEmail: text("account_email"),
   encryptedApiKey: text("encrypted_api_key"),
+  encryptedApiSecret: text("encrypted_api_secret"),
   adapter: text("adapter").notNull().default("generic_json"),
   fieldMappingJson: text("field_mapping_json").notNull().default("{}"),
   autoSync: integer("auto_sync", { mode: "boolean" }).notNull().default(false),
