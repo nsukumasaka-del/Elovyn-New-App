@@ -12,6 +12,7 @@ import { AccountPage, LoginPage, OrdersPage, WishlistPage } from "./pages/StoreA
 import { CategoryPage } from "./pages/Category";
 import { PaymentResultPage } from "./pages/PaymentResult";
 import { RouteScrollManager } from "./components/RouteScrollManager";
+import { BrixyChat } from "./components/BrixyChat";
 
 const queryClient = new QueryClient();
 
@@ -37,6 +38,7 @@ const App = () => (
             <Route path="/payment/failed" element={<PaymentResultPage kind="failed" />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
+          <BrixyChat />
         </StoreProvider>
       </BrowserRouter>
     </TooltipProvider>

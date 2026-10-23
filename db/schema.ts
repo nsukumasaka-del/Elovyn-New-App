@@ -24,6 +24,16 @@ export const sessions = sqliteTable("sessions", {
   index("sessions_expires_at_idx").on(table.expiresAt),
 ]);
 
+export const aiRateLimits = sqliteTable("ai_rate_limits", {
+  id: text("id").primaryKey(),
+  windowStart: integer("window_start").notNull(),
+  requestCount: integer("request_count").notNull().default(1),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("ai_rate_limits_window_start_idx").on(table.windowStart),
+  check("ai_rate_limits_request_count_check", sql`${table.requestCount} > 0`),
+]);
+
 export const siteSettings = sqliteTable("site_settings", {
   id: text("id").primaryKey(),
   logoUrl: text("logo_url").notNull().default(""),

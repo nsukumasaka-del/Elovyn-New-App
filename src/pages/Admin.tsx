@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Navigate, Link } from "react-router-dom";
-import { ArrowDownToLine, Boxes, ImageIcon, LayoutDashboard, PackagePlus, Pencil, Plus, Search, Settings2, Trash2, Upload, X } from "lucide-react";
+import { ArrowDownToLine, Boxes, ImageIcon, LayoutDashboard, PackagePlus, Pencil, Plus, Search, Settings2, Sparkles, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest, isPrimaryAdmin, type StoreUser } from "@/lib/store-api";
 import { useStore } from "@/lib/store";
@@ -547,6 +547,8 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [loadingProduct, setLoadingProduct] = useState(Boolean(productId));
+  const [optimizing, setOptimizing] = useState(false);
+  const [optimization, setOptimization] = useState<{ title: string; description: string } | null>(null);
   const selectedImagePreviews = useMemo(() => images.map((file) => ({ file, url: URL.createObjectURL(file) })), [images]);
   useEffect(() => () => selectedImagePreviews.forEach(({ url }) => URL.revokeObjectURL(url)), [selectedImagePreviews]);
   const matrix = useMemo(() => {
@@ -677,6 +679,26 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
     });
   }
 
+  async function optimizeWithBrixy() {
+    if (!title.trim()) {
+      toast.error("Add a product title before asking Brixy.");
+      return;
+    }
+    setOptimizing(true);
+    setOptimization(null);
+    try {
+      const preview = await apiRequest<{ title: string; description: string }>("/admin/ai/optimize-product", {
+        method: "POST",
+        body: JSON.stringify({ title, description }),
+      });
+      setOptimization(preview);
+    } catch (reason) {
+      toast.error(reason instanceof Error ? reason.message : "Brixy could not optimize this product.");
+    } finally {
+      setOptimizing(false);
+    }
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (matrix.tooMany) {
@@ -737,7 +759,13 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
       <section role="dialog" aria-modal="true" aria-labelledby="add-product-title" className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl bg-white p-7 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
         <header className="flex items-center justify-between"><div><p className="eyebrow">Inventory</p><h2 id="add-product-title" className="mt-1 text-2xl font-bold">{productId ? "Edit product" : "Add product"}</h2></div><button aria-label="Close product editor" onClick={onClose} className="rounded-full p-2 hover:bg-neutral-100"><X className="h-5 w-5" /></button></header>
         <form onSubmit={(event) => void submit(event)} className="mt-6 space-y-4">
-          <label className="block text-sm font-medium">Product title<input required value={title} onChange={(event) => setTitle(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="min-w-[260px] flex-1 text-sm font-medium">Product title<input required value={title} onChange={(event) => { setTitle(event.target.value); setOptimization(null); }} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
+            <button type="button" disabled={optimizing || loadingProduct || !title.trim()} onClick={() => void optimizeWithBrixy()} className="inline-flex h-11 items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-4 text-sm font-semibold text-violet-800 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50">
+              <Sparkles className={`h-4 w-4 ${optimizing ? "animate-pulse" : ""}`} />
+              {optimizing ? "Brixy is writing…" : "Ask Brixy to Optimize"}
+            </button>
+          </div>
           <label className="block text-sm font-medium">SKU<input required value={sku} onChange={(event) => setSku(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
           <div className="grid grid-cols-2 gap-3">
             <label className="block text-sm font-medium">Price (ZAR)<input required min="0" step="0.01" type="number" value={price} onChange={(event) => updateProductPrice(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /><span className="mt-1 block text-xs font-normal text-neutral-500">Changing this price updates every variant. You can still set individual variant prices below.</span></label>
@@ -746,8 +774,21 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
           <label className="block text-sm font-medium">Category<select value={category} onChange={(event) => setCategory(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3"><option>Streetwear</option><option>T-Shirts</option><option>Hoodies</option><option>Accessories</option><option>Wigs</option><option>Care</option><option>New Arrivals</option></select></label>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block text-sm font-medium">Brand<input value={brand} onChange={(event) => setBrand(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
-            <label className="block text-sm font-medium">Product description / features<textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} className="mt-1.5 w-full rounded-xl border border-neutral-300 px-3 py-2" /></label>
+            <label className="block text-sm font-medium">Product description / features<textarea value={description} onChange={(event) => { setDescription(event.target.value); setOptimization(null); }} rows={3} className="mt-1.5 w-full rounded-xl border border-neutral-300 px-3 py-2" /></label>
           </div>
+          {optimization && <section aria-live="polite" className="rounded-2xl border border-violet-200 bg-violet-50/70 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="flex items-center gap-2 text-sm font-semibold text-violet-900"><Sparkles className="h-4 w-4" />Brixy’s preview</p>
+                <p className="mt-3 font-semibold text-neutral-950">{optimization.title}</p>
+                <p className="mt-1 text-sm leading-6 text-neutral-700">{optimization.description}</p>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setOptimization(null)} className="rounded-full border border-neutral-300 bg-white px-3 py-2 text-xs font-semibold">Dismiss</button>
+                <button type="button" onClick={() => { setTitle(optimization.title); setDescription(optimization.description); setOptimization(null); toast.success("Brixy’s copy has been applied. Save the product to keep it."); }} className="rounded-full bg-violet-700 px-4 py-2 text-xs font-semibold text-white hover:bg-violet-800">Apply</button>
+              </div>
+            </div>
+          </section>}
           <section className="rounded-2xl border border-neutral-200 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-sm font-semibold">Product gallery</h3><p className="mt-1 text-xs text-neutral-500">Add images together or in separate selections. The first image is the storefront cover.</p></div><label htmlFor="product-gallery-files" className="cursor-pointer rounded-full bg-neutral-950 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-800">Add images</label></div>
             <input id="product-gallery-files" multiple accept="image/jpeg,image/png,image/webp,image/gif" type="file" onChange={(event) => { addGalleryImages(Array.from(event.target.files ?? [])); event.target.value = ""; }} className="sr-only" />
