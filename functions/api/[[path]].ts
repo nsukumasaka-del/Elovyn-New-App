@@ -1247,16 +1247,20 @@ function supplierProducts(payload: unknown, supplier: SupplierRecord) {
 
 async function syncSupplier(env: Env, db: ReturnType<typeof createDb>, supplier: SupplierRecord, credentials: SupplierCredentials, storeHostname = "") {
   const historyId = crypto.randomUUID();
-  let imported = 0, updated = 0, total = 0;
+  const imported = 0;
+  let updated = 0, total = 0;
   const lock = await env.DB!.prepare(`UPDATE supplier_integrations SET connection_status = 'syncing', last_sync_error = NULL, updated_at = CURRENT_TIMESTAMP
     WHERE id = ? AND (connection_status <> 'syncing' OR updated_at <= datetime('now', '-15 minutes'))`).bind(supplier.id).run();
   if (!lock.meta.changes) throw new ApiError("A sync is already running for this supplier.", 409);
   await db.insert(supplierSyncHistory).values({ id: historyId, supplierId: supplier.id, status: "running" });
   try {
-    const linkedProducts = await db.select({ externalId: products.supplierProductId }).from(products).where(eq(products.supplierId, supplier.id));
+    const linkedProducts = await db.select({ id: products.id, externalId: products.supplierProductId }).from(products).where(eq(products.supplierId, supplier.id));
     let incoming: { externalId: string; product: ProductInput }[];
     if (linkedProducts.length) {
       const externalIds = linkedProducts.map((product) => product.externalId).filter((externalId): externalId is string => Boolean(externalId));
+      if (externalIds.length !== linkedProducts.length) {
+        throw new ApiError("One or more imported products are missing their supplier product ID. No products were changed.", 409);
+      }
       const details = await supplierProductDetails(supplier, credentials, storeHostname, externalIds);
       incoming = details.products.map((rawProduct) => {
         const source = rawProduct as typeof rawProduct & { supplier_product_id?: unknown };
@@ -1268,19 +1272,17 @@ async function syncSupplier(env: Env, db: ReturnType<typeof createDb>, supplier:
       const missingIds = externalIds.filter((externalId) => !receivedIds.has(externalId));
       if (missingIds.length) throw new ApiError(`Supplier did not return current stock for ${missingIds.length} linked product${missingIds.length === 1 ? "" : "s"}. Existing stock was preserved.`, 502);
     } else {
-      incoming = supplierProducts(await supplierFetch(supplier, credentials, false, storeHostname), supplier);
+      incoming = [];
     }
     total = incoming.length;
+    const linkedProductIds = new Map(linkedProducts.map((product) => [product.externalId!, product.id]));
     for (const item of incoming) {
-      const existing = await env.DB!.prepare("SELECT id, supplier_id FROM products WHERE (supplier_id = ? AND supplier_product_id = ?) OR lower(sku) = lower(?) LIMIT 1").bind(supplier.id, item.externalId, item.product.sku).first<{ id: string; supplier_id: string | null }>();
-      if (existing?.supplier_id && existing.supplier_id !== supplier.id) throw new ApiError(`SKU ${item.product.sku} is already managed by another supplier.`, 409);
-      const productId = existing?.id || crypto.randomUUID();
-      const statements = existing?.supplier_id === supplier.id
-        ? await supplierStockUpdateStatements(env, item.product, productId)
-        : productInsertStatements(env, item.product, productId, Boolean(existing), { supplierId: supplier.id, externalId: item.externalId });
-      await env.DB!.batch(statements);
-      if (existing) updated += 1;
-      else imported += 1;
+      const productId = linkedProductIds.get(item.externalId);
+      if (!productId) {
+        throw new ApiError(`Supplier returned an unrequested product (${item.externalId}). It was not imported.`, 502);
+      }
+      await env.DB!.batch(await supplierStockUpdateStatements(env, item.product, productId));
+      updated += 1;
     }
     await db.update(supplierIntegrations).set({ connectionStatus: "connected", lastSyncAt: sql`CURRENT_TIMESTAMP`, lastSyncError: null, updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(supplierIntegrations.id, supplier.id));
     await db.update(supplierSyncHistory).set({ status: "success", importedCount: imported, updatedCount: updated, totalCount: total, finishedAt: sql`CURRENT_TIMESTAMP` }).where(eq(supplierSyncHistory.id, historyId));
@@ -2118,8 +2120,8 @@ async function route(
     const stored = await db.select().from(supplierIntegrations).where(eq(supplierIntegrations.id, id)).limit(1);
     let sync = { imported: 0, updated: 0, total: 0 };
     try {
+      await supplierFetch(stored[0], credentials, true, url.hostname);
       if (isActive) sync = await syncSupplier(env, db, stored[0], credentials, url.hostname);
-      else await supplierFetch(stored[0], credentials, true, url.hostname);
     } catch (error) {
       await db.update(supplierIntegrations).set({ connectionStatus: "error", lastSyncError: errorMessage(error).slice(0, 1000), updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(supplierIntegrations.id, id));
       throw error;

@@ -225,7 +225,7 @@ export function AdminPage() {
       });
       resetSupplierForm();
       await loadData();
-      toast.success(supplierActive ? `Supplier saved and synchronized: ${response.sync.imported} added, ${response.sync.updated} updated.` : "Supplier saved and validated. Enable it when you are ready to synchronize.");
+      toast.success(supplierActive ? `Supplier saved. Stock refreshed for ${response.sync.updated} previously imported product${response.sync.updated === 1 ? "" : "s"}; no new products were added.` : "Supplier saved and validated. Enable it when you are ready to synchronize.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not save supplier.");
       await loadData().catch(() => undefined);
@@ -373,13 +373,13 @@ export function AdminPage() {
                   <label className="block text-sm font-medium">Webhook URL<input type="url" value={webhookUrl} onChange={(event) => setWebhookUrl(event.target.value)} placeholder="https://your-store.com/api/supplier-webhook" className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
                   {supplierAdapter === "generic_json" && <div className="rounded-xl border border-neutral-200 p-4"><label className="block text-sm font-medium">Request configuration & field mapping (JSON)<textarea value={fieldMapping} onChange={(event) => setFieldMapping(event.target.value)} rows={14} placeholder={'{"products_path":"data.list","request":{"method":"GET","headers":{"X-Api-Key":"{{api_key}}"},"query":{"limit":50}},"fields":{"title":"product_name","sku":"sku","price":"sale_price"}}'} className="mt-1.5 w-full rounded-xl border border-neutral-300 p-3 font-mono text-xs" /><span className="mt-1 block text-xs font-normal text-neutral-500">Paths support dot notation and array indexes. Secrets remain encrypted: reference them with <code>{"{{api_key}}"}</code> and <code>{"{{api_secret}}"}</code>. Methods: GET, POST, or PUT.</span></label><div className="mt-3 flex flex-wrap gap-2"><span className="w-full text-xs font-semibold uppercase tracking-wider text-neutral-500">Start from a preset</span>{Object.entries(customSupplierPresets).map(([name, preset]) => <button key={name} type="button" onClick={() => setFieldMapping(JSON.stringify(preset, null, 2))} className="rounded-full border border-neutral-300 px-3 py-1.5 text-xs font-medium hover:bg-neutral-50">{name}</button>)}</div></div>}
                   <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={supplierActive} onChange={(event) => setSupplierActive(event.target.checked)} className="h-4 w-4 accent-neutral-950" />Supplier is active</label>
-                  <div className="rounded-xl bg-violet-50 p-3 text-sm text-violet-900"><span className="font-semibold">Automatic stock sync is always enabled.</span> Stock for imported products is controlled by the supplier and cannot be edited manually.</div>
+                  <div className="rounded-xl bg-violet-50 p-3 text-sm text-violet-900"><span className="font-semibold">Automatic stock sync only updates products you imported.</span> Supplier products are never added automatically. Stock for imported products is controlled by the supplier and cannot be edited manually.</div>
                   <button disabled={savingSupplier} className="btn-primary w-full disabled:opacity-60">{savingSupplier ? "Validating and syncing…" : supplierActive ? "Save, validate & sync" : "Save and validate"}</button>
                 </form>
               </section>
               <section className="space-y-3">
                 <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
-                  Saving validates the credentials and immediately imports or updates up to 50 products. Use Sync now whenever you need a fresh inventory push.
+                  Saving validates the credentials and refreshes stock only for products you previously selected and imported. Browse the Import products tab to choose every new item yourself.
                 </div>
                 {suppliers.length === 0 && <div className="rounded-2xl border border-neutral-200 bg-white p-6 text-sm text-neutral-500">No supplier integrations configured.</div>}
                 {suppliers.map((supplier) => (
