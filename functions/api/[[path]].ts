@@ -325,15 +325,18 @@ async function geminiText(env: Env, input: {
 }) {
   const apiKey = env.GEMINI_API_KEY?.trim();
   if (!apiKey) throw new ApiError("Gemini API key is not configured in environment variables.", 500);
-  const model = env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
-  if (!/^[a-zA-Z0-9._-]+$/.test(model)) throw new ApiError("The configured Gemini model name is invalid.", 503);
+  const configuredModel = env.GEMINI_MODEL?.trim();
+  const retiredModels = new Set(["gemini-1.5-flash", "gemini-2.0-flash", "gemini-2.5-flash"]);
+  const model = configuredModel && !retiredModels.has(configuredModel) ? configuredModel : "gemini-3.6-flash";
+  if (!/^[a-zA-Z0-9._-]+$/.test(model)) throw new ApiError("The configured Gemini model name is invalid.", 500);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20_000);
   let response: Response;
   try {
-    response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    response = await fetch(endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: input.systemInstruction }] },
         contents: input.contents,
@@ -349,23 +352,33 @@ async function geminiText(env: Env, input: {
       signal: controller.signal,
     });
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") throw new ApiError("Brixy took too long to respond. Please try again.", 504);
-    throw new ApiError("Brixy could not be reached. Please try again shortly.", 502);
+    if (error instanceof Error && error.name === "AbortError") throw new ApiError("Brixy took too long to respond. Please try again.", 500);
+    throw new ApiError("Brixy could not be reached. Please try again shortly.", 500);
   } finally {
     clearTimeout(timeout);
   }
   if (!response.ok) {
-    console.error("Gemini request failed:", response.status, (await response.text()).slice(0, 500));
-    throw new ApiError("Brixy is temporarily unavailable. Please try again shortly.", 502);
+    let upstreamMessage = "No JSON error message was returned.";
+    try {
+      const errorPayload = await response.json() as { error?: { message?: unknown; status?: unknown } };
+      if (typeof errorPayload.error?.message === "string") upstreamMessage = errorPayload.error.message.slice(0, 500);
+    } catch {
+      upstreamMessage = "Gemini returned a non-JSON error response.";
+    }
+    console.error("Gemini request failed:", { status: response.status, model, message: upstreamMessage });
+    throw new ApiError("Brixy is temporarily unavailable. Please try again shortly.", 500);
   }
-  const payload = await response.json() as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: unknown }> }; finishReason?: string }>;
-  };
+  let payload: { candidates?: Array<{ content?: { parts?: Array<{ text?: unknown }> }; finishReason?: string }> };
+  try {
+    payload = await response.json() as typeof payload;
+  } catch {
+    throw new ApiError("Gemini returned an invalid response. Please try again shortly.", 500);
+  }
   const text = payload.candidates?.[0]?.content?.parts
     ?.map((part) => typeof part.text === "string" ? part.text : "")
     .join("")
     .trim();
-  if (!text) throw new ApiError("Brixy could not create a response. Please rephrase and try again.", 502);
+  if (!text) throw new ApiError("Brixy could not create a response. Please rephrase and try again.", 500);
   return text;
 }
 
@@ -1797,16 +1810,16 @@ async function route(
       });
       let optimized: unknown;
       try { optimized = JSON.parse(result); }
-      catch { throw new ApiError("Brixy returned an invalid optimization. Please try again.", 502); }
-      if (!optimized || typeof optimized !== "object" || Array.isArray(optimized)) throw new ApiError("Brixy returned an invalid optimization. Please try again.", 502);
+      catch { throw new ApiError("Brixy returned an invalid optimization. Please try again.", 500); }
+      if (!optimized || typeof optimized !== "object" || Array.isArray(optimized)) throw new ApiError("Brixy returned an invalid optimization. Please try again.", 500);
       const candidate = optimized as Record<string, unknown>;
       const optimizedTitle = typeof candidate.title === "string" ? candidate.title.trim() : "";
       const optimizedDescription = typeof candidate.description === "string" ? candidate.description.trim() : "";
       if (!optimizedTitle || optimizedTitle.length > 160 || !optimizedDescription || optimizedDescription.length > 1_000) {
-        throw new ApiError("Brixy returned an invalid optimization. Please try again.", 502);
+        throw new ApiError("Brixy returned an invalid optimization. Please try again.", 500);
       }
       const titleWordCount = optimizedTitle.split(/\s+/).filter(Boolean).length;
-      if (titleWordCount < 3 || titleWordCount > 6) throw new ApiError("Brixy could not create a 3–6 word product title. Please try again.", 502);
+      if (titleWordCount < 3 || titleWordCount > 6) throw new ApiError("Brixy could not create a 3–6 word product title. Please try again.", 500);
       return json({ title: optimizedTitle, description: optimizedDescription }, 200, { "Cache-Control": "no-store" });
     } catch (error) {
       return routeErrorResponse(error, "Brixy could not optimize this product. Please try again shortly.", "Brixy product optimization");
