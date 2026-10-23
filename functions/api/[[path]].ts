@@ -676,6 +676,52 @@ function productInsertStatements(env: Env, product: ProductInput, productId: str
   return statements;
 }
 
+async function supplierStockUpdateStatements(env: Env, product: ProductInput, productId: string) {
+  if (!env.DB) throw new ApiError("The D1 database is unavailable.", 503);
+  const currentVariants = await env.DB.prepare(`SELECT variants.id, variants.sku, variants.options_json
+    FROM variants
+    WHERE variants.product_id = ?
+    ORDER BY variants.created_at, variants.id`).bind(productId).all<{ id: string; sku: string; options_json: string }>();
+  if (!currentVariants.results.length) {
+    throw new ApiError(`${product.title}: the linked inventory item has no variants. Existing product data was preserved.`, 409);
+  }
+
+  const optionKey = (values: Record<string, string>) => JSON.stringify(Object.entries(values).sort(([left], [right]) => left.localeCompare(right)));
+  const incoming = product.variants.map((variant) => ({
+    variant,
+    optionKey: optionKey(variant.option_values),
+  }));
+  const usedIncoming = new Set<number>();
+  const matched = currentVariants.results.map((current) => {
+    let currentOptions: Record<string, string> = {};
+    try {
+      const parsed = JSON.parse(current.options_json) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) currentOptions = parsed as Record<string, string>;
+    } catch { currentOptions = {}; }
+    let index = incoming.findIndex((candidate, candidateIndex) => !usedIncoming.has(candidateIndex) && candidate.variant.sku.toLowerCase() === current.sku.toLowerCase());
+    if (index < 0) {
+      const currentOptionKey = optionKey(currentOptions);
+      index = incoming.findIndex((candidate, candidateIndex) => !usedIncoming.has(candidateIndex) && candidate.optionKey === currentOptionKey);
+    }
+    if (index < 0 && currentVariants.results.length === 1 && incoming.length === 1) index = 0;
+    if (index >= 0) usedIncoming.add(index);
+    return { current, incoming: index >= 0 ? incoming[index].variant : null };
+  });
+  const unmatched = matched.filter((entry) => !entry.incoming);
+  if (unmatched.length) {
+    throw new ApiError(`${product.title}: the supplier did not return identifiable stock for ${unmatched.length} existing variant${unmatched.length === 1 ? "" : "s"}. Existing stock and merchant edits were preserved.`, 502);
+  }
+
+  const statements = matched.map(({ current, incoming: incomingVariant }) => env.DB!.prepare(`UPDATE inventory_items
+    SET quantity = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE variant_id = ?`).bind(incomingVariant!.inventory_quantity, current.id));
+  const totalStock = matched.reduce((total, entry) => total + entry.incoming!.inventory_quantity, 0);
+  statements.push(env.DB.prepare(`UPDATE products
+    SET stock_quantity = ?, status = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?`).bind(totalStock, statusForStock(totalStock), productId));
+  return statements;
+}
+
 type ProductImportResult = {
   imported: { id: string; title: string; sku: string }[];
   skipped: { title: string; sku: string; reason: string }[];
@@ -728,7 +774,10 @@ async function processProductImport(env: Env, jobId: string) {
           continue;
         }
         const id = existing?.id || crypto.randomUUID();
-        await env.DB.batch(productInsertStatements(env, product, id, Boolean(existing), { supplierId, externalId }));
+        const statements = existing?.supplier_id === supplierId
+          ? await supplierStockUpdateStatements(env, product, id)
+          : productInsertStatements(env, product, id, Boolean(existing), { supplierId, externalId });
+        await env.DB.batch(statements);
         result.imported.push({ id, title: product.title, sku: product.sku });
       }
       await env.DB.prepare(`UPDATE product_import_jobs_v2 SET status = 'completed', result_json = ?,
@@ -1171,7 +1220,10 @@ async function syncSupplier(env: Env, db: ReturnType<typeof createDb>, supplier:
       const existing = await env.DB!.prepare("SELECT id, supplier_id FROM products WHERE (supplier_id = ? AND supplier_product_id = ?) OR lower(sku) = lower(?) LIMIT 1").bind(supplier.id, item.externalId, item.product.sku).first<{ id: string; supplier_id: string | null }>();
       if (existing?.supplier_id && existing.supplier_id !== supplier.id) throw new ApiError(`SKU ${item.product.sku} is already managed by another supplier.`, 409);
       const productId = existing?.id || crypto.randomUUID();
-      await env.DB!.batch(productInsertStatements(env, item.product, productId, Boolean(existing), { supplierId: supplier.id, externalId: item.externalId }));
+      const statements = existing?.supplier_id === supplier.id
+        ? await supplierStockUpdateStatements(env, item.product, productId)
+        : productInsertStatements(env, item.product, productId, Boolean(existing), { supplierId: supplier.id, externalId: item.externalId });
+      await env.DB!.batch(statements);
       if (existing) updated += 1;
       else imported += 1;
     }
@@ -1736,13 +1788,27 @@ async function route(
     if (!currentProduct) throw new ApiError("Product was not found.", 404);
     const product = normalizeProductInput(await bodyAsJson(request));
     if (currentProduct.supplierId) {
-      const supplierInventory = await db.select({ sku: variants.sku, quantity: inventoryItems.quantity })
+      const supplierInventory = await db.select({ sku: variants.sku, optionsJson: variants.optionsJson, quantity: inventoryItems.quantity })
         .from(variants).innerJoin(inventoryItems, eq(inventoryItems.variantId, variants.id)).where(eq(variants.productId, productId));
-      const quantityBySku = new Map(supplierInventory.map((item) => [item.sku.toLowerCase(), item.quantity]));
-      if (product.variants.length !== supplierInventory.length || product.variants.some((variant) => !quantityBySku.has(variant.sku.toLowerCase()))) {
-        throw new ApiError("Supplier-managed variant SKUs cannot be added, removed, or renamed. Refresh stock from the supplier instead.", 409);
+      const optionKey = (values: Record<string, string>) => JSON.stringify(Object.entries(values).sort(([left], [right]) => left.localeCompare(right)));
+      const usedInventory = new Set<number>();
+      const quantities = product.variants.map((variant) => {
+        let index = supplierInventory.findIndex((item, itemIndex) => !usedInventory.has(itemIndex) && item.sku.toLowerCase() === variant.sku.toLowerCase());
+        if (index < 0) index = supplierInventory.findIndex((item, itemIndex) => {
+          if (usedInventory.has(itemIndex)) return false;
+          try {
+            const parsed = JSON.parse(item.optionsJson) as Record<string, string>;
+            return optionKey(parsed) === optionKey(variant.option_values);
+          } catch { return false; }
+        });
+        if (index < 0 && product.variants.length === 1 && supplierInventory.length === 1) index = 0;
+        if (index >= 0) usedInventory.add(index);
+        return index >= 0 ? supplierInventory[index].quantity : null;
+      });
+      if (product.variants.length !== supplierInventory.length || quantities.some((quantity) => quantity === null)) {
+        throw new ApiError("Supplier-managed variant options cannot be added or removed because their stock is controlled by the supplier.", 409);
       }
-      for (const variant of product.variants) variant.inventory_quantity = quantityBySku.get(variant.sku.toLowerCase())!;
+      product.variants.forEach((variant, index) => { variant.inventory_quantity = quantities[index]!; });
       product.stock_quantity = product.variants.reduce((total, variant) => total + variant.inventory_quantity, 0);
     }
     const allSkus = [...new Set([product.sku, ...product.variants.map((variant) => variant.sku)].map((sku) => sku.toLowerCase()))];

@@ -6,6 +6,7 @@ import { apiRequest, isPrimaryAdmin, type StoreUser } from "@/lib/store-api";
 import { useStore } from "@/lib/store";
 import { buildImportProducts, importFieldDefinitions, parseCsv, suggestedMapping, type ImportField, type ImportMapping } from "@/lib/product-import";
 import { supplierUrlValidationError } from "@/lib/supplier-validation";
+import elovynLogo from "@/assets/ELOVYN THE FINAL.png";
 
 type Product = {
   id: string;
@@ -279,7 +280,7 @@ export function AdminPage() {
   return (
     <div className="min-h-screen bg-[#f6f7f8] text-neutral-950">
       <header className="flex h-16 items-center justify-between border-b border-neutral-200 bg-white px-5 lg:px-8">
-        <Link to="/" className="flex items-center gap-3 font-semibold"><span className="grid h-8 w-8 place-items-center rounded-lg bg-neutral-950 text-xs text-white">VL</span> Elovyn Admin</Link>
+        <Link to="/" className="flex items-center gap-3 font-semibold"><span className="grid h-9 w-9 place-items-center overflow-hidden rounded-lg bg-neutral-950"><img src={elovynLogo} alt="" className="h-full w-full object-contain" /></span> Elovyn Admin</Link>
         <div className="flex items-center gap-4 text-sm"><span className="hidden text-neutral-500 sm:block">{verifiedUser.email}</span><Link to="/" className="rounded-full border border-neutral-300 px-4 py-2 hover:bg-neutral-50">View store</Link></div>
       </header>
       <div className="mx-auto flex max-w-[1500px]">
@@ -551,6 +552,14 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
     }));
   }
 
+  function updateProductPrice(value: string) {
+    setPrice(value);
+    setVariantFields((current) => Object.fromEntries(Object.entries(current).map(([key, fields]) => [
+      key,
+      { ...fields, price: value },
+    ])));
+  }
+
   function applyPriceToAllVariants() {
     const nextPrice = Number(allVariantPrice);
     if (!Number.isFinite(nextPrice) || nextPrice < 0 || allVariantPrice.trim() === "") return;
@@ -634,7 +643,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
           <label className="block text-sm font-medium">Product title<input required value={title} onChange={(event) => setTitle(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
           <label className="block text-sm font-medium">SKU<input required value={sku} onChange={(event) => setSku(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
           <div className="grid grid-cols-2 gap-3">
-            <label className="block text-sm font-medium">Price (ZAR)<input required min="0" step="0.01" type="number" value={price} onChange={(event) => setPrice(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
+            <label className="block text-sm font-medium">Price (ZAR)<input required min="0" step="0.01" type="number" value={price} onChange={(event) => updateProductPrice(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /><span className="mt-1 block text-xs font-normal text-neutral-500">Changing this price updates every variant. You can still set individual variant prices below.</span></label>
             <label className="block text-sm font-medium">Stock quantity{supplierManaged && <span className="ml-2 text-xs font-normal text-violet-700">Controlled by supplier</span>}<input required min="0" step="1" type="number" value={stock} disabled={supplierManaged} onChange={(event) => setStock(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500" /></label>
           </div>
           <label className="block text-sm font-medium">Category<select value={category} onChange={(event) => setCategory(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3"><option>Streetwear</option><option>T-Shirts</option><option>Hoodies</option><option>Accessories</option><option>Wigs</option><option>Care</option><option>New Arrivals</option></select></label>
@@ -682,7 +691,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
                     {matrix.options.map((option) => <td key={option.name} className="px-3 py-2 font-medium">{combo[option.name]}</td>)}
                     <td className="px-2 py-2"><input aria-label={`Variant ${index + 1} price`} type="number" min="0" step="0.01" value={fields?.price ?? price} onChange={(event) => updateVariantField(key, "price", event.target.value)} className="h-9 w-24 rounded-md border border-neutral-300 px-2" /></td>
                     <td className="px-2 py-2"><input aria-label={`Variant ${index + 1} compare-at price`} type="number" min="0" step="0.01" value={fields?.compareAt ?? ""} onChange={(event) => updateVariantField(key, "compareAt", event.target.value)} className="h-9 w-24 rounded-md border border-neutral-300 px-2" /></td>
-                    <td className="px-2 py-2"><input required aria-label={`Variant ${index + 1} SKU${supplierManaged ? " (supplier controlled)" : ""}`} value={skuValue} disabled={supplierManaged} onChange={(event) => updateVariantField(key, "sku", event.target.value)} className="h-9 w-28 rounded-md border border-neutral-300 px-2 disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500" /></td>
+                    <td className="px-2 py-2"><input required aria-label={`Variant ${index + 1} SKU`} value={skuValue} onChange={(event) => updateVariantField(key, "sku", event.target.value)} className="h-9 w-28 rounded-md border border-neutral-300 px-2" /></td>
                     <td className="px-2 py-2"><input aria-label={`Variant ${index + 1} barcode`} value={fields?.barcode ?? ""} onChange={(event) => updateVariantField(key, "barcode", event.target.value)} className="h-9 w-28 rounded-md border border-neutral-300 px-2" /></td>
                     <td className="px-2 py-2"><input required aria-label={`Variant ${index + 1} stock${supplierManaged ? " (supplier controlled)" : ""}`} type="number" min="0" step="1" value={fields?.stock ?? (matrix.options.length ? "0" : stock)} disabled={supplierManaged} onChange={(event) => updateVariantField(key, "stock", event.target.value)} className="h-9 w-20 rounded-md border border-neutral-300 px-2 disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500" /></td>
                   </tr>;

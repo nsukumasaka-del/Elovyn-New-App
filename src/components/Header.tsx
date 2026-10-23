@@ -5,6 +5,7 @@ import { Heart, Menu, Search, ShoppingBag, UserRound, X } from "lucide-react";
 import { toast } from "sonner";
 import { useStore, type CheckoutSummary } from "@/lib/store";
 import { isPrimaryAdmin } from "@/lib/store-api";
+import elovynLogo from "@/assets/ELOVYN THE FINAL.png";
 
 const navItems = [
   { label: "New Arrivals", href: "/categories/new-arrivals" },
@@ -310,7 +311,7 @@ export const Header = () => {
         <div className="store-header">
           <div className="header-left">
             <Link to="/" aria-label="Elovyn home" className="flex shrink-0 items-center gap-2.5">
-              <span aria-hidden="true" className="grid h-11 w-11 place-items-center rounded-xl bg-neutral-950 text-sm font-black tracking-tight text-white sm:h-12 sm:w-12">VL</span>
+              <span aria-hidden="true" className="grid h-11 w-11 place-items-center overflow-hidden rounded-xl bg-neutral-950 sm:h-12 sm:w-12"><img src={elovynLogo} alt="" className="h-full w-full object-contain" /></span>
               <span className="hidden text-xs font-bold uppercase tracking-[0.22em] text-neutral-950 sm:block">Elovyn</span>
             </Link>
             <nav aria-label="Shop categories" className="header-nav">
@@ -390,7 +391,7 @@ export const Header = () => {
           <motion.div className="fixed inset-0 z-[70] bg-black/40 lg:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={() => setMobileOpen(false)}>
             <motion.aside className="ml-auto flex h-full w-full max-w-sm flex-col bg-white p-6" initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} onMouseDown={(event) => event.stopPropagation()}>
               <div className="mb-7 flex items-center justify-between">
-                <Link to="/" aria-label="Elovyn home" className="grid h-12 w-12 place-items-center rounded-xl bg-neutral-950 text-sm font-black text-white">VL</Link>
+                <Link to="/" aria-label="Elovyn home" className="grid h-12 w-12 place-items-center overflow-hidden rounded-xl bg-neutral-950"><img src={elovynLogo} alt="" className="h-full w-full object-contain" /></Link>
                 <button aria-label="Close menu" onClick={() => setMobileOpen(false)} className="rounded-full p-2 hover:bg-neutral-100"><X className="h-5 w-5" /></button>
               </div>
               <nav className="space-y-1">
