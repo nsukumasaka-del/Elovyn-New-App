@@ -548,7 +548,8 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
   const [saving, setSaving] = useState(false);
   const [loadingProduct, setLoadingProduct] = useState(Boolean(productId));
   const [optimizing, setOptimizing] = useState(false);
-  const [optimization, setOptimization] = useState<{ title: string; description: string } | null>(null);
+  const [optimization, setOptimization] = useState<{ titles: string[]; description: string } | null>(null);
+  const [optimizationIndex, setOptimizationIndex] = useState(0);
   const selectedImagePreviews = useMemo(() => images.map((file) => ({ file, url: URL.createObjectURL(file) })), [images]);
   useEffect(() => () => selectedImagePreviews.forEach(({ url }) => URL.revokeObjectURL(url)), [selectedImagePreviews]);
   const matrix = useMemo(() => {
@@ -687,11 +688,15 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
     setOptimizing(true);
     setOptimization(null);
     try {
-      const preview = await apiRequest<{ title: string; description: string }>("/admin/ai/optimize-product", {
+      const preview = await apiRequest<{ titles: string[]; description: string }>("/admin/ai/optimize-product", {
         method: "POST",
-        body: JSON.stringify({ title, description }),
+        body: JSON.stringify({ title, category, brand, description }),
       });
+      if (!Array.isArray(preview.titles) || preview.titles.length !== 5 || preview.titles.some((entry) => typeof entry !== "string" || !entry.trim()) || typeof preview.description !== "string" || !preview.description.trim()) {
+        throw new Error("Brixy returned an incomplete set of suggestions. Please try again.");
+      }
       setOptimization(preview);
+      setOptimizationIndex(0);
     } catch (reason) {
       toast.error(reason instanceof Error ? reason.message : "Brixy could not optimize this product.");
     } finally {
@@ -777,16 +782,18 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
             <label className="block text-sm font-medium">Product description / features<textarea value={description} onChange={(event) => { setDescription(event.target.value); setOptimization(null); }} rows={3} className="mt-1.5 w-full rounded-xl border border-neutral-300 px-3 py-2" /></label>
           </div>
           {optimization && <section aria-live="polite" className="rounded-2xl border border-violet-200 bg-violet-50/70 p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <p className="flex items-center gap-2 text-sm font-semibold text-violet-900"><Sparkles className="h-4 w-4" />Brixy’s preview</p>
-                <p className="mt-3 font-semibold text-neutral-950">{optimization.title}</p>
-                <p className="mt-1 text-sm leading-6 text-neutral-700">{optimization.description}</p>
-              </div>
-              <div className="flex gap-2">
-                <button type="button" onClick={() => setOptimization(null)} className="rounded-full border border-neutral-300 bg-white px-3 py-2 text-xs font-semibold">Dismiss</button>
-                <button type="button" onClick={() => { setTitle(optimization.title); setDescription(optimization.description); setOptimization(null); toast.success("Brixy’s copy has been applied. Save the product to keep it."); }} className="rounded-full bg-violet-700 px-4 py-2 text-xs font-semibold text-white hover:bg-violet-800">Apply</button>
-              </div>
+            <p className="flex items-center gap-2 text-sm font-semibold text-violet-900"><Sparkles className="h-4 w-4" />Brixy’s suggestions</p>
+            <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-violet-700">Suggestion {optimizationIndex + 1} / {optimization.titles.length}</p>
+            <p className="mt-1 text-lg font-semibold text-neutral-950">{optimization.titles[optimizationIndex]}</p>
+            <div className="mt-3 rounded-xl border border-violet-100 bg-white/80 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Optimized description</p>
+              <p className="mt-2 whitespace-pre-line text-sm leading-6 text-neutral-700">{optimization.description}</p>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button type="button" onClick={() => { setTitle(optimization.titles[optimizationIndex]); setOptimization(null); toast.success("Brixy’s product name has been applied. Save the product to keep it."); }} className="rounded-full bg-violet-700 px-4 py-2 text-xs font-semibold text-white hover:bg-violet-800">Approve</button>
+              <button type="button" onClick={() => setOptimizationIndex((current) => (current + 1) % optimization.titles.length)} className="rounded-full border border-violet-300 bg-white px-4 py-2 text-xs font-semibold text-violet-800">Next</button>
+              <button type="button" onClick={() => setOptimization(null)} className="rounded-full border border-neutral-300 bg-white px-4 py-2 text-xs font-semibold">Cancel</button>
+              <button type="button" onClick={() => { setDescription(optimization.description); toast.success("Brixy’s description has been applied. Save the product to keep it."); }} className="rounded-full border border-violet-700 bg-white px-4 py-2 text-xs font-semibold text-violet-800">Approve Description</button>
             </div>
           </section>}
           <section className="rounded-2xl border border-neutral-200 p-4">

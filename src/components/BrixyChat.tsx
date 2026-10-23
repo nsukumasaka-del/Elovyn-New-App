@@ -51,11 +51,11 @@ export function BrixyChat() {
         body: JSON.stringify({ messages: nextMessages.map(({ role, content: messageContent }) => ({ role, content: messageContent })) }),
       });
       setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: response.message }]);
-    } catch (reason) {
+    } catch {
       setMessages((current) => [...current, {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: reason instanceof Error ? reason.message : "I’m having trouble replying right now. Please try again shortly.",
+        content: "Brixy is temporarily busy. Please try again in a moment.",
         error: true,
       }]);
     } finally {
