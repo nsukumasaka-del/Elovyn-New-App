@@ -11,7 +11,8 @@ export const Hero = () => {
         <img
           src={siteSettings.hero_image_url || heroImage}
           alt="Editorial fashion storefront hero"
-          className="h-full w-full object-cover object-center opacity-70 grayscale-[0.08]"
+          className="h-full w-full object-cover opacity-70 grayscale-[0.08] transition-[transform,object-position] duration-500"
+          style={{ objectPosition: `${siteSettings.hero_image_position_x}% ${siteSettings.hero_image_position_y}%`, transform: `scale(${siteSettings.hero_image_scale / 100})` }}
         />
         <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/35 to-black/10" />
       </div>

@@ -41,6 +41,7 @@ type StoreContextValue = {
   refreshProducts: () => Promise<void>;
   siteSettings: SiteSettings;
   refreshSiteSettings: () => Promise<void>;
+  applySiteSettings: (settings: SiteSettings) => void;
   cart: CartLine[];
   wishlist: string[];
   cartOpen: boolean;
@@ -127,10 +128,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setProducts(catalog.products);
   }, []);
 
+  const applySiteSettings = useCallback((settings: SiteSettings) => {
+    setSiteSettings({ ...defaultSiteSettings, ...settings });
+  }, []);
+
   const refreshSiteSettings = useCallback(async () => {
     const result = await request<{ settings: SiteSettings }>("/settings");
-    setSiteSettings({ ...defaultSiteSettings, ...result.settings });
-  }, []);
+    applySiteSettings(result.settings);
+  }, [applySiteSettings]);
 
   useEffect(() => {
     void refreshSiteSettings().catch(() => undefined);
@@ -308,11 +313,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [cart, user]);
 
   const value = useMemo(() => ({
-    user, ready, connectionError, retryConnection, products, refreshProducts, siteSettings, refreshSiteSettings, cart, wishlist, cartOpen, setCartOpen, authOpen, setAuthOpen,
+    user, ready, connectionError, retryConnection, products, refreshProducts, siteSettings, refreshSiteSettings, applySiteSettings, cart, wishlist, cartOpen, setCartOpen, authOpen, setAuthOpen,
     authMode, setAuthMode, addToCart, changeQuantity, removeFromCart, clearCart,
     toggleWishlist, signIn, signUp, signOut, saveDeliveryAddress, prepareCheckout, checkout,
   }), [
-    user, ready, connectionError, retryConnection, products, refreshProducts, siteSettings, refreshSiteSettings, cart, wishlist, cartOpen, authOpen, authMode, addToCart,
+    user, ready, connectionError, retryConnection, products, refreshProducts, siteSettings, refreshSiteSettings, applySiteSettings, cart, wishlist, cartOpen, authOpen, authMode, addToCart,
     changeQuantity, removeFromCart, clearCart, toggleWishlist, signIn, signUp, signOut, saveDeliveryAddress, prepareCheckout, checkout,
   ]);
 

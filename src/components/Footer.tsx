@@ -15,7 +15,7 @@ export const Footer = () => {
       <div className="section-shell">
         <div className="grid gap-10 border-b border-white/10 pb-10 md:grid-cols-2 lg:grid-cols-[1.2fr_1fr_1fr_1fr]">
           <div>
-            <img src={siteSettings.logo_url || defaultSiteSettings.logo_url} alt="Elovyn logo" className="h-16 w-16 rounded-xl object-cover" />
+            <img src={siteSettings.logo_url || defaultSiteSettings.logo_url} alt="Elovyn logo" className="rounded-xl object-cover" style={{ width: siteSettings.logo_size, height: siteSettings.logo_size, objectPosition: `${siteSettings.logo_position_x}% ${siteSettings.logo_position_y}%` }} />
             <p className="mt-5 max-w-xs text-sm text-white/60">
               Premium streetwear and lifestyle essentials designed for effortless everyday wear.
             </p>

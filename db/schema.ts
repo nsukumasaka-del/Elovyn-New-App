@@ -27,8 +27,14 @@ export const sessions = sqliteTable("sessions", {
 export const siteSettings = sqliteTable("site_settings", {
   id: text("id").primaryKey(),
   logoUrl: text("logo_url").notNull().default(""),
+  logoSize: integer("logo_size").notNull().default(48),
+  logoPositionX: integer("logo_position_x").notNull().default(50),
+  logoPositionY: integer("logo_position_y").notNull().default(50),
   faviconUrl: text("favicon_url").notNull().default(""),
   heroImageUrl: text("hero_image_url").notNull().default(""),
+  heroImageScale: integer("hero_image_scale").notNull().default(100),
+  heroImagePositionX: integer("hero_image_position_x").notNull().default(50),
+  heroImagePositionY: integer("hero_image_position_y").notNull().default(50),
   heroTitle: text("hero_title").notNull().default("Own your look."),
   heroSubtitle: text("hero_subtitle").notNull().default(""),
   announcementBarText: text("announcement_bar_text").notNull().default(""),
@@ -39,6 +45,9 @@ export const siteSettings = sqliteTable("site_settings", {
   promotionalBannerTitle: text("promotional_banner_title").notNull().default(""),
   promotionalBannerText: text("promotional_banner_text").notNull().default(""),
   promotionalBannerImageUrl: text("promotional_banner_image_url").notNull().default(""),
+  promotionalImageScale: integer("promotional_image_scale").notNull().default(100),
+  promotionalImagePositionX: integer("promotional_image_position_x").notNull().default(50),
+  promotionalImagePositionY: integer("promotional_image_position_y").notNull().default(50),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 

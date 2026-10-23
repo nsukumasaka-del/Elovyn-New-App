@@ -1,0 +1,9 @@
+ALTER TABLE site_settings ADD COLUMN logo_size INTEGER NOT NULL DEFAULT 48;
+ALTER TABLE site_settings ADD COLUMN logo_position_x INTEGER NOT NULL DEFAULT 50;
+ALTER TABLE site_settings ADD COLUMN logo_position_y INTEGER NOT NULL DEFAULT 50;
+ALTER TABLE site_settings ADD COLUMN hero_image_scale INTEGER NOT NULL DEFAULT 100;
+ALTER TABLE site_settings ADD COLUMN hero_image_position_x INTEGER NOT NULL DEFAULT 50;
+ALTER TABLE site_settings ADD COLUMN hero_image_position_y INTEGER NOT NULL DEFAULT 50;
+ALTER TABLE site_settings ADD COLUMN promotional_image_scale INTEGER NOT NULL DEFAULT 100;
+ALTER TABLE site_settings ADD COLUMN promotional_image_position_x INTEGER NOT NULL DEFAULT 50;
+ALTER TABLE site_settings ADD COLUMN promotional_image_position_y INTEGER NOT NULL DEFAULT 50;

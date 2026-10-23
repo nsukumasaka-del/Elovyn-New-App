@@ -93,8 +93,14 @@ const productColumns = {
 
 const siteSettingsColumns = {
   logo_url: siteSettings.logoUrl,
+  logo_size: siteSettings.logoSize,
+  logo_position_x: siteSettings.logoPositionX,
+  logo_position_y: siteSettings.logoPositionY,
   favicon_url: siteSettings.faviconUrl,
   hero_image_url: siteSettings.heroImageUrl,
+  hero_image_scale: siteSettings.heroImageScale,
+  hero_image_position_x: siteSettings.heroImagePositionX,
+  hero_image_position_y: siteSettings.heroImagePositionY,
   hero_title: siteSettings.heroTitle,
   hero_subtitle: siteSettings.heroSubtitle,
   announcement_bar_text: siteSettings.announcementBarText,
@@ -105,6 +111,9 @@ const siteSettingsColumns = {
   promotional_banner_title: siteSettings.promotionalBannerTitle,
   promotional_banner_text: siteSettings.promotionalBannerText,
   promotional_banner_image_url: siteSettings.promotionalBannerImageUrl,
+  promotional_image_scale: siteSettings.promotionalImageScale,
+  promotional_image_position_x: siteSettings.promotionalImagePositionX,
+  promotional_image_position_y: siteSettings.promotionalImagePositionY,
   updated_at: siteSettings.updatedAt,
 };
 
@@ -193,11 +202,25 @@ function siteSettingUrl(value: unknown, label: string) {
   throw new ApiError(`${label} must be an absolute HTTP(S) URL or a site-relative path beginning with /.`, 400);
 }
 
+function siteSettingInteger(value: unknown, label: string, minimum: number, maximum: number) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < minimum || parsed > maximum) {
+    throw new ApiError(`${label} must be a whole number between ${minimum} and ${maximum}.`, 400);
+  }
+  return parsed;
+}
+
 function normalizeSiteSettingsInput(body: Record<string, unknown>): SiteSettings {
   return {
     logo_url: siteSettingUrl(body.logo_url, "Logo URL"),
+    logo_size: siteSettingInteger(body.logo_size, "Logo size", 32, 96),
+    logo_position_x: siteSettingInteger(body.logo_position_x, "Logo horizontal position", 0, 100),
+    logo_position_y: siteSettingInteger(body.logo_position_y, "Logo vertical position", 0, 100),
     favicon_url: siteSettingUrl(body.favicon_url, "Favicon URL"),
     hero_image_url: siteSettingUrl(body.hero_image_url, "Hero image URL"),
+    hero_image_scale: siteSettingInteger(body.hero_image_scale, "Hero image zoom", 100, 200),
+    hero_image_position_x: siteSettingInteger(body.hero_image_position_x, "Hero horizontal position", 0, 100),
+    hero_image_position_y: siteSettingInteger(body.hero_image_position_y, "Hero vertical position", 0, 100),
     hero_title: requiredString(body.hero_title, "Hero title", 160),
     hero_subtitle: siteSettingText(body.hero_subtitle, "Hero subtitle", 1000),
     announcement_bar_text: siteSettingText(body.announcement_bar_text, "Announcement text", 300),
@@ -208,6 +231,9 @@ function normalizeSiteSettingsInput(body: Record<string, unknown>): SiteSettings
     promotional_banner_title: siteSettingText(body.promotional_banner_title, "Promotional banner title", 160),
     promotional_banner_text: siteSettingText(body.promotional_banner_text, "Promotional banner text", 1000),
     promotional_banner_image_url: siteSettingUrl(body.promotional_banner_image_url, "Promotional banner image URL"),
+    promotional_image_scale: siteSettingInteger(body.promotional_image_scale, "Promotional image zoom", 100, 200),
+    promotional_image_position_x: siteSettingInteger(body.promotional_image_position_x, "Promotional image horizontal position", 0, 100),
+    promotional_image_position_y: siteSettingInteger(body.promotional_image_position_y, "Promotional image vertical position", 0, 100),
   };
 }
 
@@ -1525,8 +1551,14 @@ async function route(
     await db.insert(siteSettings).values({
       id: "default",
       logoUrl: next.logo_url,
+      logoSize: next.logo_size,
+      logoPositionX: next.logo_position_x,
+      logoPositionY: next.logo_position_y,
       faviconUrl: next.favicon_url,
       heroImageUrl: next.hero_image_url,
+      heroImageScale: next.hero_image_scale,
+      heroImagePositionX: next.hero_image_position_x,
+      heroImagePositionY: next.hero_image_position_y,
       heroTitle: next.hero_title,
       heroSubtitle: next.hero_subtitle,
       announcementBarText: next.announcement_bar_text,
@@ -1537,12 +1569,21 @@ async function route(
       promotionalBannerTitle: next.promotional_banner_title,
       promotionalBannerText: next.promotional_banner_text,
       promotionalBannerImageUrl: next.promotional_banner_image_url,
+      promotionalImageScale: next.promotional_image_scale,
+      promotionalImagePositionX: next.promotional_image_position_x,
+      promotionalImagePositionY: next.promotional_image_position_y,
     }).onConflictDoUpdate({
       target: siteSettings.id,
       set: {
         logoUrl: next.logo_url,
+        logoSize: next.logo_size,
+        logoPositionX: next.logo_position_x,
+        logoPositionY: next.logo_position_y,
         faviconUrl: next.favicon_url,
         heroImageUrl: next.hero_image_url,
+        heroImageScale: next.hero_image_scale,
+        heroImagePositionX: next.hero_image_position_x,
+        heroImagePositionY: next.hero_image_position_y,
         heroTitle: next.hero_title,
         heroSubtitle: next.hero_subtitle,
         announcementBarText: next.announcement_bar_text,
@@ -1553,6 +1594,9 @@ async function route(
         promotionalBannerTitle: next.promotional_banner_title,
         promotionalBannerText: next.promotional_banner_text,
         promotionalBannerImageUrl: next.promotional_banner_image_url,
+        promotionalImageScale: next.promotional_image_scale,
+        promotionalImagePositionX: next.promotional_image_position_x,
+        promotionalImagePositionY: next.promotional_image_position_y,
         updatedAt: sql`CURRENT_TIMESTAMP`,
       },
     });

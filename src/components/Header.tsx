@@ -325,7 +325,7 @@ export const Header = () => {
         <div className={`store-header transition-[background-color,border-color,box-shadow] duration-300 ${isTransparent ? "!border-transparent !bg-transparent !shadow-none !backdrop-blur-none" : "shadow-sm"}`}>
           <div className="header-left">
             <Link to="/" aria-label="Elovyn home" className="flex shrink-0 items-center gap-2.5">
-              <span aria-hidden="true" className="grid h-11 w-11 place-items-center overflow-hidden rounded-xl sm:h-12 sm:w-12"><img src={siteSettings.logo_url || defaultSiteSettings.logo_url} alt="" className="h-full w-full object-cover" /></span>
+              <span aria-hidden="true" className="grid shrink-0 place-items-center overflow-hidden rounded-xl transition-[width,height] duration-300" style={{ width: siteSettings.logo_size, height: siteSettings.logo_size }}><img src={siteSettings.logo_url || defaultSiteSettings.logo_url} alt="" className="h-full w-full object-cover" style={{ objectPosition: `${siteSettings.logo_position_x}% ${siteSettings.logo_position_y}%` }} /></span>
               <span className={`hidden text-xs font-bold uppercase tracking-[0.22em] transition-colors duration-300 sm:block ${isTransparent ? "text-white" : "text-neutral-950"}`}>Elovyn</span>
             </Link>
             <nav aria-label="Shop categories" className="header-nav">
@@ -405,7 +405,7 @@ export const Header = () => {
           <motion.div className="fixed inset-0 z-[70] bg-black/40 lg:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={() => setMobileOpen(false)}>
             <motion.aside className="ml-auto flex h-full w-full max-w-sm flex-col bg-white p-6" initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} onMouseDown={(event) => event.stopPropagation()}>
               <div className="mb-7 flex items-center justify-between">
-                <Link to="/" aria-label="Elovyn home" className="grid h-12 w-12 place-items-center overflow-hidden rounded-xl"><img src={siteSettings.logo_url || defaultSiteSettings.logo_url} alt="" className="h-full w-full object-cover" /></Link>
+                <Link to="/" aria-label="Elovyn home" className="grid place-items-center overflow-hidden rounded-xl" style={{ width: siteSettings.logo_size, height: siteSettings.logo_size }}><img src={siteSettings.logo_url || defaultSiteSettings.logo_url} alt="" className="h-full w-full object-cover" style={{ objectPosition: `${siteSettings.logo_position_x}% ${siteSettings.logo_position_y}%` }} /></Link>
                 <button aria-label="Close menu" onClick={() => setMobileOpen(false)} className="rounded-full p-2 hover:bg-neutral-100"><X className="h-5 w-5" /></button>
               </div>
               <nav className="space-y-1">
