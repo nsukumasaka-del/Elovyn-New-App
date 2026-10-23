@@ -1,5 +1,5 @@
-import { useMemo, useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Heart, Menu, Search, ShoppingBag, UserRound, X } from "lucide-react";
 import { toast } from "sonner";
@@ -280,6 +280,7 @@ function CartDrawer({ onClose }: { onClose: () => void }) {
 }
 
 export const Header = () => {
+  const location = useLocation();
   const {
     user, cart, wishlist, cartOpen, setCartOpen, authOpen, setAuthOpen,
     authMode, setAuthMode, signOut, products,
@@ -288,6 +289,19 @@ export const Header = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const isHomePage = location.pathname === "/";
+  const [pastTransparentThreshold, setPastTransparentThreshold] = useState(() => !isHomePage || window.scrollY > 50);
+  useEffect(() => {
+    if (!isHomePage) {
+      setPastTransparentThreshold(true);
+      return;
+    }
+    const updateHeader = () => setPastTransparentThreshold(window.scrollY > 50);
+    updateHeader();
+    window.addEventListener("scroll", updateHeader, { passive: true });
+    return () => window.removeEventListener("scroll", updateHeader);
+  }, [isHomePage]);
+  const isTransparent = isHomePage && !pastTransparentThreshold;
   const matches = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return [];
@@ -303,28 +317,28 @@ export const Header = () => {
 
   return (
     <>
-      <header className="sticky top-0 z-50">
+      <header data-header-state={isTransparent ? "transparent" : "solid"} className={`${isHomePage ? "fixed inset-x-0 top-0" : "sticky top-0"} z-50`}>
         <div className="announcement-bar">
           <div className="section-shell flex h-9 items-center justify-center text-center text-[10px] font-medium uppercase tracking-[0.18em]">
             FREE DELIVERY ON ORDERS OVER R1,500
           </div>
         </div>
-        <div className="store-header">
+        <div className={`store-header transition-[background-color,border-color,box-shadow] duration-300 ${isTransparent ? "!border-transparent !bg-transparent !shadow-none !backdrop-blur-none" : "shadow-sm"}`}>
           <div className="header-left">
             <Link to="/" aria-label="Elovyn home" className="flex shrink-0 items-center gap-2.5">
               <span aria-hidden="true" className="grid h-11 w-11 place-items-center overflow-hidden rounded-xl sm:h-12 sm:w-12"><img src={elovynLogo} alt="" className="h-full w-full object-cover" /></span>
-              <span className="hidden text-xs font-bold uppercase tracking-[0.22em] text-neutral-950 sm:block">Elovyn</span>
+              <span className={`hidden text-xs font-bold uppercase tracking-[0.22em] transition-colors duration-300 sm:block ${isTransparent ? "text-white" : "text-neutral-950"}`}>Elovyn</span>
             </Link>
             <nav aria-label="Shop categories" className="header-nav">
               {navItems.map((item) => (
-                <Link key={item.label} to={item.href} className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.13em] text-neutral-700 transition-colors hover:text-black">
+                <Link key={item.label} to={item.href} className={`whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.13em] transition-colors duration-300 ${isTransparent ? "text-white/90 hover:text-white" : "text-neutral-700 hover:text-black"}`}>
                   {item.label}
                 </Link>
               ))}
             </nav>
           </div>
           <div className="header-actions">
-            <button aria-label="Search" aria-expanded={searchOpen} onClick={() => setSearchOpen((open) => !open)} className="header-icon">
+            <button aria-label="Search" aria-expanded={searchOpen} onClick={() => setSearchOpen((open) => !open)} className={`header-icon ${isTransparent ? "!text-white hover:!bg-white/15" : ""}`}>
               <Search className="h-5 w-5" />
             </button>
             <div className="relative hidden sm:block">
@@ -338,7 +352,7 @@ export const Header = () => {
                     setAuthOpen(true);
                   }
                 }}
-                className="header-icon"
+                className={`header-icon ${isTransparent ? "!text-white hover:!bg-white/15" : ""}`}
               >
                 <UserRound className="h-5 w-5" />
               </button>
@@ -359,14 +373,14 @@ export const Header = () => {
                 </div>
               )}
             </div>
-            <Link aria-label={`Wishlist, ${wishlist.length} saved items`} to="/wishlist" className="header-icon hidden sm:inline-flex">
+            <Link aria-label={`Wishlist, ${wishlist.length} saved items`} to="/wishlist" className={`header-icon hidden sm:inline-flex ${isTransparent ? "!text-white hover:!bg-white/15" : ""}`}>
               <Heart className="h-5 w-5" />
             </Link>
-            <button aria-label={`Shopping bag, ${cartCount} items`} onClick={() => setCartOpen(true)} className="header-icon relative">
+            <button aria-label={`Shopping bag, ${cartCount} items`} onClick={() => setCartOpen(true)} className={`header-icon relative ${isTransparent ? "!text-white hover:!bg-white/15" : ""}`}>
               <ShoppingBag className="h-5 w-5" />
-              <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-neutral-950 px-1 text-[9px] font-medium text-white">{cartCount}</span>
+              <span className={`absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-medium ${isTransparent ? "bg-white text-neutral-950" : "bg-neutral-950 text-white"}`}>{cartCount}</span>
             </button>
-            <button aria-label="Open menu" onClick={() => setMobileOpen(true)} className="header-icon xl:hidden">
+            <button aria-label="Open menu" onClick={() => setMobileOpen(true)} className={`header-icon xl:hidden ${isTransparent ? "!text-white hover:!bg-white/15" : ""}`}>
               <Menu className="h-5 w-5" />
             </button>
           </div>
