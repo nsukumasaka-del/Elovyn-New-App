@@ -24,12 +24,7 @@ const categoryTiles = [
 
 const Index = () => {
   const { products, addToCart, siteSettings } = useStore();
-  const storefrontProductIds = new Set([
-    "essential-box-tee", "everyday-overshirt", "layered-set", "signature-hoodie",
-    "raw-luxe-bundle", "hydration-set", "styling-kit", "signature-layer",
-    "leather-crossbody", "structured-cap", "layered-chains", "everyday-tote",
-  ]);
-  const newProducts = products.filter((product) => !storefrontProductIds.has(product.id));
+  const newProducts = products.slice(8);
 
   return (
     <div id="top" className="min-h-screen bg-[#f6f1ea] text-neutral-950">
