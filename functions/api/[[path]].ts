@@ -318,6 +318,74 @@ function brixyMessages(value: unknown): BrixyMessage[] {
   return messages;
 }
 
+type GeminiModelRecord = {
+  name?: unknown;
+  baseModelId?: unknown;
+  supportedGenerationMethods?: unknown;
+};
+
+let cachedGeminiModel: { name: string; expiresAt: number } | null = null;
+
+async function geminiErrorMessage(response: Response) {
+  try {
+    const payload = await response.json() as { error?: { message?: unknown } };
+    return typeof payload.error?.message === "string"
+      ? payload.error.message.slice(0, 500)
+      : "Gemini returned an error without a message.";
+  } catch {
+    return "Gemini returned a non-JSON error response.";
+  }
+}
+
+async function availableGeminiModel(apiKey: string, signal: AbortSignal, configuredModel?: string, forceRefresh = false) {
+  if (!forceRefresh && cachedGeminiModel && cachedGeminiModel.expiresAt > Date.now()) return cachedGeminiModel.name;
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000&key=${encodeURIComponent(apiKey)}`;
+  let response: Response;
+  try {
+    response = await fetch(endpoint, { headers: { Accept: "application/json" }, signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    throw new ApiError("Brixy could not check the available Gemini models. Please try again shortly.", 500);
+  }
+  if (!response.ok) {
+    const message = await geminiErrorMessage(response);
+    console.error("Gemini model discovery failed:", { status: response.status, message });
+    throw new ApiError("Brixy could not verify the available Gemini models. Please try again shortly.", 500);
+  }
+  let payload: { models?: GeminiModelRecord[] };
+  try { payload = await response.json() as typeof payload; }
+  catch { throw new ApiError("Gemini returned an invalid model list. Please try again shortly.", 500); }
+  const candidates = (Array.isArray(payload.models) ? payload.models : []).flatMap((entry) => {
+    const methods = Array.isArray(entry.supportedGenerationMethods) ? entry.supportedGenerationMethods : [];
+    if (!methods.some((method) => typeof method === "string" && method.toLowerCase() === "generatecontent")) return [];
+    const rawName = typeof entry.baseModelId === "string" && entry.baseModelId.trim()
+      ? entry.baseModelId.trim()
+      : typeof entry.name === "string" ? entry.name.replace(/^models\//, "").trim() : "";
+    if (!rawName || !/^[a-zA-Z0-9._-]+$/.test(rawName)) return [];
+    return [rawName];
+  });
+  const uniqueCandidates = [...new Set(candidates)];
+  const configured = configuredModel?.replace(/^models\//, "").trim();
+  const preferredModels = [
+    configured,
+    "gemini-3.8-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-flash-latest",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+  ].filter((model): model is string => Boolean(model));
+  const selected = preferredModels.find((model) => uniqueCandidates.includes(model))
+    || uniqueCandidates.find((model) => /gemini.*flash/i.test(model) && !/(?:image|vision|live|audio|tts|embedding)/i.test(model))
+    || uniqueCandidates.find((model) => /^gemini-/i.test(model) && !/(?:image|vision|live|audio|tts|embedding)/i.test(model));
+  if (!selected) throw new ApiError("No Gemini model available to this API key supports content generation.", 500);
+  cachedGeminiModel = { name: selected, expiresAt: Date.now() + 30 * 60 * 1000 };
+  return selected;
+}
+
 async function geminiText(env: Env, input: {
   systemInstruction: string;
   contents: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }>;
@@ -326,60 +394,72 @@ async function geminiText(env: Env, input: {
   const apiKey = env.GEMINI_API_KEY?.trim();
   if (!apiKey) throw new ApiError("Gemini API key is not configured in environment variables.", 500);
   const configuredModel = env.GEMINI_MODEL?.trim();
-  const retiredModels = new Set(["gemini-1.5-flash", "gemini-2.0-flash", "gemini-2.5-flash"]);
-  const model = configuredModel && !retiredModels.has(configuredModel) ? configuredModel : "gemini-3.6-flash";
-  if (!/^[a-zA-Z0-9._-]+$/.test(model)) throw new ApiError("The configured Gemini model name is invalid.", 500);
+  if (configuredModel && !/^(?:models\/)?[a-zA-Z0-9._-]+$/.test(configuredModel)) throw new ApiError("The configured Gemini model name is invalid.", 500);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20_000);
-  let response: Response;
+  const timeout = setTimeout(() => controller.abort(), 25_000);
   try {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
-    response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: input.systemInstruction }] },
+    const requestBody = (structuredOutput: boolean) => JSON.stringify({
+        systemInstruction: { parts: [{ text: input.responseJsonSchema
+          ? `${input.systemInstruction} Return only a valid JSON object with exactly the requested fields and no Markdown formatting.`
+          : input.systemInstruction }] },
         contents: input.contents,
         generationConfig: {
           temperature: input.responseJsonSchema ? 0.45 : 0.65,
           maxOutputTokens: input.responseJsonSchema ? 500 : 350,
-          ...(input.responseJsonSchema ? {
+          ...(input.responseJsonSchema && structuredOutput ? {
             responseMimeType: "application/json",
             responseJsonSchema: input.responseJsonSchema,
           } : {}),
         },
-      }),
-      signal: controller.signal,
-    });
+      });
+    const generate = (model: string, structuredOutput = true) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: requestBody(structuredOutput),
+        signal: controller.signal,
+      });
+    let model = await availableGeminiModel(apiKey, controller.signal, configuredModel);
+    let response = await generate(model);
+    if (response.status === 404) {
+      const firstMessage = await geminiErrorMessage(response);
+      console.warn("Cached Gemini model was unavailable; refreshing model list:", { model, message: firstMessage });
+      cachedGeminiModel = null;
+      const refreshedModel = await availableGeminiModel(apiKey, controller.signal, configuredModel, true);
+      if (refreshedModel !== model) {
+        model = refreshedModel;
+        response = await generate(model);
+      } else {
+        throw new ApiError("Brixy could not find an available Gemini model. Please try again shortly.", 500);
+      }
+    }
+    if (response.status === 400 && input.responseJsonSchema) {
+      const structuredOutputMessage = await geminiErrorMessage(response);
+      console.warn("Gemini model rejected structured output; retrying with prompt-enforced JSON:", { model, message: structuredOutputMessage });
+      response = await generate(model, false);
+    }
+    if (!response.ok) {
+      const upstreamMessage = await geminiErrorMessage(response);
+      console.error("Gemini request failed:", { status: response.status, model, message: upstreamMessage });
+      throw new ApiError("Brixy is temporarily unavailable. Please try again shortly.", 500);
+    }
+    let payload: { candidates?: Array<{ content?: { parts?: Array<{ text?: unknown }> }; finishReason?: string }> };
+    try { payload = await response.json() as typeof payload; }
+    catch { throw new ApiError("Gemini returned an invalid response. Please try again shortly.", 500); }
+    const text = payload.candidates?.[0]?.content?.parts
+      ?.map((part) => typeof part.text === "string" ? part.text : "")
+      .join("")
+      .trim();
+    if (!text) throw new ApiError("Brixy could not create a response. Please rephrase and try again.", 500);
+    return input.responseJsonSchema
+      ? text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim()
+      : text;
   } catch (error) {
+    if (error instanceof ApiError) throw error;
     if (error instanceof Error && error.name === "AbortError") throw new ApiError("Brixy took too long to respond. Please try again.", 500);
     throw new ApiError("Brixy could not be reached. Please try again shortly.", 500);
   } finally {
     clearTimeout(timeout);
   }
-  if (!response.ok) {
-    let upstreamMessage = "No JSON error message was returned.";
-    try {
-      const errorPayload = await response.json() as { error?: { message?: unknown; status?: unknown } };
-      if (typeof errorPayload.error?.message === "string") upstreamMessage = errorPayload.error.message.slice(0, 500);
-    } catch {
-      upstreamMessage = "Gemini returned a non-JSON error response.";
-    }
-    console.error("Gemini request failed:", { status: response.status, model, message: upstreamMessage });
-    throw new ApiError("Brixy is temporarily unavailable. Please try again shortly.", 500);
-  }
-  let payload: { candidates?: Array<{ content?: { parts?: Array<{ text?: unknown }> }; finishReason?: string }> };
-  try {
-    payload = await response.json() as typeof payload;
-  } catch {
-    throw new ApiError("Gemini returned an invalid response. Please try again shortly.", 500);
-  }
-  const text = payload.candidates?.[0]?.content?.parts
-    ?.map((part) => typeof part.text === "string" ? part.text : "")
-    .join("")
-    .trim();
-  if (!text) throw new ApiError("Brixy could not create a response. Please rephrase and try again.", 500);
-  return text;
 }
 
 async function enforceBrixyRateLimit(request: Request, env: Env, waitUntil: PagesContext["waitUntil"]) {
