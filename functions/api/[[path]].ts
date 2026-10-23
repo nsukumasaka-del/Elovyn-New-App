@@ -326,42 +326,68 @@ async function geminiText(env: Env, input: {
   if (!apiKey) throw new ApiError("Gemini API key is not configured in environment variables.", 500);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12_000);
-  try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`, {
+  const models = ["gemini-3.5-flash-lite", "gemini-flash-latest", "gemini-3.8-flash"] as const;
+  const requestBody = (structuredOutput: boolean) => JSON.stringify({
+    systemInstruction: { parts: [{ text: input.responseJsonSchema
+      ? `${input.systemInstruction} Return only a valid JSON object with exactly the requested fields and no Markdown formatting.`
+      : input.systemInstruction }] },
+    contents: input.contents,
+    generationConfig: {
+      temperature: input.responseJsonSchema ? 0.45 : 0.65,
+      maxOutputTokens: input.responseJsonSchema ? 500 : 350,
+      ...(input.responseJsonSchema && structuredOutput ? {
+        responseMimeType: "application/json",
+        responseSchema: input.responseJsonSchema,
+      } : {}),
+    },
+  });
+  const generate = (model: string, structuredOutput: boolean) => fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+    {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "x-goog-api-key": apiKey,
+      },
       signal: controller.signal,
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: input.responseJsonSchema
-          ? `${input.systemInstruction} Return only a valid JSON object with exactly the requested fields and no Markdown formatting.`
-          : input.systemInstruction }] },
-        contents: input.contents,
-        generationConfig: {
-          temperature: input.responseJsonSchema ? 0.45 : 0.65,
-          maxOutputTokens: input.responseJsonSchema ? 500 : 350,
-          ...(input.responseJsonSchema ? {
-            responseMimeType: "application/json",
-            responseSchema: input.responseJsonSchema,
-          } : {}),
-        },
-      }),
-    });
-    if (!response.ok) {
-      const upstreamError = (await response.text()).slice(0, 1_000);
-      console.error("Gemini request failed:", { status: response.status, model: "gemini-1.5-flash", message: upstreamError });
-      throw new ApiError("Brixy is temporarily busy. Please try again.", 500);
+      body: requestBody(structuredOutput),
+    },
+  );
+  try {
+    for (const [index, model] of models.entries()) {
+      let response = await generate(model, true);
+      let upstreamError = "";
+      if (!response.ok) {
+        upstreamError = (await response.text()).slice(0, 1_000);
+        console.error("Gemini request failed:", { status: response.status, model, message: upstreamError });
+      }
+      if (response.status === 400 && input.responseJsonSchema) {
+        console.warn("Gemini rejected structured output; retrying with prompt-enforced JSON:", { model, message: upstreamError });
+        response = await generate(model, false);
+        if (!response.ok) {
+          upstreamError = (await response.text()).slice(0, 1_000);
+          console.error("Gemini JSON fallback failed:", { status: response.status, model, message: upstreamError });
+        }
+      }
+      if (!response.ok) {
+        const mayTryAnotherModel = [404, 429, 500, 502, 503, 504].includes(response.status) && index < models.length - 1;
+        if (mayTryAnotherModel) continue;
+        throw new ApiError("Brixy is temporarily busy. Please try again.", 500);
+      }
+      let payload: { candidates?: Array<{ content?: { parts?: Array<{ text?: unknown }> }; finishReason?: string }> };
+      try { payload = await response.json() as typeof payload; }
+      catch { throw new ApiError("Brixy is temporarily busy. Please try again.", 500); }
+      const text = payload.candidates?.[0]?.content?.parts
+        ?.map((part) => typeof part.text === "string" ? part.text : "")
+        .join("")
+        .trim();
+      if (!text) throw new ApiError("Brixy is temporarily busy. Please try again.", 500);
+      return input.responseJsonSchema
+        ? text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim()
+        : text;
     }
-    let payload: { candidates?: Array<{ content?: { parts?: Array<{ text?: unknown }> }; finishReason?: string }> };
-    try { payload = await response.json() as typeof payload; }
-    catch { throw new ApiError("Brixy is temporarily busy. Please try again.", 500); }
-    const text = payload.candidates?.[0]?.content?.parts
-      ?.map((part) => typeof part.text === "string" ? part.text : "")
-      .join("")
-      .trim();
-    if (!text) throw new ApiError("Brixy is temporarily busy. Please try again.", 500);
-    return input.responseJsonSchema
-      ? text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim()
-      : text;
+    throw new ApiError("Brixy is temporarily busy. Please try again.", 500);
   } catch (error) {
     if (error instanceof ApiError) throw error;
     if (error instanceof Error && error.name === "AbortError") throw new ApiError("Brixy is temporarily busy. Please try again.", 500);
