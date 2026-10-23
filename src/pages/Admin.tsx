@@ -548,8 +548,9 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
   const [saving, setSaving] = useState(false);
   const [loadingProduct, setLoadingProduct] = useState(Boolean(productId));
   const [optimizing, setOptimizing] = useState(false);
-  const [optimization, setOptimization] = useState<{ titles: string[]; description: string } | null>(null);
+  const [optimization, setOptimization] = useState<{ titles: string[]; descriptions: string[] } | null>(null);
   const [optimizationIndex, setOptimizationIndex] = useState(0);
+  const [optimizationTarget, setOptimizationTarget] = useState<"title" | "description">("title");
   const selectedImagePreviews = useMemo(() => images.map((file) => ({ file, url: URL.createObjectURL(file) })), [images]);
   useEffect(() => () => selectedImagePreviews.forEach(({ url }) => URL.revokeObjectURL(url)), [selectedImagePreviews]);
   const matrix = useMemo(() => {
@@ -680,19 +681,21 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
     });
   }
 
-  async function optimizeWithBrixy() {
+  async function optimizeWithBrixy(target: "title" | "description") {
     if (!title.trim()) {
       toast.error("Add a product title before asking Brixy.");
       return;
     }
+    setOptimizationTarget(target);
     setOptimizing(true);
     setOptimization(null);
     try {
-      const preview = await apiRequest<{ titles: string[]; description: string }>("/admin/ai/optimize-product", {
+      const preview = await apiRequest<{ titles: string[]; descriptions: string[] }>("/admin/ai/optimize-product", {
         method: "POST",
         body: JSON.stringify({ title, category, brand, description }),
       });
-      if (!Array.isArray(preview.titles) || preview.titles.length !== 5 || preview.titles.some((entry) => typeof entry !== "string" || !entry.trim()) || typeof preview.description !== "string" || !preview.description.trim()) {
+      if (!Array.isArray(preview.titles) || preview.titles.length !== 5 || preview.titles.some((entry) => typeof entry !== "string" || !entry.trim())
+        || !Array.isArray(preview.descriptions) || preview.descriptions.length !== 5 || preview.descriptions.some((entry) => typeof entry !== "string" || !entry.trim())) {
         throw new Error("Brixy returned an incomplete set of suggestions. Please try again.");
       }
       setOptimization(preview);
@@ -759,6 +762,11 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
     }
   }
 
+  const activeSuggestions = optimization
+    ? optimizationTarget === "title" ? optimization.titles : optimization.descriptions
+    : [];
+  const activeSuggestion = activeSuggestions[optimizationIndex] ?? "";
+
   return (
     <div className="fixed inset-0 z-[90] grid place-items-center bg-black/45 p-4" onMouseDown={onClose}>
       <section role="dialog" aria-modal="true" aria-labelledby="add-product-title" className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl bg-white p-7 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
@@ -766,9 +774,9 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
         <form onSubmit={(event) => void submit(event)} className="mt-6 space-y-4">
           <div className="flex flex-wrap items-end gap-3">
             <label className="min-w-[260px] flex-1 text-sm font-medium">Product title<input required value={title} onChange={(event) => { setTitle(event.target.value); setOptimization(null); }} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
-            <button type="button" disabled={optimizing || loadingProduct || !title.trim()} onClick={() => void optimizeWithBrixy()} className="inline-flex h-11 items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-4 text-sm font-semibold text-violet-800 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50">
+            <button type="button" disabled={optimizing || loadingProduct || !title.trim()} onClick={() => void optimizeWithBrixy("title")} className="inline-flex h-11 items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-4 text-sm font-semibold text-violet-800 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50">
               <Sparkles className={`h-4 w-4 ${optimizing ? "animate-pulse" : ""}`} />
-              {optimizing ? "Brixy is writing…" : "Ask Brixy to Optimize"}
+              {optimizing && optimizationTarget === "title" ? "Brixy is writing…" : "Ask Brixy to Optimize"}
             </button>
           </div>
           <label className="block text-sm font-medium">SKU<input required value={sku} onChange={(event) => setSku(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
@@ -779,21 +787,26 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
           <label className="block text-sm font-medium">Category<select value={category} onChange={(event) => setCategory(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3"><option>Streetwear</option><option>T-Shirts</option><option>Hoodies</option><option>Accessories</option><option>Wigs</option><option>Care</option><option>New Arrivals</option></select></label>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block text-sm font-medium">Brand<input value={brand} onChange={(event) => setBrand(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
-            <label className="block text-sm font-medium">Product description / features<textarea value={description} onChange={(event) => { setDescription(event.target.value); setOptimization(null); }} rows={3} className="mt-1.5 w-full rounded-xl border border-neutral-300 px-3 py-2" /></label>
+            <div className="block text-sm font-medium">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label htmlFor="product-description">Product description / features</label>
+                <button type="button" disabled={optimizing || loadingProduct || !title.trim()} onClick={() => void optimizeWithBrixy("description")} className="inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50">
+                  <Sparkles className={`h-3.5 w-3.5 ${optimizing && optimizationTarget === "description" ? "animate-pulse" : ""}`} />
+                  {optimizing && optimizationTarget === "description" ? "Brixy is writing…" : "Ask Brixy for Descriptions"}
+                </button>
+              </div>
+              <textarea id="product-description" value={description} onChange={(event) => { setDescription(event.target.value); setOptimization(null); }} rows={4} className="mt-1.5 w-full rounded-xl border border-neutral-300 px-3 py-2" />
+              <span className="mt-1 block text-xs font-normal text-neutral-500">Get five informative, concise options and approve the one you prefer.</span>
+            </div>
           </div>
           {optimization && <section aria-live="polite" className="rounded-2xl border border-violet-200 bg-violet-50/70 p-4">
             <p className="flex items-center gap-2 text-sm font-semibold text-violet-900"><Sparkles className="h-4 w-4" />Brixy’s suggestions</p>
-            <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-violet-700">Suggestion {optimizationIndex + 1} / {optimization.titles.length}</p>
-            <p className="mt-1 text-lg font-semibold text-neutral-950">{optimization.titles[optimizationIndex]}</p>
-            <div className="mt-3 rounded-xl border border-violet-100 bg-white/80 p-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Optimized description</p>
-              <p className="mt-2 whitespace-pre-line text-sm leading-6 text-neutral-700">{optimization.description}</p>
-            </div>
+            <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-violet-700">{optimizationTarget === "title" ? "Product name" : "Description"} suggestion {optimizationIndex + 1} / {activeSuggestions.length}</p>
+            <div className={`mt-2 rounded-xl border border-violet-100 bg-white/80 p-3 ${optimizationTarget === "title" ? "text-lg font-semibold text-neutral-950" : "whitespace-pre-line text-sm leading-6 text-neutral-700"}`}>{activeSuggestion}</div>
             <div className="mt-4 flex flex-wrap gap-2">
-              <button type="button" onClick={() => { setTitle(optimization.titles[optimizationIndex]); setOptimization(null); toast.success("Brixy’s product name has been applied. Save the product to keep it."); }} className="rounded-full bg-violet-700 px-4 py-2 text-xs font-semibold text-white hover:bg-violet-800">Approve</button>
-              <button type="button" onClick={() => setOptimizationIndex((current) => (current + 1) % optimization.titles.length)} className="rounded-full border border-violet-300 bg-white px-4 py-2 text-xs font-semibold text-violet-800">Next</button>
+              <button type="button" onClick={() => { if (optimizationTarget === "title") setTitle(activeSuggestion); else setDescription(activeSuggestion); setOptimization(null); toast.success(`Brixy’s ${optimizationTarget === "title" ? "product name" : "description"} has been applied. Save the product to keep it.`); }} className="rounded-full bg-violet-700 px-4 py-2 text-xs font-semibold text-white hover:bg-violet-800">Approve</button>
+              <button type="button" onClick={() => setOptimizationIndex((current) => (current + 1) % activeSuggestions.length)} className="rounded-full border border-violet-300 bg-white px-4 py-2 text-xs font-semibold text-violet-800">Next</button>
               <button type="button" onClick={() => setOptimization(null)} className="rounded-full border border-neutral-300 bg-white px-4 py-2 text-xs font-semibold">Cancel</button>
-              <button type="button" onClick={() => { setDescription(optimization.description); toast.success("Brixy’s description has been applied. Save the product to keep it."); }} className="rounded-full border border-violet-700 bg-white px-4 py-2 text-xs font-semibold text-violet-800">Approve Description</button>
             </div>
           </section>}
           <section className="rounded-2xl border border-neutral-200 p-4">
