@@ -143,8 +143,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const faviconUrl = siteSettings.favicon_url || defaultSiteSettings.favicon_url;
-    document.querySelectorAll<HTMLLinkElement>('link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]')
-      .forEach((link) => { link.href = faviconUrl; });
+    let iconLinks = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel~="icon"]'));
+    if (!iconLinks.length) {
+      const link = document.createElement("link");
+      link.rel = "icon";
+      document.head.appendChild(link);
+      iconLinks = [link];
+    }
+    const touchIcons = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="apple-touch-icon"]'));
+    [...iconLinks, ...touchIcons].forEach((link) => {
+      link.href = faviconUrl;
+      if (faviconUrl !== "/favicon.ico") link.removeAttribute("type");
+    });
   }, [siteSettings.favicon_url]);
 
   useEffect(() => {

@@ -29,7 +29,7 @@ export const defaultSiteSettings: SiteSettings = {
   logo_size: 48,
   logo_position_x: 50,
   logo_position_y: 50,
-  favicon_url: "/elovyn-logo.jpeg?v=3",
+  favicon_url: "/favicon.png",
   hero_image_url: "",
   hero_image_scale: 100,
   hero_image_position_x: 50,
