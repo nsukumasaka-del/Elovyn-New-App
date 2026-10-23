@@ -10,6 +10,7 @@ import {
 import { toast } from "sonner";
 import { apiRequest as request, type CartProduct, type StoreUser } from "@/lib/store-api";
 import type { DeliveryAddress } from "@/lib/delivery-address";
+import { defaultSiteSettings, type SiteSettings } from "@/lib/site-settings";
 
 export type { CartProduct, StoreUser } from "@/lib/store-api";
 export type { DeliveryAddress } from "@/lib/delivery-address";
@@ -38,6 +39,8 @@ type StoreContextValue = {
   retryConnection: () => void;
   products: StoreProduct[];
   refreshProducts: () => Promise<void>;
+  siteSettings: SiteSettings;
+  refreshSiteSettings: () => Promise<void>;
   cart: CartLine[];
   wishlist: string[];
   cartOpen: boolean;
@@ -96,6 +99,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [products, setProducts] = useState<StoreProduct[]>([]);
+  const [siteSettings, setSiteSettings] = useState<SiteSettings>(defaultSiteSettings);
   const [cart, setCart] = useState<CartLine[]>(readStoredCart);
   const [wishlist, setWishlist] = useState<string[]>(readWishlist);
   const [cartOpen, setCartOpen] = useState(false);
@@ -122,6 +126,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const catalog = await request<{ products: StoreProduct[] }>("/products");
     setProducts(catalog.products);
   }, []);
+
+  const refreshSiteSettings = useCallback(async () => {
+    const result = await request<{ settings: SiteSettings }>("/settings");
+    setSiteSettings({ ...defaultSiteSettings, ...result.settings });
+  }, []);
+
+  useEffect(() => {
+    void refreshSiteSettings().catch(() => undefined);
+  }, [refreshSiteSettings, retryCount]);
+
+  useEffect(() => {
+    const faviconUrl = siteSettings.favicon_url || defaultSiteSettings.favicon_url;
+    document.querySelectorAll<HTMLLinkElement>('link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]')
+      .forEach((link) => { link.href = faviconUrl; });
+  }, [siteSettings.favicon_url]);
 
   useEffect(() => {
     let cancelled = false;
@@ -289,11 +308,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [cart, user]);
 
   const value = useMemo(() => ({
-    user, ready, connectionError, retryConnection, products, refreshProducts, cart, wishlist, cartOpen, setCartOpen, authOpen, setAuthOpen,
+    user, ready, connectionError, retryConnection, products, refreshProducts, siteSettings, refreshSiteSettings, cart, wishlist, cartOpen, setCartOpen, authOpen, setAuthOpen,
     authMode, setAuthMode, addToCart, changeQuantity, removeFromCart, clearCart,
     toggleWishlist, signIn, signUp, signOut, saveDeliveryAddress, prepareCheckout, checkout,
   }), [
-    user, ready, connectionError, retryConnection, products, refreshProducts, cart, wishlist, cartOpen, authOpen, authMode, addToCart,
+    user, ready, connectionError, retryConnection, products, refreshProducts, siteSettings, refreshSiteSettings, cart, wishlist, cartOpen, authOpen, authMode, addToCart,
     changeQuantity, removeFromCart, clearCart, toggleWishlist, signIn, signUp, signOut, saveDeliveryAddress, prepareCheckout, checkout,
   ]);
 

@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Navigate, Link } from "react-router-dom";
-import { ArrowDownToLine, Boxes, LayoutDashboard, PackagePlus, Pencil, Plus, Search, Settings2, Trash2, Upload, X } from "lucide-react";
+import { ArrowDownToLine, Boxes, ImageIcon, LayoutDashboard, PackagePlus, Pencil, Plus, Search, Settings2, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest, isPrimaryAdmin, type StoreUser } from "@/lib/store-api";
 import { useStore } from "@/lib/store";
 import { buildImportProducts, importFieldDefinitions, parseCsv, suggestedMapping, type ImportField, type ImportMapping } from "@/lib/product-import";
 import { supplierUrlValidationError } from "@/lib/supplier-validation";
-
-const elovynLogo = "/elovyn-logo.jpeg?v=3";
+import { defaultSiteSettings, type SiteSettings } from "@/lib/site-settings";
 
 type Product = {
   id: string;
@@ -67,11 +66,12 @@ const tabs = [
   { id: "inventory", label: "Inventory", icon: Boxes },
   { id: "suppliers", label: "Suppliers", icon: Settings2 },
   { id: "imports", label: "Import products", icon: Upload },
+  { id: "site-settings", label: "Site Settings", icon: ImageIcon },
 ] as const;
 type Tab = typeof tabs[number]["id"];
 
 export function AdminPage() {
-  const { user, ready, refreshProducts } = useStore();
+  const { user, ready, refreshProducts, siteSettings, refreshSiteSettings } = useStore();
   const [verifiedUser, setVerifiedUser] = useState<StoreUser | null>(null);
   const [checking, setChecking] = useState(true);
   const [tab, setTab] = useState<Tab>("overview");
@@ -281,7 +281,7 @@ export function AdminPage() {
   return (
     <div className="min-h-screen bg-[#f6f7f8] text-neutral-950">
       <header className="flex h-16 items-center justify-between border-b border-neutral-200 bg-white px-5 lg:px-8">
-        <Link to="/" className="flex items-center gap-3 font-semibold"><span className="grid h-9 w-9 place-items-center overflow-hidden rounded-lg"><img src={elovynLogo} alt="" className="h-full w-full object-cover" /></span> Elovyn Admin</Link>
+        <Link to="/" className="flex items-center gap-3 font-semibold"><span className="grid h-9 w-9 place-items-center overflow-hidden rounded-lg"><img src={siteSettings.logo_url || defaultSiteSettings.logo_url} alt="" className="h-full w-full object-cover" /></span> Elovyn Admin</Link>
         <div className="flex items-center gap-4 text-sm"><span className="hidden text-neutral-500 sm:block">{verifiedUser.email}</span><Link to="/" className="rounded-full border border-neutral-300 px-4 py-2 hover:bg-neutral-50">View store</Link></div>
       </header>
       <div className="mx-auto flex max-w-[1500px]">
@@ -395,6 +395,7 @@ export function AdminPage() {
           )}
 
           {tab === "imports" && <ImportProductsPanel suppliers={suppliers} onImported={() => void Promise.all([loadData(), refreshProducts()])} />}
+          {tab === "site-settings" && <WebsiteContentPanel settings={siteSettings} onSaved={refreshSiteSettings} />}
         </main>
       </div>
       {addOpen && <AddProductDialog onClose={() => setAddOpen(false)} onCreated={() => { setAddOpen(false); void Promise.all([loadData(), refreshProducts()]); }} />}
@@ -402,6 +403,90 @@ export function AdminPage() {
       {bulkEditOpen && <BulkEditDialog count={selectedProductIds.size} busy={bulkBusy} onClose={() => setBulkEditOpen(false)} onSave={async (updates) => { const saved = await updateProducts([...selectedProductIds], updates, `${selectedProductIds.size} selected product${selectedProductIds.size === 1 ? "" : "s"} updated.`); if (saved) setBulkEditOpen(false); }} />}
     </div>
   );
+}
+
+const siteImageFields = [
+  { key: "logo_url", label: "Logo", help: "Used in the storefront and admin navigation." },
+  { key: "favicon_url", label: "Favicon", help: "Shown in browser tabs and saved bookmarks." },
+  { key: "hero_image_url", label: "Hero background", help: "The large image at the top of the home page." },
+  { key: "promotional_banner_image_url", label: "Promotional image", help: "Saved for promotional content sections." },
+] as const;
+
+function WebsiteContentPanel({ settings, onSaved }: { settings: SiteSettings; onSaved: () => Promise<void> }) {
+  const [form, setForm] = useState<SiteSettings>(() => ({ ...defaultSiteSettings, ...settings }));
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState<keyof SiteSettings | null>(null);
+
+  useEffect(() => setForm({ ...defaultSiteSettings, ...settings }), [settings]);
+
+  function setField<K extends keyof SiteSettings>(key: K, value: SiteSettings[K]) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function uploadImage(field: typeof siteImageFields[number]["key"], file: File) {
+    setUploading(field);
+    try {
+      const data = new FormData();
+      data.set("file", file);
+      const result = await apiRequest<{ image_url: string }>("/admin/assets", { method: "POST", body: data });
+      setField(field, result.image_url);
+      toast.success("Image uploaded. Save changes to publish it.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not upload the image.");
+    } finally {
+      setUploading(null);
+    }
+  }
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const result = await apiRequest<{ settings: SiteSettings }>("/admin/settings", {
+        method: "PUT",
+        body: JSON.stringify(form),
+      });
+      setForm({ ...defaultSiteSettings, ...result.settings });
+      await onSaved();
+      toast.success("Website content saved and storefront cache refreshed.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not save website content.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return <form onSubmit={(event) => void save(event)} className="space-y-6">
+    <section className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+      <div><h2 className="text-lg font-semibold">Logo and browser icon</h2><p className="mt-1 text-sm text-neutral-500">Upload an image or paste an absolute URL/site-relative path.</p></div>
+      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+        {siteImageFields.slice(0, 2).map((field) => <div key={field.key} className="rounded-xl border border-neutral-200 p-4">
+          <div className="flex gap-4"><div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl bg-neutral-100">{form[field.key] ? <img src={form[field.key]} alt={`${field.label} preview`} className="h-full w-full object-cover" /> : <ImageIcon className="h-6 w-6 text-neutral-400" />}</div><div><p className="font-medium">{field.label}</p><p className="mt-1 text-xs text-neutral-500">{field.help}</p><label className="mt-3 inline-flex cursor-pointer rounded-full border border-neutral-300 px-3 py-1.5 text-xs font-medium">{uploading === field.key ? "Uploading…" : "Upload image"}<input disabled={uploading !== null} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadImage(field.key, file); event.target.value = ""; }} /></label></div></div>
+          <label className="mt-4 block text-xs font-medium">Image URL<input type="text" value={form[field.key]} onChange={(event) => setField(field.key, event.target.value)} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-300 px-3 text-sm" /></label>
+        </div>)}
+      </div>
+    </section>
+
+    <section className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+      <h2 className="text-lg font-semibold">Home hero</h2><p className="mt-1 text-sm text-neutral-500">Control the home page’s main image, message, and calls to action.</p>
+      <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="space-y-4">
+          <label className="block text-sm font-medium">Headline<input required maxLength={160} value={form.hero_title} onChange={(event) => setField("hero_title", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
+          <label className="block text-sm font-medium">Description<textarea maxLength={1000} rows={4} value={form.hero_subtitle} onChange={(event) => setField("hero_subtitle", event.target.value)} className="mt-1.5 w-full rounded-xl border border-neutral-300 px-3 py-2" /></label>
+          <div className="grid gap-3 sm:grid-cols-2"><label className="block text-sm font-medium">Primary button text<input maxLength={80} value={form.hero_primary_cta_text} onChange={(event) => setField("hero_primary_cta_text", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label><label className="block text-sm font-medium">Primary button URL<input value={form.hero_primary_cta_url} onChange={(event) => setField("hero_primary_cta_url", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label></div>
+          <div className="grid gap-3 sm:grid-cols-2"><label className="block text-sm font-medium">Secondary button text<input maxLength={80} value={form.hero_secondary_cta_text} onChange={(event) => setField("hero_secondary_cta_text", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label><label className="block text-sm font-medium">Secondary button URL<input value={form.hero_secondary_cta_url} onChange={(event) => setField("hero_secondary_cta_url", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label></div>
+        </div>
+        <div className="rounded-xl border border-neutral-200 p-4"><div className="aspect-[4/3] overflow-hidden rounded-lg bg-neutral-100">{form.hero_image_url ? <img src={form.hero_image_url} alt="Hero preview" className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center px-5 text-center text-xs text-neutral-500">The bundled default hero remains active until you choose an image.</div>}</div><label className="mt-3 block text-xs font-medium">Hero image URL<input value={form.hero_image_url} onChange={(event) => setField("hero_image_url", event.target.value)} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-300 px-3 text-sm" /></label><label className="mt-3 inline-flex cursor-pointer rounded-full border border-neutral-300 px-3 py-1.5 text-xs font-medium">{uploading === "hero_image_url" ? "Uploading…" : "Upload hero image"}<input disabled={uploading !== null} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadImage("hero_image_url", file); event.target.value = ""; }} /></label></div>
+      </div>
+    </section>
+
+    <section className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+      <h2 className="text-lg font-semibold">Announcement and promotions</h2>
+      <div className="mt-5 space-y-4"><label className="block text-sm font-medium">Announcement bar text<input maxLength={300} value={form.announcement_bar_text} onChange={(event) => setField("announcement_bar_text", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label><div className="grid gap-3 sm:grid-cols-2"><label className="block text-sm font-medium">Promotional banner title<input maxLength={160} value={form.promotional_banner_title} onChange={(event) => setField("promotional_banner_title", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label><label className="block text-sm font-medium">Promotional image URL<input value={form.promotional_banner_image_url} onChange={(event) => setField("promotional_banner_image_url", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label></div><label className="block text-sm font-medium">Promotional banner text<textarea maxLength={1000} rows={3} value={form.promotional_banner_text} onChange={(event) => setField("promotional_banner_text", event.target.value)} className="mt-1.5 w-full rounded-xl border border-neutral-300 px-3 py-2" /></label><label className="inline-flex cursor-pointer rounded-full border border-neutral-300 px-3 py-1.5 text-xs font-medium">{uploading === "promotional_banner_image_url" ? "Uploading…" : "Upload promotional image"}<input disabled={uploading !== null} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadImage("promotional_banner_image_url", file); event.target.value = ""; }} /></label></div>
+    </section>
+
+    <div className="sticky bottom-4 flex justify-end"><button disabled={saving || uploading !== null} className="btn-primary min-w-40 shadow-lg disabled:opacity-50">{saving ? "Saving…" : "Save changes"}</button></div>
+  </form>;
 }
 
 function BulkEditDialog({ count, busy, onClose, onSave }: { count: number; busy: boolean; onClose: () => void; onSave: (updates: { is_listed?: boolean; category?: string | null; variant_price?: number }) => Promise<void> }) {

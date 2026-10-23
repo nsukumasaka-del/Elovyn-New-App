@@ -5,8 +5,7 @@ import { Heart, Menu, Search, ShoppingBag, UserRound, X } from "lucide-react";
 import { toast } from "sonner";
 import { useStore, type CheckoutSummary } from "@/lib/store";
 import { isPrimaryAdmin } from "@/lib/store-api";
-
-const elovynLogo = "/elovyn-logo.jpeg?v=3";
+import { defaultSiteSettings } from "@/lib/site-settings";
 
 const navItems = [
   { label: "New Arrivals", href: "/categories/new-arrivals" },
@@ -283,7 +282,7 @@ export const Header = () => {
   const location = useLocation();
   const {
     user, cart, wishlist, cartOpen, setCartOpen, authOpen, setAuthOpen,
-    authMode, setAuthMode, signOut, products,
+    authMode, setAuthMode, signOut, products, siteSettings,
   } = useStore();
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -320,13 +319,13 @@ export const Header = () => {
       <header data-header-state={isTransparent ? "transparent" : "solid"} className={`${isHomePage ? "fixed inset-x-0 top-0" : "sticky top-0"} z-50`}>
         <div className="announcement-bar">
           <div className="section-shell flex h-9 items-center justify-center text-center text-[10px] font-medium uppercase tracking-[0.18em]">
-            FREE DELIVERY ON ORDERS OVER R1,500
+            {siteSettings.announcement_bar_text}
           </div>
         </div>
         <div className={`store-header transition-[background-color,border-color,box-shadow] duration-300 ${isTransparent ? "!border-transparent !bg-transparent !shadow-none !backdrop-blur-none" : "shadow-sm"}`}>
           <div className="header-left">
             <Link to="/" aria-label="Elovyn home" className="flex shrink-0 items-center gap-2.5">
-              <span aria-hidden="true" className="grid h-11 w-11 place-items-center overflow-hidden rounded-xl sm:h-12 sm:w-12"><img src={elovynLogo} alt="" className="h-full w-full object-cover" /></span>
+              <span aria-hidden="true" className="grid h-11 w-11 place-items-center overflow-hidden rounded-xl sm:h-12 sm:w-12"><img src={siteSettings.logo_url || defaultSiteSettings.logo_url} alt="" className="h-full w-full object-cover" /></span>
               <span className={`hidden text-xs font-bold uppercase tracking-[0.22em] transition-colors duration-300 sm:block ${isTransparent ? "text-white" : "text-neutral-950"}`}>Elovyn</span>
             </Link>
             <nav aria-label="Shop categories" className="header-nav">
@@ -406,7 +405,7 @@ export const Header = () => {
           <motion.div className="fixed inset-0 z-[70] bg-black/40 lg:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={() => setMobileOpen(false)}>
             <motion.aside className="ml-auto flex h-full w-full max-w-sm flex-col bg-white p-6" initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} onMouseDown={(event) => event.stopPropagation()}>
               <div className="mb-7 flex items-center justify-between">
-                <Link to="/" aria-label="Elovyn home" className="grid h-12 w-12 place-items-center overflow-hidden rounded-xl"><img src={elovynLogo} alt="" className="h-full w-full object-cover" /></Link>
+                <Link to="/" aria-label="Elovyn home" className="grid h-12 w-12 place-items-center overflow-hidden rounded-xl"><img src={siteSettings.logo_url || defaultSiteSettings.logo_url} alt="" className="h-full w-full object-cover" /></Link>
                 <button aria-label="Close menu" onClick={() => setMobileOpen(false)} className="rounded-full p-2 hover:bg-neutral-100"><X className="h-5 w-5" /></button>
               </div>
               <nav className="space-y-1">

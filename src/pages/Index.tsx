@@ -23,7 +23,7 @@ const categoryTiles = [
 ];
 
 const Index = () => {
-  const { products, addToCart } = useStore();
+  const { products, addToCart, siteSettings } = useStore();
   const storefrontProductIds = new Set([
     "essential-box-tee", "everyday-overshirt", "layered-set", "signature-hoodie",
     "raw-luxe-bundle", "hydration-set", "styling-kit", "signature-layer",
@@ -37,6 +37,14 @@ const Index = () => {
 
       <main>
         <Hero />
+
+        {(siteSettings.promotional_banner_title || siteSettings.promotional_banner_text || siteSettings.promotional_banner_image_url) && <section className="section-shell pt-8 sm:pt-10">
+          <div className="relative isolate overflow-hidden rounded-[1.75rem] bg-neutral-950 px-6 py-10 text-white sm:px-10">
+            {siteSettings.promotional_banner_image_url && <><img src={siteSettings.promotional_banner_image_url} alt="" className="absolute inset-0 -z-20 h-full w-full object-cover" /><div className="absolute inset-0 -z-10 bg-black/65" /></>}
+            {siteSettings.promotional_banner_title && <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">{siteSettings.promotional_banner_title}</h2>}
+            {siteSettings.promotional_banner_text && <p className="mt-2 max-w-2xl text-sm leading-6 text-white/75 sm:text-base">{siteSettings.promotional_banner_text}</p>}
+          </div>
+        </section>}
 
         <section id="streetwear" className="py-16 sm:py-20 lg:py-24">
           <div className="section-shell">

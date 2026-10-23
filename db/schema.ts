@@ -24,6 +24,24 @@ export const sessions = sqliteTable("sessions", {
   index("sessions_expires_at_idx").on(table.expiresAt),
 ]);
 
+export const siteSettings = sqliteTable("site_settings", {
+  id: text("id").primaryKey(),
+  logoUrl: text("logo_url").notNull().default(""),
+  faviconUrl: text("favicon_url").notNull().default(""),
+  heroImageUrl: text("hero_image_url").notNull().default(""),
+  heroTitle: text("hero_title").notNull().default("Own your look."),
+  heroSubtitle: text("hero_subtitle").notNull().default(""),
+  announcementBarText: text("announcement_bar_text").notNull().default(""),
+  heroPrimaryCtaText: text("hero_primary_cta_text").notNull().default("Shop new arrivals"),
+  heroPrimaryCtaUrl: text("hero_primary_cta_url").notNull().default("/categories/new-arrivals"),
+  heroSecondaryCtaText: text("hero_secondary_cta_text").notNull().default("Shop streetwear"),
+  heroSecondaryCtaUrl: text("hero_secondary_cta_url").notNull().default("/categories/streetwear"),
+  promotionalBannerTitle: text("promotional_banner_title").notNull().default(""),
+  promotionalBannerText: text("promotional_banner_text").notNull().default(""),
+  promotionalBannerImageUrl: text("promotional_banner_image_url").notNull().default(""),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
 export const products = sqliteTable("products", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),

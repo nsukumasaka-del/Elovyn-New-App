@@ -8,6 +8,7 @@ import {
   paymentProviderSettings,
   paymentWebhookEvents,
   products,
+  siteSettings,
   supplierIntegrations,
   supplierSyncHistory,
   users,
@@ -33,6 +34,7 @@ import {
 import { readSupplierJsonResponse, supplierUrlValidationError, SUPPLIER_AUTHENTICATION_ERROR } from "../../src/lib/supplier-validation";
 import { cjAccessTokenFromPayload, cjProductRecordsFromPayload } from "../../src/lib/cj-auth";
 import { cjCategoriesFromPayload, cjImportProductFromDetail, cjSearchResultsFromPayload, type SupplierCategory, type SupplierProductSearchResult } from "../../src/lib/cj-import";
+import { defaultSiteSettings, type SiteSettings } from "../../src/lib/site-settings";
 import { normalizeDeliveryAddress } from "../../src/lib/delivery-address";
 import { calculateCheckoutAmounts } from "../../src/lib/checkout";
 import { createYocoCheckout, registerYocoWebhook, verifyYocoWebhookSignature } from "../lib/yoco";
@@ -87,6 +89,23 @@ const productColumns = {
   supplier_product_id: products.supplierProductId,
   is_listed: products.isListed,
   updated_at: products.updatedAt,
+};
+
+const siteSettingsColumns = {
+  logo_url: siteSettings.logoUrl,
+  favicon_url: siteSettings.faviconUrl,
+  hero_image_url: siteSettings.heroImageUrl,
+  hero_title: siteSettings.heroTitle,
+  hero_subtitle: siteSettings.heroSubtitle,
+  announcement_bar_text: siteSettings.announcementBarText,
+  hero_primary_cta_text: siteSettings.heroPrimaryCtaText,
+  hero_primary_cta_url: siteSettings.heroPrimaryCtaUrl,
+  hero_secondary_cta_text: siteSettings.heroSecondaryCtaText,
+  hero_secondary_cta_url: siteSettings.heroSecondaryCtaUrl,
+  promotional_banner_title: siteSettings.promotionalBannerTitle,
+  promotional_banner_text: siteSettings.promotionalBannerText,
+  promotional_banner_image_url: siteSettings.promotionalBannerImageUrl,
+  updated_at: siteSettings.updatedAt,
 };
 
 const supplierColumns = {
@@ -154,6 +173,42 @@ function requiredString(value: unknown, label: string, maxLength = 200) {
     throw new ApiError(`${label} is required and must be no longer than ${maxLength} characters.`, 400);
   }
   return value.trim();
+}
+
+function siteSettingText(value: unknown, label: string, maxLength: number) {
+  if (typeof value !== "string" || value.length > maxLength) {
+    throw new ApiError(`${label} must be text no longer than ${maxLength} characters.`, 400);
+  }
+  return value.trim();
+}
+
+function siteSettingUrl(value: unknown, label: string) {
+  const candidate = siteSettingText(value, label, 2000);
+  if (!candidate) return "";
+  if (candidate.startsWith("/") && !candidate.startsWith("//")) return candidate;
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol === "https:" || parsed.protocol === "http:") return parsed.toString();
+  } catch { /* handled below */ }
+  throw new ApiError(`${label} must be an absolute HTTP(S) URL or a site-relative path beginning with /.`, 400);
+}
+
+function normalizeSiteSettingsInput(body: Record<string, unknown>): SiteSettings {
+  return {
+    logo_url: siteSettingUrl(body.logo_url, "Logo URL"),
+    favicon_url: siteSettingUrl(body.favicon_url, "Favicon URL"),
+    hero_image_url: siteSettingUrl(body.hero_image_url, "Hero image URL"),
+    hero_title: requiredString(body.hero_title, "Hero title", 160),
+    hero_subtitle: siteSettingText(body.hero_subtitle, "Hero subtitle", 1000),
+    announcement_bar_text: siteSettingText(body.announcement_bar_text, "Announcement text", 300),
+    hero_primary_cta_text: siteSettingText(body.hero_primary_cta_text, "Primary button text", 80),
+    hero_primary_cta_url: siteSettingUrl(body.hero_primary_cta_url, "Primary button URL"),
+    hero_secondary_cta_text: siteSettingText(body.hero_secondary_cta_text, "Secondary button text", 80),
+    hero_secondary_cta_url: siteSettingUrl(body.hero_secondary_cta_url, "Secondary button URL"),
+    promotional_banner_title: siteSettingText(body.promotional_banner_title, "Promotional banner title", 160),
+    promotional_banner_text: siteSettingText(body.promotional_banner_text, "Promotional banner text", 1000),
+    promotional_banner_image_url: siteSettingUrl(body.promotional_banner_image_url, "Promotional banner image URL"),
+  };
 }
 
 function normalizeEmail(value: unknown) {
@@ -1454,6 +1509,56 @@ async function route(
       .where(eq(users.id, user.id))
       .returning({ id: users.id, email: users.email, role: users.role, fullName: users.fullName, deliveryAddressJson: users.deliveryAddressJson });
     return json({ user: updated });
+  }
+
+  if ((path === "/settings" || path === "/admin/settings") && method === "GET") {
+    if (path === "/admin/settings") await requireAdmin(db, request, env);
+    const [stored] = await db.select(siteSettingsColumns).from(siteSettings).where(eq(siteSettings.id, "default")).limit(1);
+    return json({ settings: stored ?? defaultSiteSettings }, 200, { "Cache-Control": "no-store" });
+  }
+
+  if (path === "/admin/settings" && method === "PUT") {
+    await requireAdmin(db, request, env);
+    const next = normalizeSiteSettingsInput(await bodyAsJson(request));
+    await db.insert(siteSettings).values({
+      id: "default",
+      logoUrl: next.logo_url,
+      faviconUrl: next.favicon_url,
+      heroImageUrl: next.hero_image_url,
+      heroTitle: next.hero_title,
+      heroSubtitle: next.hero_subtitle,
+      announcementBarText: next.announcement_bar_text,
+      heroPrimaryCtaText: next.hero_primary_cta_text,
+      heroPrimaryCtaUrl: next.hero_primary_cta_url,
+      heroSecondaryCtaText: next.hero_secondary_cta_text,
+      heroSecondaryCtaUrl: next.hero_secondary_cta_url,
+      promotionalBannerTitle: next.promotional_banner_title,
+      promotionalBannerText: next.promotional_banner_text,
+      promotionalBannerImageUrl: next.promotional_banner_image_url,
+    }).onConflictDoUpdate({
+      target: siteSettings.id,
+      set: {
+        logoUrl: next.logo_url,
+        faviconUrl: next.favicon_url,
+        heroImageUrl: next.hero_image_url,
+        heroTitle: next.hero_title,
+        heroSubtitle: next.hero_subtitle,
+        announcementBarText: next.announcement_bar_text,
+        heroPrimaryCtaText: next.hero_primary_cta_text,
+        heroPrimaryCtaUrl: next.hero_primary_cta_url,
+        heroSecondaryCtaText: next.hero_secondary_cta_text,
+        heroSecondaryCtaUrl: next.hero_secondary_cta_url,
+        promotionalBannerTitle: next.promotional_banner_title,
+        promotionalBannerText: next.promotional_banner_text,
+        promotionalBannerImageUrl: next.promotional_banner_image_url,
+        updatedAt: sql`CURRENT_TIMESTAMP`,
+      },
+    });
+    const [stored] = await db.select(siteSettingsColumns).from(siteSettings).where(eq(siteSettings.id, "default")).limit(1);
+    return json({ settings: stored ?? next }, 200, {
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      "Clear-Site-Data": '"cache"',
+    });
   }
 
   if (path === "/products" && method === "GET") {
