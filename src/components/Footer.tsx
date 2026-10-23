@@ -1,4 +1,4 @@
-import elovynLogo from "../assets/ELOVYN THE FINAL.png";
+const elovynLogo = "/elovyn-logo.jpeg?v=3";
 
 const footerGroups = {
   Shop: ["New Arrivals", "Streetwear", "T-Shirts", "Hoodies", "Accessories", "Wigs", "Sale"],
@@ -13,7 +13,7 @@ export const Footer = () => {
       <div className="section-shell">
         <div className="grid gap-10 border-b border-white/10 pb-10 md:grid-cols-2 lg:grid-cols-[1.2fr_1fr_1fr_1fr]">
           <div>
-            <img src={elovynLogo} alt="Elovyn logo" className="h-16 w-auto" />
+            <img src={elovynLogo} alt="Elovyn logo" className="h-16 w-16 rounded-xl object-cover" />
             <p className="mt-5 max-w-xs text-sm text-white/60">
               Premium streetwear and lifestyle essentials designed for effortless everyday wear.
             </p>

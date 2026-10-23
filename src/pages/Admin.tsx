@@ -6,7 +6,8 @@ import { apiRequest, isPrimaryAdmin, type StoreUser } from "@/lib/store-api";
 import { useStore } from "@/lib/store";
 import { buildImportProducts, importFieldDefinitions, parseCsv, suggestedMapping, type ImportField, type ImportMapping } from "@/lib/product-import";
 import { supplierUrlValidationError } from "@/lib/supplier-validation";
-import elovynLogo from "@/assets/ELOVYN THE FINAL.png";
+
+const elovynLogo = "/elovyn-logo.jpeg?v=3";
 
 type Product = {
   id: string;
@@ -280,7 +281,7 @@ export function AdminPage() {
   return (
     <div className="min-h-screen bg-[#f6f7f8] text-neutral-950">
       <header className="flex h-16 items-center justify-between border-b border-neutral-200 bg-white px-5 lg:px-8">
-        <Link to="/" className="flex items-center gap-3 font-semibold"><span className="grid h-9 w-9 place-items-center overflow-hidden rounded-lg bg-neutral-950"><img src={elovynLogo} alt="" className="h-full w-full object-contain" /></span> Elovyn Admin</Link>
+        <Link to="/" className="flex items-center gap-3 font-semibold"><span className="grid h-9 w-9 place-items-center overflow-hidden rounded-lg"><img src={elovynLogo} alt="" className="h-full w-full object-cover" /></span> Elovyn Admin</Link>
         <div className="flex items-center gap-4 text-sm"><span className="hidden text-neutral-500 sm:block">{verifiedUser.email}</span><Link to="/" className="rounded-full border border-neutral-300 px-4 py-2 hover:bg-neutral-50">View store</Link></div>
       </header>
       <div className="mx-auto flex max-w-[1500px]">
