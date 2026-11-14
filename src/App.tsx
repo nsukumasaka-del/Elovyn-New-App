@@ -9,6 +9,7 @@ import { StoreProvider } from "@/lib/store";
 import { AdminPage } from "./pages/Admin";
 import { ProductDetailPage } from "./pages/ProductDetail";
 import { AccountPage, LoginPage, OrdersPage, WishlistPage } from "./pages/StoreAccount";
+import { TrackOrderPage } from "./pages/TrackOrder";
 import { CategoryPage } from "./pages/Category";
 import { PaymentResultPage } from "./pages/PaymentResult";
 import { RouteScrollManager } from "./components/RouteScrollManager";
@@ -33,6 +34,8 @@ const App = () => (
             <Route path="/wishlist" element={<WishlistPage />} />
             <Route path="/profile" element={<AccountPage />} />
             <Route path="/orders" element={<OrdersPage />} />
+            <Route path="/account/orders" element={<OrdersPage />} />
+            <Route path="/orders/track" element={<TrackOrderPage />} />
             <Route path="/payment/success" element={<PaymentResultPage kind="success" />} />
             <Route path="/payment/cancelled" element={<PaymentResultPage kind="cancelled" />} />
             <Route path="/payment/failed" element={<PaymentResultPage kind="failed" />} />

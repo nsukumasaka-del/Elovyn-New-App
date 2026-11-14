@@ -53,6 +53,16 @@ export async function createYocoCheckout(secretKey: string, checkout: YocoChecko
   return { id: result.id, redirectUrl: redirect.toString(), processingMode: typeof result.processingMode === "string" ? result.processingMode : "test" };
 }
 
+export async function getYocoCheckout(secretKey: string, checkoutId: string, fetcher: Fetcher = fetch) {
+  const response = await fetcher(`${yocoApiBase}/checkouts/${encodeURIComponent(checkoutId)}`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${secretKey}` },
+  });
+  const payload = await yocoJson(response);
+  if (!payload || typeof payload !== "object") throw new Error("Yoco returned an incomplete checkout response.");
+  return payload as { id?: string; status?: string; paymentId?: string; amount?: number; currency?: string };
+}
+
 export async function registerYocoWebhook(secretKey: string, url: string, fetcher: Fetcher = fetch) {
   const response = await fetcher(`${yocoApiBase}/webhooks`, {
     method: "POST",

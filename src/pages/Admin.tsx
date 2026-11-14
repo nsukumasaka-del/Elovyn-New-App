@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Navigate, Link } from "react-router-dom";
-import { ArrowDownToLine, Boxes, ImageIcon, LayoutDashboard, PackagePlus, Pencil, Plus, Search, Settings2, Sparkles, Trash2, Upload, X } from "lucide-react";
+import { ArrowDownToLine, Boxes, ImageIcon, LayoutDashboard, PackagePlus, Pencil, Plus, Search, Settings2, ShoppingCart, Sparkles, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest, isPrimaryAdmin, type StoreUser } from "@/lib/store-api";
 import { useStore } from "@/lib/store";
 import { buildImportProducts, importFieldDefinitions, parseCsv, suggestedMapping, type ImportField, type ImportMapping } from "@/lib/product-import";
 import { supplierUrlValidationError } from "@/lib/supplier-validation";
 import { defaultSiteSettings, type SiteSettings } from "@/lib/site-settings";
+import { AdminOrdersPanel } from "@/components/AdminOrdersPanel";
+import { AdminNotificationBell } from "@/components/AdminNotificationBell";
 import defaultHeroImage from "@/assets/Front Page.png";
 
 type Product = {
@@ -64,6 +66,7 @@ const customSupplierPresets = {
 
 const tabs = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "orders", label: "Orders", icon: ShoppingCart },
   { id: "inventory", label: "Inventory", icon: Boxes },
   { id: "suppliers", label: "Suppliers", icon: Settings2 },
   { id: "imports", label: "Import products", icon: Upload },
@@ -76,6 +79,7 @@ export function AdminPage() {
   const [verifiedUser, setVerifiedUser] = useState<StoreUser | null>(null);
   const [checking, setChecking] = useState(true);
   const [tab, setTab] = useState<Tab>("overview");
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [stats, setStats] = useState<Stats>({ total_sales: 0, order_count: 0, product_count: 0 });
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -283,7 +287,16 @@ export function AdminPage() {
     <div className="min-h-screen bg-[#f6f7f8] text-neutral-950">
       <header className="flex h-16 items-center justify-between border-b border-neutral-200 bg-white px-5 lg:px-8">
         <Link to="/" className="flex items-center gap-3 font-semibold"><span className="grid h-9 w-9 place-items-center overflow-hidden rounded-lg"><img src={siteSettings.logo_url || defaultSiteSettings.logo_url} alt="" className="h-full w-full object-cover" style={{ objectPosition: `${siteSettings.logo_position_x}% ${siteSettings.logo_position_y}%` }} /></span> Elovyn Admin</Link>
-        <div className="flex items-center gap-4 text-sm"><span className="hidden text-neutral-500 sm:block">{verifiedUser.email}</span><Link to="/" className="rounded-full border border-neutral-300 px-4 py-2 hover:bg-neutral-50">View store</Link></div>
+        <div className="flex items-center gap-4 text-sm">
+          <AdminNotificationBell
+            onSelectOrder={(orderId) => {
+              setTab("orders");
+              setSelectedOrderId(orderId);
+            }}
+          />
+          <span className="hidden text-neutral-500 sm:block">{verifiedUser.email}</span>
+          <Link to="/" className="rounded-full border border-neutral-300 px-4 py-2 hover:bg-neutral-50">View store</Link>
+        </div>
       </header>
       <div className="mx-auto flex max-w-[1500px]">
         <aside className="hidden w-60 shrink-0 border-r border-neutral-200 bg-white px-4 py-7 md:block">
@@ -322,6 +335,13 @@ export function AdminPage() {
                 <div className="mt-5 h-2 overflow-hidden rounded-full bg-neutral-100"><div className="h-full rounded-full bg-amber-500" style={{ width: `${products.length ? Math.min(100, (lowStockCount / products.length) * 100) : 0}%` }} /></div>
               </section>
             </>
+          )}
+
+          {tab === "orders" && (
+            <AdminOrdersPanel
+              selectedOrderId={selectedOrderId}
+              onClearSelectedOrder={() => setSelectedOrderId(null)}
+            />
           )}
 
           {tab === "inventory" && (

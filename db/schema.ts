@@ -148,9 +148,15 @@ export const productImportJobs = sqliteTable("product_import_jobs", {
 
 export const orders = sqliteTable("orders", {
   id: text("id").primaryKey(),
+  orderNumber: text("order_number"),
   userId: text("user_id").notNull().references(() => users.id),
+  customerEmail: text("customer_email"),
+  customerName: text("customer_name"),
   totalAmount: real("total_amount").notNull(),
   status: text("status").notNull().default("Pending"),
+  fulfillmentStatus: text("fulfillment_status").notNull().default("processing"),
+  trackingNumber: text("tracking_number"),
+  trackingUrl: text("tracking_url"),
   itemsJson: text("items_json").notNull(),
   deliveryAddressJson: text("delivery_address_json"),
   shippingFee: real("shipping_fee").notNull().default(0),
@@ -158,11 +164,14 @@ export const orders = sqliteTable("orders", {
   paymentReference: text("payment_reference"),
   paymentId: text("payment_id"),
   paidAt: text("paid_at"),
+  emailSent: integer("email_sent", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   check("orders_total_amount_check", sql`${table.totalAmount} >= 0`),
   index("orders_user_id_created_at_idx").on(table.userId, table.createdAt),
   uniqueIndex("orders_payment_reference_idx").on(table.paymentReference),
+  uniqueIndex("orders_order_number_idx").on(table.orderNumber),
 ]);
 
 export const paymentProviderSettings = sqliteTable("payment_provider_settings", {
@@ -217,3 +226,27 @@ export const carts = sqliteTable("carts", {
   itemsJson: text("items_json").notNull(),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const orderItems = sqliteTable("order_items", {
+  id: text("id").primaryKey(),
+  orderId: text("order_id").notNull().references(() => orders.id, { onDelete: "cascade" }),
+  productId: text("product_id"),
+  productName: text("product_name").notNull(),
+  variantDetails: text("variant_details"),
+  quantity: integer("quantity").notNull(),
+  unitPrice: real("unit_price").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("order_items_order_id_idx").on(table.orderId),
+]);
+
+export const adminNotifications = sqliteTable("admin_notifications", {
+  id: text("id").primaryKey(),
+  type: text("type").notNull().default("new_order"),
+  orderId: text("order_id").notNull().references(() => orders.id, { onDelete: "cascade" }),
+  message: text("message").notNull(),
+  isRead: integer("is_read", { mode: "boolean" }).notNull().default(false),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("admin_notifications_is_read_created_idx").on(table.isRead, table.createdAt),
+]);

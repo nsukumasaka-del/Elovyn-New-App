@@ -1,9 +1,11 @@
 import { and, asc, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import { createDb } from "../../db";
 import {
+  adminNotifications,
   carts,
   inventoryItems,
   options,
+  orderItems,
   orders,
   paymentProviderSettings,
   paymentWebhookEvents,
@@ -37,7 +39,7 @@ import { cjCategoriesFromPayload, cjImportProductFromDetail, cjSearchResultsFrom
 import { defaultSiteSettings, type SiteSettings } from "../../src/lib/site-settings";
 import { normalizeDeliveryAddress } from "../../src/lib/delivery-address";
 import { calculateCheckoutAmounts, STANDARD_SHIPPING_FEE_CENTS } from "../../src/lib/checkout";
-import { createYocoCheckout, registerYocoWebhook, verifyYocoWebhookSignature } from "../lib/yoco";
+import { createYocoCheckout, getYocoCheckout, registerYocoWebhook, verifyYocoWebhookSignature } from "../lib/yoco";
 import {
   configuredSupplierRecords,
   configuredSupplierRequest,
@@ -567,6 +569,367 @@ async function sendWelcomeEmail(env: Env, email: string, fullName: string | null
     console.warn("Welcome email request failed:", error);
     return false;
   }
+}
+
+async function generateOrderNumber(db: ReturnType<typeof createDb>): Promise<string> {
+  const result = await db.select({ orderNumber: orders.orderNumber }).from(orders)
+    .where(sql`${orders.orderNumber} LIKE 'ELV-%'`)
+    .orderBy(sql`CAST(SUBSTR(${orders.orderNumber}, 5) AS INTEGER) DESC`)
+    .limit(1);
+  const last = result[0]?.orderNumber;
+  const lastNum = last ? parseInt(last.slice(4), 10) : 0;
+  const next = Number.isFinite(lastNum) && lastNum >= 1000 ? lastNum + 1 : 1001;
+  return `ELV-${next}`;
+}
+
+async function sendOrderConfirmationEmail(env: Env, order: {
+  id: string;
+  orderNumber: string;
+  customerEmail: string;
+  customerName: string | null;
+  items: Array<{ title: string; quantity: number; price: number; sku?: string }>;
+  totalAmount: number;
+  shippingFee: number;
+  deliveryAddressJson: string | null;
+}) {
+  if (!env.RESEND_API_KEY) {
+    console.warn("Order confirmation email not sent: RESEND_API_KEY is not configured.");
+    return false;
+  }
+  if (!env.RESEND_FROM_EMAIL) {
+    console.warn("Order confirmation email not sent: RESEND_FROM_EMAIL is not configured.");
+    return false;
+  }
+  const greeting = order.customerName ? `Hi ${escapeHtml(order.customerName)},` : "Hi there,";
+  let addressText = "";
+  try {
+    const addr = order.deliveryAddressJson ? JSON.parse(order.deliveryAddressJson) as Record<string, string> : null;
+    if (addr) {
+      addressText = [addr.recipientName, addr.addressLine1, addr.addressLine2, addr.suburb, addr.city, addr.province, addr.postalCode, addr.country]
+        .filter(Boolean).map(escapeHtml).join(", ");
+    }
+  } catch { /* ignore */ }
+
+  const itemRows = order.items.map((item) => `
+    <tr>
+      <td style="padding:10px 0;border-bottom:1px solid #f0ebe4;color:#222;font-size:14px;">${escapeHtml(item.title)}</td>
+      <td style="padding:10px 16px;border-bottom:1px solid #f0ebe4;text-align:center;color:#666;font-size:14px;">${item.quantity}</td>
+      <td style="padding:10px 0;border-bottom:1px solid #f0ebe4;text-align:right;color:#222;font-size:14px;">R ${(item.price * item.quantity).toFixed(2)}</td>
+    </tr>
+  `).join("");
+
+  const trackUrl = `https://elovyn.store/orders/track?order=${encodeURIComponent(order.orderNumber)}&email=${encodeURIComponent(order.customerEmail)}`;
+
+  const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background-color:#f6f1ea;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f6f1ea;padding:32px 16px;">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:20px;overflow:hidden;max-width:600px;border:1px solid #e5ded4;box-shadow:0 4px 20px rgba(0,0,0,0.03);">
+      <tr><td style="background:#171717;padding:30px 40px;text-align:left;">
+        <h1 style="margin:0;color:#ffffff;font-size:24px;font-weight:700;letter-spacing:-0.5px;">Elovyn</h1>
+        <p style="margin:4px 0 0;color:#a3a3a3;font-size:13px;letter-spacing:0.3px;">Order Confirmation</p>
+      </td></tr>
+      <tr><td style="padding:36px 40px;">
+        <h2 style="margin:0 0 12px;color:#171717;font-size:20px;font-weight:600;">${greeting}</h2>
+        <p style="margin:0 0 24px;color:#525252;font-size:15px;line-height:1.6;">Thank you for shopping with Elovyn! Your payment was successful and we have received your order.</p>
+        
+        <div style="background:#faf7f2;border:1px solid #eee7dd;border-radius:12px;padding:18px 24px;margin-bottom:28px;">
+          <p style="margin:0;font-size:12px;color:#737373;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Order Reference</p>
+          <p style="margin:4px 0 0;font-size:22px;font-weight:700;color:#171717;">${escapeHtml(order.orderNumber)}</p>
+        </div>
+
+        <h3 style="margin:0 0 12px;color:#171717;font-size:15px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Purchased Items</h3>
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding-bottom:8px;font-size:12px;color:#737373;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #eee7dd;">Product</th>
+              <th style="text-align:center;padding:0 16px 8px;font-size:12px;color:#737373;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #eee7dd;">Qty</th>
+              <th style="text-align:right;padding-bottom:8px;font-size:12px;color:#737373;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #eee7dd;">Price</th>
+            </tr>
+          </thead>
+          <tbody>${itemRows}</tbody>
+          <tfoot>
+            <tr>
+              <td colspan="2" style="padding:14px 0 6px;color:#737373;font-size:14px;">Delivery fee</td>
+              <td style="padding:14px 0 6px;text-align:right;color:#525252;font-size:14px;">R ${order.shippingFee.toFixed(2)}</td>
+            </tr>
+            <tr>
+              <td colspan="2" style="padding:6px 0 0;font-weight:700;font-size:16px;color:#171717;border-top:1px solid #eee7dd;">Total Paid (ZAR)</td>
+              <td style="padding:6px 0 0;text-align:right;font-weight:700;font-size:18px;color:#171717;border-top:1px solid #eee7dd;">R ${order.totalAmount.toFixed(2)}</td>
+            </tr>
+          </tfoot>
+        </table>
+
+        ${addressText ? `
+          <div style="background:#faf7f2;border:1px solid #eee7dd;border-radius:12px;padding:16px 20px;margin-bottom:30px;">
+            <p style="margin:0 0 6px;font-size:12px;color:#737373;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Delivery Address</p>
+            <p style="margin:0;font-size:14px;color:#262626;line-height:1.5;">${addressText}</p>
+          </div>
+        ` : ""}
+
+        <div style="text-align:center;margin:32px 0 16px;">
+          <a href="${escapeHtml(trackUrl)}" style="display:inline-block;background:#171717;color:#ffffff;text-decoration:none;padding:14px 36px;border-radius:9999px;font-weight:600;font-size:15px;letter-spacing:0.2px;box-shadow:0 2px 8px rgba(0,0,0,0.15);">Track My Order</a>
+        </div>
+        <p style="margin:20px 0 0;font-size:13px;color:#737373;text-align:center;">Have questions? Reply directly to this email or visit <a href="https://elovyn.store" style="color:#171717;text-decoration:underline;">elovyn.store</a>.</p>
+      </td></tr>
+      <tr><td style="background:#faf7f2;padding:20px 40px;text-align:center;border-top:1px solid #eee7dd;">
+        <p style="margin:0;font-size:12px;color:#a3a3a3;">© Elovyn Store · South Africa</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>`;
+
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: env.RESEND_FROM_EMAIL,
+        to: [order.customerEmail],
+        subject: `Order Confirmed: ${order.orderNumber} - Elovyn Store`,
+        html,
+        text: `${greeting}\n\nThank you for your order! Your payment has been confirmed.\nOrder Number: ${order.orderNumber}\nTotal Paid: R ${order.totalAmount.toFixed(2)}\n\nTrack your order here: ${trackUrl}\n\n© Elovyn Store`,
+      }),
+    });
+    if (!response.ok) {
+      console.warn("Order confirmation email delivery failed:", response.status, (await response.text()).slice(0, 500));
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.warn("Order confirmation email request failed:", error);
+    return false;
+  }
+}
+
+async function sendAdminOrderNotificationEmail(env: Env, order: {
+  orderNumber: string;
+  customerEmail: string;
+  customerName: string | null;
+  items: Array<{ title: string; quantity: number; price: number }>;
+  totalAmount: number;
+}) {
+  if (!env.RESEND_API_KEY || !env.RESEND_FROM_EMAIL) return false;
+  const adminEmail = env.ADMIN_EMAIL?.trim() || primaryAdminEmail;
+  const customerDisplay = order.customerName ? `${escapeHtml(order.customerName)} (${escapeHtml(order.customerEmail)})` : escapeHtml(order.customerEmail);
+  const itemsHtml = order.items.map((i) => `<li><strong>${escapeHtml(i.title)}</strong> × ${i.quantity} — R ${(i.price * i.quantity).toFixed(2)}</li>`).join("");
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;background:#ffffff;border-radius:12px;border:1px solid #e5e5e5;">
+      <h2 style="color:#111;margin-top:0;">🎉 New Order Received!</h2>
+      <p style="font-size:16px;color:#333;">Order <strong>${escapeHtml(order.orderNumber)}</strong> has been successfully paid via Yoco.</p>
+      <div style="background:#f9f9f9;padding:15px;border-radius:8px;margin:15px 0;">
+        <p style="margin:4px 0;"><strong>Customer:</strong> ${customerDisplay}</p>
+        <p style="margin:4px 0;"><strong>Total Paid:</strong> R ${order.totalAmount.toFixed(2)}</p>
+      </div>
+      <h3 style="color:#333;font-size:15px;">Purchased Items:</h3>
+      <ul style="color:#444;line-height:1.6;">${itemsHtml}</ul>
+      <div style="margin-top:25px;">
+        <a href="https://elovyn.store/admin" style="background:#111;color:#fff;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:600;display:inline-block;">Open Admin Console</a>
+      </div>
+    </div>
+  `;
+
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: env.RESEND_FROM_EMAIL,
+        to: [adminEmail],
+        subject: `[New Order] ${order.orderNumber} - R ${order.totalAmount.toFixed(2)}`,
+        html,
+        text: `New paid order: ${order.orderNumber}\nCustomer: ${order.customerName || "Customer"} (${order.customerEmail})\nTotal: R ${order.totalAmount.toFixed(2)}\n\nManage orders: https://elovyn.store/admin`,
+      }),
+    });
+    return response.ok;
+  } catch (error) {
+    console.warn("Admin order alert request failed:", error);
+    return false;
+  }
+}
+
+async function sendShippedEmail(env: Env, order: {
+  orderNumber: string;
+  customerEmail: string;
+  customerName: string | null;
+  trackingNumber: string | null;
+  trackingUrl: string | null;
+}) {
+  if (!env.RESEND_API_KEY || !env.RESEND_FROM_EMAIL) return false;
+  const greeting = order.customerName ? `Hi ${escapeHtml(order.customerName)},` : "Hi there,";
+  const trackUrl = order.trackingUrl
+    || `https://elovyn.store/orders/track?order=${encodeURIComponent(order.orderNumber)}&email=${encodeURIComponent(order.customerEmail)}`;
+  const trackInfo = order.trackingNumber
+    ? `<p style="margin:16px 0;font-size:15px;color:#333;">Tracking Number: <strong style="color:#111;">${escapeHtml(order.trackingNumber)}</strong></p>`
+    : "";
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#ffffff;border-radius:12px;border:1px solid #eee;">
+      <h2 style="color:#111;margin-top:0;">Your order has shipped! 🚚</h2>
+      <p style="font-size:15px;color:#444;">${greeting}</p>
+      <p style="font-size:15px;color:#444;">Great news! Your Elovyn order <strong>${escapeHtml(order.orderNumber)}</strong> is on its way to you.</p>
+      ${trackInfo}
+      <div style="margin:25px 0;">
+        <a href="${escapeHtml(trackUrl)}" style="background:#111;color:#fff;padding:12px 28px;text-decoration:none;border-radius:9999px;font-weight:600;display:inline-block;">Track Shipment</a>
+      </div>
+      <p style="font-size:13px;color:#888;margin-top:30px;">Thank you for shopping with Elovyn Store!</p>
+    </div>
+  `;
+
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: env.RESEND_FROM_EMAIL,
+        to: [order.customerEmail],
+        subject: `Your Elovyn order ${order.orderNumber} has shipped! 🚚`,
+        html,
+        text: `${greeting}\n\nYour Elovyn order ${order.orderNumber} is on its way!\n${order.trackingNumber ? `Tracking number: ${order.trackingNumber}\n` : ""}Track your package: ${trackUrl}\n\nThank you for shopping with Elovyn Store!`,
+      }),
+    });
+    return response.ok;
+  } catch (error) {
+    console.warn("Shipped email request failed:", error);
+    return false;
+  }
+}
+
+async function processOrderPaid(
+  env: Env,
+  db: ReturnType<typeof createDb>,
+  orderId: string,
+  paymentId: string | null,
+  waitUntil: (promise: Promise<unknown>) => void,
+) {
+  if (!env.DB) throw new ApiError("The D1 database is unavailable.", 503);
+  const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+  if (!order) return { ok: false, error: "Order not found" };
+
+  if (["Paid", "Completed", "Fulfilled"].includes(order.status)) {
+    return { ok: true, alreadyPaid: true, orderId: order.id, orderNumber: order.orderNumber };
+  }
+
+  let items: CheckoutItem[] = [];
+  try { items = JSON.parse(order.itemsJson) as CheckoutItem[]; }
+  catch { throw new ApiError("Order items could not be read.", 500); }
+
+  const stockRows = await Promise.all(items.map((item) =>
+    env.DB!.prepare("SELECT quantity, track_quantity FROM inventory_items WHERE variant_id = ?")
+      .bind(item.variant_id).first<{ quantity: number; track_quantity: number }>()
+  ));
+  const stockAvailable = items.every((item, index) =>
+    stockRows[index] && (!stockRows[index]!.track_quantity || stockRows[index]!.quantity >= item.quantity)
+  );
+
+  if (!stockAvailable) {
+    await env.DB!.prepare(
+      "UPDATE orders SET status = 'Payment Review', payment_id = ?, paid_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+    ).bind(paymentId, order.id).run();
+    return { ok: true, review: true, orderId: order.id };
+  }
+
+  let orderNumber = order.orderNumber;
+  if (!orderNumber) {
+    orderNumber = await generateOrderNumber(db);
+  }
+
+  let customerEmail = order.customerEmail;
+  let customerName = order.customerName;
+  if (!customerEmail || !customerName) {
+    const [userRecord] = await db.select({ email: users.email, fullName: users.fullName }).from(users).where(eq(users.id, order.userId)).limit(1);
+    if (!customerEmail && userRecord?.email) customerEmail = userRecord.email;
+    if (!customerName && userRecord?.fullName) customerName = userRecord.fullName;
+  }
+
+  const statements: D1PreparedStatement[] = [];
+
+  for (const item of items) {
+    statements.push(env.DB!.prepare(
+      "UPDATE inventory_items SET quantity = MAX(0, quantity - ?), updated_at = CURRENT_TIMESTAMP WHERE variant_id = ? AND track_quantity = 1"
+    ).bind(item.quantity, item.variant_id));
+  }
+  for (const productId of [...new Set(items.map((item) => item.product_id))]) {
+    statements.push(env.DB!.prepare(`UPDATE products SET
+      stock_quantity = (SELECT COALESCE(SUM(i.quantity), 0) FROM inventory_items i INNER JOIN variants v ON v.id = i.variant_id WHERE v.product_id = ?),
+      status = CASE WHEN (SELECT COALESCE(SUM(i.quantity), 0) FROM inventory_items i INNER JOIN variants v ON v.id = i.variant_id WHERE v.product_id = ?) <= 0 THEN 'Out of Stock'
+                    WHEN (SELECT COALESCE(SUM(i.quantity), 0) FROM inventory_items i INNER JOIN variants v ON v.id = i.variant_id WHERE v.product_id = ?) <= 5 THEN 'Low Stock'
+                    ELSE 'In Stock' END,
+      updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(productId, productId, productId, productId));
+  }
+
+  statements.push(env.DB!.prepare(`
+    UPDATE orders SET
+      status = 'Paid',
+      order_number = COALESCE(order_number, ?),
+      customer_email = COALESCE(customer_email, ?),
+      customer_name = COALESCE(customer_name, ?),
+      payment_id = ?,
+      paid_at = CURRENT_TIMESTAMP,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).bind(orderNumber, customerEmail, customerName, paymentId, order.id));
+
+  statements.push(env.DB!.prepare("DELETE FROM carts WHERE user_id = ?").bind(order.userId));
+
+  for (const item of items) {
+    statements.push(env.DB!.prepare(`
+      INSERT OR REPLACE INTO order_items (id, order_id, product_id, product_name, variant_details, quantity, unit_price)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(crypto.randomUUID(), order.id, item.product_id, item.title, item.sku || null, item.quantity, item.price));
+  }
+
+  const notificationId = crypto.randomUUID();
+  const notificationMsg = `New paid order ${orderNumber} (R ${Number(order.totalAmount).toFixed(2)}) from ${customerName || customerEmail || "Customer"}`;
+  statements.push(env.DB!.prepare(`
+    INSERT INTO admin_notifications (id, type, order_id, message, is_read, created_at)
+    VALUES (?, 'new_order', ?, ?, 0, CURRENT_TIMESTAMP)
+  `).bind(notificationId, order.id, notificationMsg));
+
+  await env.DB!.batch(statements);
+
+  if (customerEmail && !order.emailSent) {
+    const emailPayload = {
+      id: order.id,
+      orderNumber,
+      customerEmail,
+      customerName,
+      items: items.map((i) => ({ title: i.title, quantity: i.quantity, price: i.price, sku: i.sku })),
+      totalAmount: Number(order.totalAmount),
+      shippingFee: Number(order.shippingFee || 0),
+      deliveryAddressJson: order.deliveryAddressJson,
+    };
+
+    waitUntil((async () => {
+      try {
+        const [customerSent] = await Promise.all([
+          sendOrderConfirmationEmail(env, emailPayload),
+          sendAdminOrderNotificationEmail(env, emailPayload),
+        ]);
+        if (customerSent) {
+          await env.DB!.prepare("UPDATE orders SET email_sent = 1 WHERE id = ?").bind(order.id).run();
+        }
+      } catch (err) {
+        console.error("Transactional order emails error:", err);
+      }
+    })());
+  }
+
+  return { ok: true, orderId: order.id, orderNumber };
 }
 
 async function authenticateWithGoogle(
@@ -1588,33 +1951,10 @@ async function route(
       if (!Number.isInteger(amount) || amount !== Math.round(Number(order.totalAmount) * 100) || currency !== "ZAR") {
         throw new ApiError("Yoco payment amount or currency does not match the order.", 409);
       }
-      if (order.status === "Paid" || order.status === "Completed" || order.status === "Fulfilled") {
-        await env.DB!.batch([eventStatement]);
-        return json({ received: true, order_id: order.id });
-      }
-      let items: CheckoutItem[];
-      try { items = JSON.parse(order.itemsJson) as CheckoutItem[]; }
-      catch { throw new ApiError("Order items could not be read.", 500); }
-      const stockRows = await Promise.all(items.map((item) => env.DB!.prepare("SELECT quantity, track_quantity FROM inventory_items WHERE variant_id = ?").bind(item.variant_id).first<{ quantity: number; track_quantity: number }>()));
-      const stockAvailable = items.every((item, index) => stockRows[index] && (!stockRows[index]!.track_quantity || stockRows[index]!.quantity >= item.quantity));
+      await env.DB!.batch([eventStatement]);
       const paymentId = typeof payload.id === "string" ? payload.id : null;
-      if (!stockAvailable) {
-        await env.DB!.batch([
-          eventStatement,
-          env.DB!.prepare("UPDATE orders SET status = 'Payment Review', payment_id = ?, paid_at = CURRENT_TIMESTAMP WHERE id = ?").bind(paymentId, order.id),
-        ]);
-        return json({ received: true, order_id: order.id, review: true });
-      }
-      const statements: D1PreparedStatement[] = [eventStatement];
-      for (const item of items) {
-        statements.push(env.DB!.prepare("UPDATE inventory_items SET quantity = MAX(0, quantity - ?), updated_at = CURRENT_TIMESTAMP WHERE variant_id = ? AND track_quantity = 1").bind(item.quantity, item.variant_id));
-      }
-      for (const productId of [...new Set(items.map((item) => item.product_id))]) {
-        statements.push(env.DB!.prepare(`UPDATE products SET stock_quantity = (SELECT COALESCE(SUM(i.quantity), 0) FROM inventory_items i INNER JOIN variants v ON v.id = i.variant_id WHERE v.product_id = ?), status = CASE WHEN (SELECT COALESCE(SUM(i.quantity), 0) FROM inventory_items i INNER JOIN variants v ON v.id = i.variant_id WHERE v.product_id = ?) <= 0 THEN 'Out of Stock' WHEN (SELECT COALESCE(SUM(i.quantity), 0) FROM inventory_items i INNER JOIN variants v ON v.id = i.variant_id WHERE v.product_id = ?) <= 5 THEN 'Low Stock' ELSE 'In Stock' END, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(productId, productId, productId, productId));
-      }
-      statements.push(env.DB!.prepare("UPDATE orders SET status = 'Paid', payment_id = ?, paid_at = CURRENT_TIMESTAMP WHERE id = ?").bind(paymentId, order.id));
-      statements.push(env.DB!.prepare("DELETE FROM carts WHERE user_id = ?").bind(order.userId));
-      await env.DB!.batch(statements);
+      await processOrderPaid(env, db, order.id, paymentId, waitUntil);
+      return json({ received: true, order_id: order.id });
     } else if (eventType === "payment.failed") {
       await env.DB!.batch([
         eventStatement,
@@ -1988,15 +2328,22 @@ async function route(
     const rows = await db
       .select({
         id: orders.id,
+        order_number: orders.orderNumber,
+        customer_email: orders.customerEmail,
+        customer_name: orders.customerName,
         total_amount: orders.totalAmount,
         status: orders.status,
+        fulfillment_status: orders.fulfillmentStatus,
+        tracking_number: orders.trackingNumber,
+        tracking_url: orders.trackingUrl,
         items_json: orders.itemsJson,
         delivery_address_json: orders.deliveryAddressJson,
         shipping_fee: orders.shippingFee,
         created_at: orders.createdAt,
+        updated_at: orders.updatedAt,
       })
       .from(orders)
-      .where(eq(orders.userId, user.id))
+      .where(or(eq(orders.userId, user.id), eq(orders.customerEmail, user.email)))
       .orderBy(desc(orders.createdAt));
     return json({ orders: rows });
   }
@@ -2030,11 +2377,16 @@ async function route(
     }
     await ensureYocoWebhook(env, db, url.origin);
     const orderId = crypto.randomUUID();
+    const orderNumber = await generateOrderNumber(db);
     await db.insert(orders).values({
       id: orderId,
+      orderNumber,
       userId: user.id,
+      customerEmail: user.email,
+      customerName: user.fullName || null,
       totalAmount: totalCents / 100,
       status: "Awaiting Payment",
+      fulfillmentStatus: "processing",
       itemsJson: JSON.stringify(checkoutItems),
       deliveryAddressJson: JSON.stringify(deliveryAddress),
       shippingFee: shippingCents / 100,
@@ -2048,7 +2400,7 @@ async function route(
         successUrl: `${url.origin}/payment/success?order=${encodeURIComponent(orderId)}`,
         cancelUrl: `${url.origin}/payment/cancelled?order=${encodeURIComponent(orderId)}`,
         failureUrl: `${url.origin}/payment/failed?order=${encodeURIComponent(orderId)}`,
-        metadata: { orderId, userId: user.id },
+        metadata: { orderId, orderNumber, userId: user.id },
         externalId: orderId,
         clientReferenceId: orderId,
       });
@@ -2057,15 +2409,58 @@ async function route(
       throw new ApiError(errorMessage(error), 502);
     }
     await db.update(orders).set({ paymentReference: checkout.id }).where(eq(orders.id, orderId));
-    return json({ order_id: orderId, redirect_url: checkout.redirectUrl, mode: checkout.processingMode }, 201);
+    return json({ order_id: orderId, order_number: orderNumber, redirect_url: checkout.redirectUrl, mode: checkout.processingMode }, 201);
   }
 
   if (path.startsWith("/orders/") && method === "GET") {
     const user = await requireUser(db, request);
     const orderId = decodeURIComponent(path.slice("/orders/".length));
-    const [order] = await db.select({ id: orders.id, status: orders.status, total_amount: orders.totalAmount, payment_provider: orders.paymentProvider, created_at: orders.createdAt })
-      .from(orders).where(and(eq(orders.id, orderId), eq(orders.userId, user.id))).limit(1);
+    const [order] = await db.select({
+      id: orders.id,
+      order_number: orders.orderNumber,
+      status: orders.status,
+      fulfillment_status: orders.fulfillmentStatus,
+      tracking_number: orders.trackingNumber,
+      tracking_url: orders.trackingUrl,
+      total_amount: orders.totalAmount,
+      shipping_fee: orders.shippingFee,
+      items_json: orders.itemsJson,
+      delivery_address_json: orders.deliveryAddressJson,
+      payment_provider: orders.paymentProvider,
+      payment_reference: orders.paymentReference,
+      created_at: orders.createdAt,
+      updated_at: orders.updatedAt,
+    }).from(orders).where(and(eq(orders.id, orderId), eq(orders.userId, user.id))).limit(1);
     if (!order) throw new ApiError("Order was not found.", 404);
+
+    if (order.status === "Awaiting Payment" && order.payment_reference && env.YOCO_TEST_SECRET_KEY) {
+      try {
+        const yocoCheck = await getYocoCheckout(env.YOCO_TEST_SECRET_KEY, order.payment_reference);
+        if (yocoCheck.status === "completed" || yocoCheck.status === "paid") {
+          await processOrderPaid(env, db, order.id, yocoCheck.paymentId ?? null, waitUntil);
+          const [refreshed] = await db.select({
+            id: orders.id,
+            order_number: orders.orderNumber,
+            status: orders.status,
+            fulfillment_status: orders.fulfillmentStatus,
+            tracking_number: orders.trackingNumber,
+            tracking_url: orders.trackingUrl,
+            total_amount: orders.totalAmount,
+            shipping_fee: orders.shippingFee,
+            items_json: orders.itemsJson,
+            delivery_address_json: orders.deliveryAddressJson,
+            payment_provider: orders.paymentProvider,
+            payment_reference: orders.paymentReference,
+            created_at: orders.createdAt,
+            updated_at: orders.updatedAt,
+          }).from(orders).where(eq(orders.id, orderId)).limit(1);
+          if (refreshed) return json({ order: refreshed });
+        }
+      } catch (checkErr) {
+        console.warn("Could not check Yoco status for order:", checkErr);
+      }
+    }
+
     return json({ order });
   }
 
@@ -2571,6 +2966,186 @@ async function route(
     const key = `${crypto.randomUUID()}.${extension}`;
     await env.PRODUCT_ASSETS.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type } });
     return json({ image_url: `/api/assets/${key}` }, 201);
+  }
+
+  // ── Public: Customer Order Tracking (no auth needed) ─────────────────────
+  if (path === "/orders/track" && method === "GET") {
+    const orderQuery = url.searchParams.get("order")?.trim().toUpperCase();
+    const emailQuery = url.searchParams.get("email")?.trim().toLowerCase();
+    if (!orderQuery || !emailQuery) {
+      throw new ApiError("Both order number and email address are required to track an order.", 400);
+    }
+    const [order] = await db
+      .select({
+        id: orders.id,
+        order_number: orders.orderNumber,
+        customer_name: orders.customerName,
+        customer_email: orders.customerEmail,
+        status: orders.status,
+        fulfillment_status: orders.fulfillmentStatus,
+        tracking_number: orders.trackingNumber,
+        tracking_url: orders.trackingUrl,
+        items_json: orders.itemsJson,
+        total_amount: orders.totalAmount,
+        shipping_fee: orders.shippingFee,
+        delivery_address_json: orders.deliveryAddressJson,
+        created_at: orders.createdAt,
+        updated_at: orders.updatedAt,
+      })
+      .from(orders)
+      .where(and(
+        or(sql`UPPER(${orders.orderNumber}) = ${orderQuery}`, eq(orders.id, orderQuery)),
+        sql`LOWER(${orders.customerEmail}) = ${emailQuery}`
+      ))
+      .limit(1);
+    if (!order) throw new ApiError("No matching order was found. Please check your order reference and email.", 404);
+    return json({ order }, 200, { "Cache-Control": "no-store" });
+  }
+
+  // ── Admin: List Orders ───────────────────────────────────────────────────
+  if (path === "/admin/orders" && method === "GET") {
+    await requireAdmin(db, request, env);
+    const statusParam = url.searchParams.get("status")?.trim().toLowerCase();
+    const searchParam = url.searchParams.get("search")?.trim().toLowerCase();
+
+    let query = db.select({
+      id: orders.id,
+      order_number: orders.orderNumber,
+      user_id: orders.userId,
+      customer_email: orders.customerEmail,
+      customer_name: orders.customerName,
+      total_amount: orders.totalAmount,
+      status: orders.status,
+      fulfillment_status: orders.fulfillmentStatus,
+      tracking_number: orders.trackingNumber,
+      tracking_url: orders.trackingUrl,
+      items_json: orders.itemsJson,
+      delivery_address_json: orders.deliveryAddressJson,
+      shipping_fee: orders.shippingFee,
+      payment_provider: orders.paymentProvider,
+      payment_reference: orders.paymentReference,
+      payment_id: orders.paymentId,
+      paid_at: orders.paidAt,
+      email_sent: orders.emailSent,
+      created_at: orders.createdAt,
+      updated_at: orders.updatedAt,
+    }).from(orders).$dynamic();
+
+    const filters = [];
+    if (statusParam && statusParam !== "all") {
+      filters.push(eq(orders.fulfillmentStatus, statusParam));
+    }
+    if (searchParam) {
+      filters.push(or(
+        sql`LOWER(${orders.orderNumber}) LIKE ${`%${searchParam}%`}`,
+        sql`LOWER(${orders.customerEmail}) LIKE ${`%${searchParam}%`}`,
+        sql`LOWER(${orders.customerName}) LIKE ${`%${searchParam}%`}`,
+        sql`LOWER(${orders.id}) LIKE ${`%${searchParam}%`}`
+      ));
+    }
+    if (filters.length > 0) {
+      query = query.where(and(...filters));
+    }
+
+    const rows = await query.orderBy(desc(orders.createdAt)).limit(100);
+    return json({ orders: rows }, 200, { "Cache-Control": "no-store" });
+  }
+
+  // ── Admin: Get Single Order Details ──────────────────────────────────────
+  if (path.startsWith("/admin/orders/") && !path.includes("/fulfillment") && method === "GET") {
+    await requireAdmin(db, request, env);
+    const orderId = decodeURIComponent(path.slice("/admin/orders/".length));
+    const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+    if (!order) throw new ApiError("Order not found.", 404);
+
+    const [orderUser] = await db.select({ email: users.email, fullName: users.fullName }).from(users).where(eq(users.id, order.userId)).limit(1);
+    const items = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
+    return json({ order, user: orderUser, line_items: items }, 200, { "Cache-Control": "no-store" });
+  }
+
+  // ── Admin: Update Fulfillment Status & Tracking ──────────────────────────
+  if (path.startsWith("/admin/orders/") && path.endsWith("/fulfillment") && method === "PATCH") {
+    await requireAdmin(db, request, env);
+    const orderId = decodeURIComponent(path.slice("/admin/orders/".length, -"/fulfillment".length));
+    const body = await bodyAsJson(request);
+
+    const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+    if (!order) throw new ApiError("Order not found.", 404);
+
+    const validFulfillmentStatuses = ["processing", "shipped", "delivered", "cancelled"];
+    const newStatus = typeof body.fulfillment_status === "string" && validFulfillmentStatuses.includes(body.fulfillment_status)
+      ? body.fulfillment_status
+      : undefined;
+    const trackingNumber = typeof body.tracking_number === "string" ? body.tracking_number.trim().slice(0, 200) : undefined;
+    const trackingUrl = typeof body.tracking_url === "string" ? body.tracking_url.trim().slice(0, 2000) : undefined;
+
+    const updates: Record<string, unknown> = {
+      updatedAt: sql`CURRENT_TIMESTAMP`,
+    };
+    if (newStatus !== undefined) updates.fulfillmentStatus = newStatus;
+    if (trackingNumber !== undefined) updates.trackingNumber = trackingNumber || null;
+    if (trackingUrl !== undefined) updates.trackingUrl = trackingUrl || null;
+
+    await db.update(orders).set(updates).where(eq(orders.id, orderId));
+
+    if (newStatus === "shipped" && order.fulfillmentStatus !== "shipped") {
+      const emailRecipient = order.customerEmail;
+      if (emailRecipient) {
+        waitUntil((async () => {
+          try {
+            await sendShippedEmail(env, {
+              orderNumber: order.orderNumber || order.id,
+              customerEmail: emailRecipient,
+              customerName: order.customerName,
+              trackingNumber: trackingNumber ?? order.trackingNumber,
+              trackingUrl: trackingUrl ?? order.trackingUrl,
+            });
+          } catch (mailErr) {
+            console.error("Failed to send shipped email:", mailErr);
+          }
+        })());
+      }
+    }
+
+    const [refreshed] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+    return json({ order: refreshed });
+  }
+
+  // ── Admin: Notifications ─────────────────────────────────────────────────
+  if (path === "/admin/notifications" && method === "GET") {
+    await requireAdmin(db, request, env);
+    const rows = await db.select({
+      id: adminNotifications.id,
+      type: adminNotifications.type,
+      order_id: adminNotifications.orderId,
+      message: adminNotifications.message,
+      is_read: adminNotifications.isRead,
+      created_at: adminNotifications.createdAt,
+      order_number: orders.orderNumber,
+      customer_email: orders.customerEmail,
+      customer_name: orders.customerName,
+      total_amount: orders.totalAmount,
+    })
+      .from(adminNotifications)
+      .leftJoin(orders, eq(orders.id, adminNotifications.orderId))
+      .orderBy(desc(adminNotifications.createdAt))
+      .limit(30);
+
+    const unreadCount = rows.filter((n) => !n.is_read).length;
+    return json({ notifications: rows, unread_count: unreadCount }, 200, { "Cache-Control": "no-store" });
+  }
+
+  if (path.startsWith("/admin/notifications/") && path.endsWith("/read") && method === "PATCH") {
+    await requireAdmin(db, request, env);
+    const notificationId = decodeURIComponent(path.slice("/admin/notifications/".length, -"/read".length));
+    await db.update(adminNotifications).set({ isRead: true }).where(eq(adminNotifications.id, notificationId));
+    return json({ ok: true });
+  }
+
+  if (path === "/admin/notifications/read-all" && method === "POST") {
+    await requireAdmin(db, request, env);
+    await db.update(adminNotifications).set({ isRead: true }).where(eq(adminNotifications.isRead, false));
+    return json({ ok: true });
   }
 
   throw new ApiError("API route not found.", 404);
