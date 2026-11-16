@@ -6,7 +6,9 @@ ALTER TABLE orders ADD COLUMN fulfillment_status TEXT NOT NULL DEFAULT 'processi
 ALTER TABLE orders ADD COLUMN tracking_number TEXT;
 ALTER TABLE orders ADD COLUMN tracking_url TEXT;
 ALTER TABLE orders ADD COLUMN email_sent INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE orders ADD COLUMN updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE orders ADD COLUMN updated_at TEXT;
+
+UPDATE orders SET updated_at = created_at WHERE updated_at IS NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS orders_order_number_idx
   ON orders(order_number) WHERE order_number IS NOT NULL;

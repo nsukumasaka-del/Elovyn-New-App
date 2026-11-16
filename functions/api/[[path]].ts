@@ -155,6 +155,10 @@ function json(data: unknown, status = 200, headers: HeadersInit = {}) {
   });
 }
 
+function currentTimestamp() {
+  return new Date().toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "");
+}
+
 async function bodyAsJson(request: Request) {
   const contentLength = Number(request.headers.get("content-length") || 0);
   if (contentLength > 2 * 1024 * 1024) {
@@ -849,9 +853,10 @@ async function processOrderPaid(
   );
 
   if (!stockAvailable) {
+    const now = currentTimestamp();
     await env.DB!.prepare(
-      "UPDATE orders SET status = 'Payment Review', payment_id = ?, paid_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-    ).bind(paymentId, order.id).run();
+      "UPDATE orders SET status = 'Payment Review', payment_id = ?, paid_at = ?, updated_at = ? WHERE id = ?"
+    ).bind(paymentId, now, now, order.id).run();
     return { ok: true, review: true, orderId: order.id };
   }
 
@@ -869,6 +874,7 @@ async function processOrderPaid(
   }
 
   const statements: D1PreparedStatement[] = [];
+  const paidAt = currentTimestamp();
 
   for (const item of items) {
     statements.push(env.DB!.prepare(
@@ -891,10 +897,10 @@ async function processOrderPaid(
       customer_email = COALESCE(customer_email, ?),
       customer_name = COALESCE(customer_name, ?),
       payment_id = ?,
-      paid_at = CURRENT_TIMESTAMP,
-      updated_at = CURRENT_TIMESTAMP
+      paid_at = ?,
+      updated_at = ?
     WHERE id = ?
-  `).bind(orderNumber, customerEmail, customerName, paymentId, order.id));
+  `).bind(orderNumber, customerEmail, customerName, paymentId, paidAt, paidAt, order.id));
 
   statements.push(env.DB!.prepare("DELETE FROM carts WHERE user_id = ?").bind(order.userId));
 
@@ -933,7 +939,8 @@ async function processOrderPaid(
           sendAdminOrderNotificationEmail(env, emailPayload),
         ]);
         if (customerSent) {
-          await env.DB!.prepare("UPDATE orders SET email_sent = 1 WHERE id = ?").bind(order.id).run();
+          await env.DB!.prepare("UPDATE orders SET email_sent = 1, updated_at = ? WHERE id = ?")
+            .bind(currentTimestamp(), order.id).run();
         }
       } catch (err) {
         console.error("Transactional order emails error:", err);
@@ -1970,7 +1977,8 @@ async function route(
     } else if (eventType === "payment.failed") {
       await env.DB!.batch([
         eventStatement,
-        env.DB!.prepare("UPDATE orders SET status = 'Payment Failed', payment_id = ? WHERE id = ? AND status = 'Awaiting Payment'").bind(typeof payload.id === "string" ? payload.id : null, order.id),
+        env.DB!.prepare("UPDATE orders SET status = 'Payment Failed', payment_id = ?, updated_at = ? WHERE id = ? AND status = 'Awaiting Payment'")
+          .bind(typeof payload.id === "string" ? payload.id : null, currentTimestamp(), order.id),
       ]);
     } else {
       await env.DB!.batch([eventStatement]);
@@ -2390,9 +2398,12 @@ async function route(
     await ensureYocoWebhook(env, db, url.origin);
     const orderId = crypto.randomUUID();
     const orderNumber = await generateOrderNumber(db);
+    const now = currentTimestamp();
     await db.insert(orders).values({
       id: orderId,
       orderNumber,
+      createdAt: now,
+      updatedAt: now,
       userId: user.id,
       customerEmail: user.email,
       customerName: user.fullName || null,
@@ -2418,12 +2429,13 @@ async function route(
         clientReferenceId: orderId,
       });
     } catch (error) {
-      await db.update(orders).set({ status: "Payment Failed" }).where(eq(orders.id, orderId));
+      await db.update(orders).set({ status: "Payment Failed", updatedAt: currentTimestamp() }).where(eq(orders.id, orderId));
       throw new ApiError(errorMessage(error), 502);
     }
     await db.update(orders).set({
       paymentReference: checkout.id,
       yocoCheckoutId: checkout.id,
+      updatedAt: currentTimestamp(),
     }).where(eq(orders.id, orderId));
     return json({ order_id: orderId, order_number: orderNumber, redirect_url: checkout.redirectUrl, mode: checkout.processingMode }, 201);
   }
@@ -3096,7 +3108,7 @@ async function route(
     const trackingUrl = typeof body.tracking_url === "string" ? body.tracking_url.trim().slice(0, 2000) : undefined;
 
     const updates: Record<string, unknown> = {
-      updatedAt: sql`CURRENT_TIMESTAMP`,
+      updatedAt: currentTimestamp(),
     };
     if (newStatus !== undefined) updates.fulfillmentStatus = newStatus;
     if (trackingNumber !== undefined) updates.trackingNumber = trackingNumber || null;

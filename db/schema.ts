@@ -167,8 +167,8 @@ export const orders = sqliteTable("orders", {
   paidAt: text("paid_at"),
   emailSent: integer("email_sent", { mode: "boolean" }).notNull().default(false),
   shippingAddress: text("shipping_address"),
-  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
 }, (table) => [
   check("orders_total_amount_check", sql`${table.totalAmount} >= 0`),
   index("orders_user_id_created_at_idx").on(table.userId, table.createdAt),
