@@ -162,9 +162,11 @@ export const orders = sqliteTable("orders", {
   shippingFee: real("shipping_fee").notNull().default(0),
   paymentProvider: text("payment_provider"),
   paymentReference: text("payment_reference"),
+  yocoCheckoutId: text("yoco_checkout_id"),
   paymentId: text("payment_id"),
   paidAt: text("paid_at"),
   emailSent: integer("email_sent", { mode: "boolean" }).notNull().default(false),
+  shippingAddress: text("shipping_address"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [

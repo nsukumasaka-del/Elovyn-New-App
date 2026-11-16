@@ -181,10 +181,21 @@ function errorMessage(error: unknown) {
   return String(error);
 }
 
+function errorCauseMessage(error: unknown): string | undefined {
+  if (!error || typeof error !== "object" || !("cause" in error)) return undefined;
+  const cause = error.cause;
+  if (cause instanceof Error) return cause.message;
+  return cause === undefined ? undefined : String(cause);
+}
+
 function routeErrorResponse(error: unknown, fallbackMessage: string, logContext: string) {
   if (error instanceof ApiError) return json({ error: error.message }, error.status, error.headers);
-  console.error(`${logContext} failed:`, error);
-  const message = errorMessage(error);
+  const causeMessage = errorCauseMessage(error);
+  console.error(`${logContext} failed: ${errorMessage(error)}`, {
+    causeMessage,
+    error,
+  });
+  const message = [errorMessage(error), causeMessage].filter(Boolean).join("\n");
   if (/no such (?:table|column):/i.test(message)) {
     return json({ error: "The store database is missing a required migration. Apply the latest D1 migrations and try again." }, 503);
   }
@@ -573,12 +584,13 @@ async function sendWelcomeEmail(env: Env, email: string, fullName: string | null
 
 async function generateOrderNumber(db: ReturnType<typeof createDb>): Promise<string> {
   const result = await db.select({ orderNumber: orders.orderNumber }).from(orders)
-    .where(sql`${orders.orderNumber} LIKE 'ELV-%'`)
-    .orderBy(sql`CAST(SUBSTR(${orders.orderNumber}, 5) AS INTEGER) DESC`)
-    .limit(1);
-  const last = result[0]?.orderNumber;
-  const lastNum = last ? parseInt(last.slice(4), 10) : 0;
-  const next = Number.isFinite(lastNum) && lastNum >= 1000 ? lastNum + 1 : 1001;
+    .where(sql`${orders.orderNumber} LIKE 'ELV-%'`);
+  const highestNumber = result.reduce((highest, row) => {
+    const match = /^ELV-(\d+)$/i.exec(row.orderNumber ?? "");
+    const number = match ? Number(match[1]) : 0;
+    return Number.isSafeInteger(number) ? Math.max(highest, number) : highest;
+  }, 1000);
+  const next = highestNumber + 1;
   return `ELV-${next}`;
 }
 
@@ -2389,6 +2401,7 @@ async function route(
       fulfillmentStatus: "processing",
       itemsJson: JSON.stringify(checkoutItems),
       deliveryAddressJson: JSON.stringify(deliveryAddress),
+      shippingAddress: JSON.stringify(deliveryAddress),
       shippingFee: shippingCents / 100,
       paymentProvider: "yoco",
     });
@@ -2408,7 +2421,10 @@ async function route(
       await db.update(orders).set({ status: "Payment Failed" }).where(eq(orders.id, orderId));
       throw new ApiError(errorMessage(error), 502);
     }
-    await db.update(orders).set({ paymentReference: checkout.id }).where(eq(orders.id, orderId));
+    await db.update(orders).set({
+      paymentReference: checkout.id,
+      yocoCheckoutId: checkout.id,
+    }).where(eq(orders.id, orderId));
     return json({ order_id: orderId, order_number: orderNumber, redirect_url: checkout.redirectUrl, mode: checkout.processingMode }, 201);
   }
 
