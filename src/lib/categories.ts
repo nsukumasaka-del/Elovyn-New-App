@@ -20,7 +20,9 @@ export function findCategory(slug: string | undefined) {
 export function productMatchesCategory(categorySlug: string, productCategory: string | null) {
   if (categorySlug === "new-arrivals") return true;
   if (!productCategory) return false;
-  const normalized = productCategory.trim().toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  if (categorySlug === "best-sellers") return normalized === "best-seller" || normalized === "best-sellers";
-  return normalized === categorySlug;
+  const normalizedCategories = productCategory.split(/[/>|]/).map((part) =>
+    part.trim().toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
+  );
+  if (categorySlug === "best-sellers") return normalizedCategories.some((category) => category === "best-seller" || category === "best-sellers");
+  return normalizedCategories.includes(categorySlug);
 }

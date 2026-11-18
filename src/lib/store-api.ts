@@ -12,6 +12,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     response = await fetch(`/api${path}`, {
       ...init,
+      cache: init?.cache ?? "no-store",
       headers: {
         ...(init?.body && !(init.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
         ...init?.headers,

@@ -3,7 +3,7 @@ import { Navigate, Link } from "react-router-dom";
 import { ArrowDownToLine, Boxes, ImageIcon, LayoutDashboard, PackagePlus, Pencil, Plus, Search, Settings2, ShoppingCart, Sparkles, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest, isPrimaryAdmin, type StoreUser } from "@/lib/store-api";
-import { useStore } from "@/lib/store";
+import { useStore, type StoreProduct } from "@/lib/store";
 import { buildImportProducts, importFieldDefinitions, parseCsv, suggestedMapping, type ImportField, type ImportMapping } from "@/lib/product-import";
 import { supplierUrlValidationError } from "@/lib/supplier-validation";
 import { defaultSiteSettings, type SiteSettings } from "@/lib/site-settings";
@@ -79,7 +79,7 @@ const tabs = [
 type Tab = typeof tabs[number]["id"];
 
 export function AdminPage() {
-  const { user, ready, refreshProducts, siteSettings, applySiteSettings } = useStore();
+  const { user, ready, refreshProducts, applyProduct, siteSettings, applySiteSettings } = useStore();
   const [verifiedUser, setVerifiedUser] = useState<StoreUser | null>(null);
   const [checking, setChecking] = useState(true);
   const [tab, setTab] = useState<Tab>("overview");
@@ -423,8 +423,8 @@ export function AdminPage() {
           {tab === "site-settings" && <WebsiteContentPanel settings={siteSettings} onSaved={applySiteSettings} />}
         </main>
       </div>
-      {addOpen && <AddProductDialog onClose={() => setAddOpen(false)} onCreated={() => { setAddOpen(false); void Promise.all([loadData(), refreshProducts()]); }} />}
-      {editProductId && <AddProductDialog productId={editProductId} onClose={() => setEditProductId(null)} onCreated={() => { setEditProductId(null); void Promise.all([loadData(), refreshProducts()]); }} />}
+      {addOpen && <AddProductDialog onClose={() => setAddOpen(false)} onCreated={(product) => { setAddOpen(false); applyProduct(product); void Promise.all([loadData(), refreshProducts()]).catch((error: Error) => toast.error(`Product saved, but inventory refresh failed: ${error.message}`)); }} />}
+      {editProductId && <AddProductDialog productId={editProductId} onClose={() => setEditProductId(null)} onCreated={(product) => { setEditProductId(null); applyProduct(product); void Promise.all([loadData(), refreshProducts()]).catch((error: Error) => toast.error(`Product saved, but inventory refresh failed: ${error.message}`)); }} />}
       {bulkEditOpen && <BulkEditDialog count={selectedProductIds.size} busy={bulkBusy} onClose={() => setBulkEditOpen(false)} onSave={async (updates) => { const saved = await updateProducts([...selectedProductIds], updates, `${selectedProductIds.size} selected product${selectedProductIds.size === 1 ? "" : "s"} updated.`); if (saved) setBulkEditOpen(false); }} />}
     </div>
   );
@@ -552,7 +552,7 @@ function BulkEditDialog({ count, busy, onClose, onSave }: { count: number; busy:
   </div>;
 }
 
-function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => void; onCreated: () => void; productId?: string }) {
+function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => void; onCreated: (product: StoreProduct) => void; productId?: string }) {
   const [title, setTitle] = useState("");
   const [sku, setSku] = useState("");
   const [price, setPrice] = useState("");
@@ -565,6 +565,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
   const [savingPricingSettings, setSavingPricingSettings] = useState(false);
   const [pricingSettingsError, setPricingSettingsError] = useState("");
   const [stock, setStock] = useState("0");
+  const [isListed, setIsListed] = useState(true);
   const [category, setCategory] = useState("Streetwear");
   const [brand, setBrand] = useState("");
   const [description, setDescription] = useState("");
@@ -627,7 +628,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
     if (!productId) return;
     let active = true;
     apiRequest<{
-      product: { title: string; sku: string; price: number; stock_quantity: number; category: string | null; brand: string | null; description: string | null; image_url: string | null; images_json: string; supplier_id: string | null; supplier: "eprolo" | "cj"; supplier_sku: string | null; cost_price_usd: number | null };
+      product: { title: string; sku: string; price: number; stock_quantity: number; category: string | null; brand: string | null; description: string | null; image_url: string | null; images_json: string; supplier_id: string | null; supplier: "eprolo" | "cj"; supplier_sku: string | null; cost_price_usd: number | null; is_listed: boolean };
       options: { name: string; values_json: string }[];
       variants: { sku: string; price: number; compare_at_price: number | null; barcode: string | null; options_json: string; image_url: string | null; inventory_quantity: number }[];
     }>(`/products/${encodeURIComponent(productId)}`)
@@ -640,6 +641,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
         setSupplierSku(detail.product.supplier_sku || "");
         setCostPriceUsd(detail.product.cost_price_usd === null ? "" : String(detail.product.cost_price_usd));
         setStock(String(detail.product.stock_quantity));
+        setIsListed(detail.product.is_listed);
         setSupplierManaged(Boolean(detail.product.supplier_id));
         setCategory(detail.product.category || "Streetwear");
         setBrand(detail.product.brand || "");
@@ -816,7 +818,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
           image_url: colorOption ? nextColorImageUrls[optionValues[colorOption.name]] || null : null,
         };
       });
-      await apiRequest(productId ? `/admin/products/${encodeURIComponent(productId)}` : "/admin/products", {
+      const { product: savedProduct } = await apiRequest<{ product: StoreProduct }>(productId ? `/admin/products/${encodeURIComponent(productId)}` : "/admin/products", {
         method: productId ? "PUT" : "POST",
         body: JSON.stringify({
           title,
@@ -826,6 +828,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
           supplier_sku: supplierSku.trim() || null,
           cost_price_usd: costPriceUsd.trim() ? Number(costPriceUsd) : null,
           stock_quantity: Number(stock),
+          is_listed: isListed,
           category,
           brand,
           description,
@@ -836,7 +839,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
         }),
       });
       toast.success(productId ? "Product updated." : "Product added to inventory.");
-      onCreated();
+      onCreated(savedProduct);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not add product.");
     } finally {
@@ -977,8 +980,12 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
             </div>}
             {matrix.tooMany && <p role="alert" className="mt-3 text-sm text-red-700">This option combination exceeds the 100-variant limit. Remove some values before saving.</p>}
           </section>
+          <label className="flex items-center gap-3 rounded-xl border border-neutral-200 p-3 text-sm font-medium">
+            <input type="checkbox" checked={isListed} onChange={(event) => setIsListed(event.target.checked)} className="h-4 w-4 accent-neutral-950" />
+            Published in storefront
+          </label>
           {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-          <button disabled={saving || loadingProduct || Boolean(error) || matrix.tooMany} className="btn-primary w-full disabled:opacity-60">{loadingProduct ? "Loading product…" : saving ? "Saving…" : productId ? "Save changes" : "Save product"}</button>
+          <button disabled={saving || loadingProduct || matrix.tooMany} className="btn-primary w-full disabled:opacity-60">{loadingProduct ? "Loading product…" : saving ? "Saving…" : productId ? "Save changes" : "Save product"}</button>
         </form>
       </section>
     </div>

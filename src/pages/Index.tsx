@@ -9,16 +9,17 @@ import { Community } from "@/components/Community";
 import { CTA } from "@/components/CTA";
 import { Footer } from "@/components/Footer";
 import { Link } from "react-router-dom";
+import { productMatchesCategory } from "@/lib/categories";
 import clothingImage from "@/assets/CLOTHING.jpg";
 import hoodieImage from "@/assets/Hoodie.png";
 import wigImage from "@/assets/WEAVE 1.jpg";
 
 const categoryTiles = [
-  { title: "Streetwear", subtitle: "Shop collection", href: "/categories/streetwear" },
-  { title: "T-Shirts", subtitle: "Shop essentials", href: "/categories/t-shirts" },
-  { title: "Hoodies", subtitle: "Layer up", href: "/categories/hoodies" },
-  { title: "Accessories", subtitle: "Complete the look", href: "/categories/accessories" },
-  { title: "Wigs", subtitle: "Elevate your style", href: "/categories/wigs" },
+  { title: "Streetwear", slug: "streetwear", subtitle: "Shop collection", href: "/categories/streetwear" },
+  { title: "T-Shirts", slug: "t-shirts", subtitle: "Shop essentials", href: "/categories/t-shirts" },
+  { title: "Hoodies", slug: "hoodies", subtitle: "Layer up", href: "/categories/hoodies" },
+  { title: "Accessories", slug: "accessories", subtitle: "Complete the look", href: "/categories/accessories" },
+  { title: "Wigs", slug: "wigs", subtitle: "Elevate your style", href: "/categories/wigs" },
 ];
 
 function productImages(imagesJson: string) {
@@ -30,14 +31,6 @@ function productImages(imagesJson: string) {
   } catch {
     return [];
   }
-}
-
-function categoryMatches(productCategory: string | null, categoryName: string) {
-  if (!productCategory) return false;
-  const wanted = categoryName.trim().toLocaleLowerCase();
-  return productCategory
-    .split(/[/>|]/)
-    .some((part) => part.trim().toLocaleLowerCase() === wanted);
 }
 
 function CategoryThumbnail({ title, images }: { title: string; images: string[] }) {
@@ -70,12 +63,12 @@ const Index = () => {
   const newProducts = products.slice(8);
   const liveCategoryTiles = useMemo(() => categoryTiles.flatMap((tile) => {
     const categoryProducts = products
-      .filter((product) => product.stock_quantity > 0 && categoryMatches(product.category, tile.title))
+      .filter((product) => product.stock_quantity > 0 && productMatchesCategory(tile.slug, product.category))
       .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at));
     if (categoryProducts.length === 0) return [];
 
     const images = [...new Set(categoryProducts.flatMap((product) => [
-      ...(product.image_url ? [product.image_url] : []),
+      ...(product.image_url?.trim() ? [product.image_url.trim()] : []),
       ...productImages(product.images_json),
     ]))];
     return [{ ...tile, images }];

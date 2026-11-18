@@ -201,7 +201,7 @@ function errorCauseMessage(error: unknown): string | undefined {
   return cause === undefined ? undefined : String(cause);
 }
 
-function routeErrorResponse(error: unknown, fallbackMessage: string, logContext: string) {
+function routeErrorResponse(error: unknown, fallbackMessage: string, logContext: string, includeCause = false) {
   if (error instanceof ApiError) return json({ error: error.message }, error.status, error.headers);
   const causeMessage = errorCauseMessage(error);
   console.error(`${logContext} failed: ${errorMessage(error)}`, {
@@ -210,12 +210,13 @@ function routeErrorResponse(error: unknown, fallbackMessage: string, logContext:
   });
   const message = [errorMessage(error), causeMessage].filter(Boolean).join("\n");
   if (/no such (?:table|column):/i.test(message)) {
-    return json({ error: "The store database is missing a required migration. Apply the latest D1 migrations and try again." }, 503);
+    const migrationMessage = "The store database is missing a required migration. Apply the latest D1 migrations and try again.";
+    return json({ error: includeCause && causeMessage ? `${migrationMessage} Database cause: ${causeMessage}` : migrationMessage }, 503);
   }
   if (/UNIQUE constraint failed/i.test(message)) {
     return json({ error: "A product or variant already uses one of these SKUs or this product handle. Choose unique values and try again." }, 409);
   }
-  return json({ error: fallbackMessage }, 500);
+  return json({ error: includeCause && causeMessage ? `${fallbackMessage} Database cause: ${causeMessage}` : fallbackMessage }, 500);
 }
 
 function requiredString(value: unknown, label: string, maxLength = 200) {
@@ -1129,6 +1130,7 @@ type ProductInput = {
   supplier: "eprolo" | "cj";
   supplier_sku: string | null;
   cost_price_usd: number | null;
+  is_listed: boolean | null;
   options: ProductOptionInput[];
   variants: ProductVariantInput[];
 };
@@ -1165,6 +1167,10 @@ function normalizeProductInput(value: unknown): ProductInput {
   const supplier = body.supplier === undefined ? "eprolo" : body.supplier;
   if (supplier !== "eprolo" && supplier !== "cj") {
     throw new ApiError("Supplier must be Eprolo or CJ Dropshipping.", 400);
+  }
+  const isListed = body.is_listed === undefined || body.is_listed === null ? null : body.is_listed;
+  if (isListed !== null && typeof isListed !== "boolean") {
+    throw new ApiError("Published status must be true or false.", 400);
   }
   const rawOptions = body.options === undefined ? [] : body.options;
   if (!Array.isArray(rawOptions) || rawOptions.length > 3) {
@@ -1273,6 +1279,7 @@ function normalizeProductInput(value: unknown): ProductInput {
     supplier,
     supplier_sku: optionalText(body.supplier_sku, "Supplier SKU", 150),
     cost_price_usd: nonNegativeAmount(body.cost_price_usd, "USD cost price"),
+    is_listed: isListed,
     options: productOptions,
     variants: variantInputs.length ? variantInputs : [{
       sku,
@@ -1310,22 +1317,22 @@ function productInsertStatements(env: Env, product: ProductInput, productId: str
       ? env.DB.prepare(`UPDATE products SET
           title = ?, sku = ?, price = ?, compare_at_price = ?, stock_quantity = ?, status = ?, category = ?,
           brand = ?, description = ?, handle = ?, image_url = ?, images_json = ?, supplier = ?, supplier_sku = ?,
-          cost_price_usd = ?, supplier_id = ?, supplier_product_id = ?, updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?`).bind(...productValues, source.supplierId, source.externalId, productId)
+          cost_price_usd = ?, is_listed = COALESCE(?, is_listed), supplier_id = ?, supplier_product_id = ?,
+          updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(...productValues, product.is_listed, source.supplierId, source.externalId, productId)
       : env.DB.prepare(`UPDATE products SET
           title = ?, sku = ?, price = ?, compare_at_price = ?, stock_quantity = ?, status = ?, category = ?,
           brand = ?, description = ?, handle = ?, image_url = ?, images_json = ?, supplier = ?, supplier_sku = ?,
-          cost_price_usd = ?, updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?`).bind(...productValues, productId)
+          cost_price_usd = ?, is_listed = COALESCE(?, is_listed), updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?`).bind(...productValues, product.is_listed, productId)
     : source
       ? env.DB.prepare(`INSERT INTO products
           (id, title, sku, price, compare_at_price, stock_quantity, status, category, brand, description, handle, image_url, images_json,
-           supplier, supplier_sku, cost_price_usd, supplier_id, supplier_product_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(productId, ...productValues, source.supplierId, source.externalId)
+           supplier, supplier_sku, cost_price_usd, is_listed, supplier_id, supplier_product_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(productId, ...productValues, product.is_listed ?? true, source.supplierId, source.externalId)
       : env.DB.prepare(`INSERT INTO products
           (id, title, sku, price, compare_at_price, stock_quantity, status, category, brand, description, handle, image_url, images_json,
-           supplier, supplier_sku, cost_price_usd)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(productId, ...productValues);
+           supplier, supplier_sku, cost_price_usd, is_listed)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(productId, ...productValues, product.is_listed ?? true);
   const statements: D1PreparedStatement[] = [statement];
   if (updateExisting) {
     statements.push(env.DB.prepare("DELETE FROM variants WHERE product_id = ?").bind(productId));
@@ -2711,7 +2718,9 @@ async function route(
     }
     const productId = crypto.randomUUID();
     await env.DB!.batch(productInsertStatements(env, product, productId));
-    return json({ product: { id: productId, title: product.title, sku: product.sku, handle: product.handle } }, 201);
+    const [savedProduct] = await db.select(productColumns).from(products).where(eq(products.id, productId)).limit(1);
+    if (!savedProduct) throw new Error("The new product was not found after its D1 write completed.");
+    return json({ product: savedProduct }, 201, { "Cache-Control": "no-store" });
   }
 
   if (path.startsWith("/admin/products/") && method === "PUT") {
@@ -2769,9 +2778,11 @@ async function route(
       throw new ApiError("A product with this SKU or handle, or a variant with one of these SKUs, already exists.", 409);
     }
     await env.DB!.batch(productInsertStatements(env, product, productId, true));
-    return json({ product: { id: productId, title: product.title, sku: product.sku, handle: product.handle } });
+    const [savedProduct] = await db.select(productColumns).from(products).where(eq(products.id, productId)).limit(1);
+    if (!savedProduct) throw new Error("The product was not found after its D1 update completed.");
+    return json({ product: savedProduct }, 200, { "Cache-Control": "no-store" });
     } catch (error) {
-      return routeErrorResponse(error, "The product could not be updated. Please try again.", "Product update");
+      return routeErrorResponse(error, "The product could not be updated. Please try again.", "Product update", true);
     }
   }
 

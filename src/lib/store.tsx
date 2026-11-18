@@ -32,6 +32,7 @@ export type StoreProduct = {
   image_url: string | null;
   images_json: string;
   updated_at: string;
+  is_listed: boolean;
 };
 
 type StoreContextValue = {
@@ -41,6 +42,7 @@ type StoreContextValue = {
   retryConnection: () => void;
   products: StoreProduct[];
   refreshProducts: () => Promise<void>;
+  applyProduct: (product: StoreProduct) => void;
   siteSettings: SiteSettings;
   refreshSiteSettings: () => Promise<void>;
   applySiteSettings: (settings: SiteSettings) => void;
@@ -128,6 +130,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const refreshProducts = useCallback(async () => {
     const catalog = await request<{ products: StoreProduct[] }>("/products");
     setProducts(catalog.products);
+  }, []);
+
+  const applyProduct = useCallback((product: StoreProduct) => {
+    setProducts((current) => {
+      const next = current.filter((entry) => entry.id !== product.id);
+      if (!product.is_listed) return next;
+      return [product, ...next].sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at));
+    });
   }, []);
 
   const applySiteSettings = useCallback((settings: SiteSettings) => {
@@ -325,11 +335,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [cart, user]);
 
   const value = useMemo(() => ({
-    user, ready, connectionError, retryConnection, products, refreshProducts, siteSettings, refreshSiteSettings, applySiteSettings, cart, wishlist, cartOpen, setCartOpen, authOpen, setAuthOpen,
+    user, ready, connectionError, retryConnection, products, refreshProducts, applyProduct, siteSettings, refreshSiteSettings, applySiteSettings, cart, wishlist, cartOpen, setCartOpen, authOpen, setAuthOpen,
     authMode, setAuthMode, addToCart, changeQuantity, removeFromCart, clearCart,
     toggleWishlist, signIn, signUp, signOut, saveDeliveryAddress, prepareCheckout, checkout,
   }), [
-    user, ready, connectionError, retryConnection, products, refreshProducts, siteSettings, refreshSiteSettings, applySiteSettings, cart, wishlist, cartOpen, authOpen, authMode, addToCart,
+    user, ready, connectionError, retryConnection, products, refreshProducts, applyProduct, siteSettings, refreshSiteSettings, applySiteSettings, cart, wishlist, cartOpen, authOpen, authMode, addToCart,
     changeQuantity, removeFromCart, clearCart, toggleWishlist, signIn, signUp, signOut, saveDeliveryAddress, prepareCheckout, checkout,
   ]);
 
