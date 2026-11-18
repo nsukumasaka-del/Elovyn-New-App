@@ -556,6 +556,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
   const [title, setTitle] = useState("");
   const [sku, setSku] = useState("");
   const [price, setPrice] = useState("");
+  const [compareAtPrice, setCompareAtPrice] = useState("");
   const [supplier, setSupplier] = useState<"eprolo" | "cj">("eprolo");
   const [supplierSku, setSupplierSku] = useState("");
   const [costPriceUsd, setCostPriceUsd] = useState("");
@@ -628,7 +629,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
     if (!productId) return;
     let active = true;
     apiRequest<{
-      product: { title: string; sku: string; price: number; stock_quantity: number; category: string | null; brand: string | null; description: string | null; image_url: string | null; images_json: string; supplier_id: string | null; supplier: "eprolo" | "cj"; supplier_sku: string | null; cost_price_usd: number | null; is_listed: boolean };
+      product: { title: string; sku: string; price: number; compare_at_price: number | null; stock_quantity: number; category: string | null; brand: string | null; description: string | null; image_url: string | null; images_json: string; supplier_id: string | null; supplier_product_id: string | null; supplier: "eprolo" | "cj"; supplier_sku: string | null; cost_price_usd: number | null; is_listed: boolean };
       options: { name: string; values_json: string }[];
       variants: { sku: string; price: number; compare_at_price: number | null; barcode: string | null; options_json: string; image_url: string | null; inventory_quantity: number }[];
     }>(`/products/${encodeURIComponent(productId)}`)
@@ -637,12 +638,13 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
         setTitle(detail.product.title);
         setSku(detail.product.sku);
         setPrice(String(detail.product.price));
+        setCompareAtPrice(detail.product.compare_at_price === null ? "" : String(detail.product.compare_at_price));
         setSupplier(detail.product.supplier || "eprolo");
         setSupplierSku(detail.product.supplier_sku || "");
         setCostPriceUsd(detail.product.cost_price_usd === null ? "" : String(detail.product.cost_price_usd));
         setStock(String(detail.product.stock_quantity));
         setIsListed(detail.product.is_listed);
-        setSupplierManaged(Boolean(detail.product.supplier_id));
+        setSupplierManaged(Boolean(detail.product.supplier_id || detail.product.supplier_product_id));
         setCategory(detail.product.category || "Streetwear");
         setBrand(detail.product.brand || "");
         setDescription(detail.product.description || "");
@@ -824,6 +826,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
           title,
           sku,
           price: Number(price),
+          compare_at_price: compareAtPrice.trim() ? Number(compareAtPrice) : null,
           supplier,
           supplier_sku: supplierSku.trim() || null,
           cost_price_usd: costPriceUsd.trim() ? Number(costPriceUsd) : null,
@@ -864,9 +867,10 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
               {optimizing && optimizationTarget === "title" ? "Brixy is writing…" : "Ask Brixy to Optimize"}
             </button>
           </div>
-          <label className="block text-sm font-medium">SKU<input required value={sku} onChange={(event) => setSku(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
-          <div className="grid grid-cols-2 gap-3">
+          <label className="block text-sm font-medium">SKU<input required value={sku} disabled={supplierManaged} onChange={(event) => setSku(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500" />{supplierManaged && <span className="mt-1 block text-xs font-normal text-neutral-500">Locked because this product is linked to supplier inventory.</span>}</label>
+          <div className="grid gap-3 sm:grid-cols-3">
             <label className="block text-sm font-medium">Price (ZAR)<input required min="0" step="0.01" type="number" value={price} onChange={(event) => updateProductPrice(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /><span className="mt-1 block text-xs font-normal text-neutral-500">Changing this price updates every variant. You can still set individual variant prices below.</span></label>
+            <label className="block text-sm font-medium">Compare-at price (ZAR)<input min="0" step="0.01" type="number" value={compareAtPrice} onChange={(event) => setCompareAtPrice(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
             <label className="block text-sm font-medium">Stock quantity{supplierManaged && <span className="ml-2 text-xs font-normal text-violet-700">Controlled by supplier</span>}<input required min="0" step="1" type="number" value={stock} disabled={supplierManaged} onChange={(event) => setStock(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500" /></label>
           </div>
           <label className="block text-sm font-medium">Category<select value={category} onChange={(event) => setCategory(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3"><option>Streetwear</option><option>T-Shirts</option><option>Hoodies</option><option>Accessories</option><option>Wigs</option><option>Care</option><option>New Arrivals</option></select></label>
@@ -875,7 +879,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
             <p className="mt-1 text-xs text-neutral-500">Choose which supplier receives this product’s order lines.</p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <label className="text-sm font-medium">Supplier<select value={supplier} onChange={(event) => setSupplier(event.target.value as "eprolo" | "cj")} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 bg-white px-3"><option value="eprolo">Eprolo</option><option value="cj">CJ Dropshipping</option></select></label>
-              <label className="text-sm font-medium">Supplier SKU / Variant VID<input value={supplierSku} onChange={(event) => setSupplierSku(event.target.value)} maxLength={150} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
+              <label className="text-sm font-medium">Supplier SKU / Variant VID<input value={supplierSku} disabled={supplierManaged} onChange={(event) => setSupplierSku(event.target.value)} maxLength={150} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500" />{supplierManaged && <span className="mt-1 block text-xs font-normal text-neutral-500">Locked because this product is linked to supplier inventory.</span>}</label>
               <label className="text-sm font-medium sm:col-span-2">Supplier cost (USD, including shipping)<input type="number" min="0" step="0.01" value={costPriceUsd} onChange={(event) => setCostPriceUsd(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
             </div>
           </section>
@@ -942,14 +946,14 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
           </section>
           <section className="rounded-2xl border border-neutral-200 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div><h3 className="font-semibold">Options and variants</h3><p className="mt-1 text-xs text-neutral-500">Enter comma-separated values. A SKU and stock row is generated for each combination.</p></div>
-              {optionRows.length < 3 && <button type="button" onClick={() => setOptionRows((current) => [...current, { name: "", values: "" }])} className="rounded-full border border-neutral-300 px-3 py-2 text-xs font-medium">Add option</button>}
+              <div><h3 className="font-semibold">Options and variants</h3><p className="mt-1 text-xs text-neutral-500">{supplierManaged ? "Supplier-managed options, SKUs, barcodes, and stock are locked. Variant selling prices and images can still be edited." : "Enter comma-separated values. A SKU and stock row is generated for each combination."}</p></div>
+              {!supplierManaged && optionRows.length < 3 && <button type="button" onClick={() => setOptionRows((current) => [...current, { name: "", values: "" }])} className="rounded-full border border-neutral-300 px-3 py-2 text-xs font-medium">Add option</button>}
             </div>
             <div className="mt-4 space-y-3">
               {optionRows.map((option, index) => <div key={index} className="grid gap-2 sm:grid-cols-[1fr_2fr_auto]">
-                <input aria-label={`Option ${index + 1} name`} placeholder="Option name (e.g. Size)" value={option.name} onChange={(event) => setOptionRows((current) => current.map((entry, row) => row === index ? { ...entry, name: event.target.value } : entry))} className="h-10 rounded-lg border border-neutral-300 px-3 text-sm" />
-                <input aria-label={`Option ${index + 1} values`} placeholder="Values, separated by commas" value={option.values} onChange={(event) => setOptionRows((current) => current.map((entry, row) => row === index ? { ...entry, values: event.target.value } : entry))} className="h-10 rounded-lg border border-neutral-300 px-3 text-sm" />
-                <button type="button" aria-label={`Remove option ${index + 1}`} onClick={() => setOptionRows((current) => current.filter((_, row) => row !== index))} className="rounded-lg border border-neutral-300 px-3 text-sm text-neutral-500">Remove</button>
+                <input aria-label={`Option ${index + 1} name`} placeholder="Option name (e.g. Size)" value={option.name} disabled={supplierManaged} onChange={(event) => setOptionRows((current) => current.map((entry, row) => row === index ? { ...entry, name: event.target.value } : entry))} className="h-10 rounded-lg border border-neutral-300 px-3 text-sm disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500" />
+                <input aria-label={`Option ${index + 1} values`} placeholder="Values, separated by commas" value={option.values} disabled={supplierManaged} onChange={(event) => setOptionRows((current) => current.map((entry, row) => row === index ? { ...entry, values: event.target.value } : entry))} className="h-10 rounded-lg border border-neutral-300 px-3 text-sm disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500" />
+                {!supplierManaged && <button type="button" aria-label={`Remove option ${index + 1}`} onClick={() => setOptionRows((current) => current.filter((_, row) => row !== index))} className="rounded-lg border border-neutral-300 px-3 text-sm text-neutral-500">Remove</button>}
               </div>)}
             </div>
             <div className="mt-5 flex flex-wrap items-end gap-3 rounded-xl bg-neutral-50 p-4">
@@ -971,8 +975,8 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
                     {matrix.options.map((option) => <td key={option.name} className="px-3 py-2 font-medium">{combo[option.name]}</td>)}
                     <td className="px-2 py-2"><input aria-label={`Variant ${index + 1} price`} type="number" min="0" step="0.01" value={fields?.price ?? price} onChange={(event) => updateVariantField(key, "price", event.target.value)} className="h-9 w-24 rounded-md border border-neutral-300 px-2" /></td>
                     <td className="px-2 py-2"><input aria-label={`Variant ${index + 1} compare-at price`} type="number" min="0" step="0.01" value={fields?.compareAt ?? ""} onChange={(event) => updateVariantField(key, "compareAt", event.target.value)} className="h-9 w-24 rounded-md border border-neutral-300 px-2" /></td>
-                    <td className="px-2 py-2"><input required aria-label={`Variant ${index + 1} SKU`} value={skuValue} onChange={(event) => updateVariantField(key, "sku", event.target.value)} className="h-9 w-28 rounded-md border border-neutral-300 px-2" /></td>
-                    <td className="px-2 py-2"><input aria-label={`Variant ${index + 1} barcode`} value={fields?.barcode ?? ""} onChange={(event) => updateVariantField(key, "barcode", event.target.value)} className="h-9 w-28 rounded-md border border-neutral-300 px-2" /></td>
+                    <td className="px-2 py-2"><input required aria-label={`Variant ${index + 1} SKU`} value={skuValue} disabled={supplierManaged} onChange={(event) => updateVariantField(key, "sku", event.target.value)} className="h-9 w-28 rounded-md border border-neutral-300 px-2 disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500" /></td>
+                    <td className="px-2 py-2"><input aria-label={`Variant ${index + 1} barcode`} value={fields?.barcode ?? ""} disabled={supplierManaged} onChange={(event) => updateVariantField(key, "barcode", event.target.value)} className="h-9 w-28 rounded-md border border-neutral-300 px-2 disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500" /></td>
                     <td className="px-2 py-2"><input required aria-label={`Variant ${index + 1} stock${supplierManaged ? " (supplier controlled)" : ""}`} type="number" min="0" step="1" value={fields?.stock ?? (matrix.options.length ? "0" : stock)} disabled={supplierManaged} onChange={(event) => updateVariantField(key, "stock", event.target.value)} className="h-9 w-20 rounded-md border border-neutral-300 px-2 disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500" /></td>
                   </tr>;
                 })}</tbody>

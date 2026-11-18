@@ -1107,6 +1107,7 @@ function statusForStock(quantity: number) {
 
 type ProductOptionInput = { name: string; values: string[] };
 type ProductVariantInput = {
+  id?: string;
   sku: string;
   price: number;
   compare_at_price: number | null;
@@ -1293,7 +1294,14 @@ function normalizeProductInput(value: unknown): ProductInput {
   };
 }
 
-function productInsertStatements(env: Env, product: ProductInput, productId: string, updateExisting = false, source?: { supplierId: string; externalId: string }) {
+function productInsertStatements(
+  env: Env,
+  product: ProductInput,
+  productId: string,
+  updateExisting = false,
+  source?: { supplierId: string; externalId: string },
+  preserveSupplierVariants = false,
+) {
   if (!env.DB) throw new ApiError("The D1 database is unavailable.", 503);
   const productValues = [
     product.title,
@@ -1334,44 +1342,58 @@ function productInsertStatements(env: Env, product: ProductInput, productId: str
            supplier, supplier_sku, cost_price_usd, is_listed)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(productId, ...productValues, product.is_listed ?? true);
   const statements: D1PreparedStatement[] = [statement];
-  if (updateExisting) {
+  if (updateExisting && !preserveSupplierVariants) {
     statements.push(env.DB.prepare("DELETE FROM variants WHERE product_id = ?").bind(productId));
     statements.push(env.DB.prepare("DELETE FROM options WHERE product_id = ?").bind(productId));
   }
   const optionIds = new Map<string, string>();
-  product.options.forEach((option, index) => {
-    const optionId = crypto.randomUUID();
-    optionIds.set(option.name, optionId);
-    statements.push(env.DB!.prepare(
-      "INSERT INTO options (id, product_id, name, values_json, position) VALUES (?, ?, ?, ?, ?)",
-    ).bind(optionId, productId, option.name, JSON.stringify(option.values), index));
-  });
+  if (!preserveSupplierVariants) {
+    product.options.forEach((option, index) => {
+      const optionId = crypto.randomUUID();
+      optionIds.set(option.name, optionId);
+      statements.push(env.DB!.prepare(
+        "INSERT INTO options (id, product_id, name, values_json, position) VALUES (?, ?, ?, ?, ?)",
+      ).bind(optionId, productId, option.name, JSON.stringify(option.values), index));
+    });
+  }
   for (const variant of product.variants) {
-    const variantId = crypto.randomUUID();
-    const title = Object.values(variant.option_values).join(" / ") || "Default";
-    statements.push(env.DB.prepare(`INSERT INTO variants
-      (id, product_id, title, sku, price, compare_at_price, barcode, options_json, image_url)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .bind(
-        variantId,
-        productId,
-        title,
-        variant.sku,
+    if (preserveSupplierVariants) {
+      if (!variant.id) throw new ApiError("Supplier variant identity is missing; the product was not updated.", 409);
+      statements.push(env.DB.prepare(`UPDATE variants SET price = ?, compare_at_price = ?, image_url = ?
+        WHERE id = ? AND product_id = ?`).bind(
         variant.price,
         variant.compare_at_price,
-        variant.barcode,
-        JSON.stringify(variant.option_values),
         variant.image_url,
+        variant.id,
+        productId,
       ));
-    statements.push(env.DB.prepare(
-      "INSERT INTO inventory_items (id, variant_id, quantity) VALUES (?, ?, ?)",
-    ).bind(crypto.randomUUID(), variantId, variant.inventory_quantity));
-    for (const [name, selectedValue] of Object.entries(variant.option_values)) {
-      const optionId = optionIds.get(name);
-      if (optionId) {
-        statements.push(env.DB.prepare(
-          "INSERT INTO variant_option_values (variant_id, option_id, value) VALUES (?, ?, ?)",
-        ).bind(variantId, optionId, selectedValue));
+    } else {
+      const variantId = crypto.randomUUID();
+      const title = Object.values(variant.option_values).join(" / ") || "Default";
+      statements.push(env.DB.prepare(`INSERT INTO variants
+        (id, product_id, title, sku, price, compare_at_price, barcode, options_json, image_url)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(
+          variantId,
+          productId,
+          title,
+          variant.sku,
+          variant.price,
+          variant.compare_at_price,
+          variant.barcode,
+          JSON.stringify(variant.option_values),
+          variant.image_url,
+        ));
+      statements.push(env.DB.prepare(
+        "INSERT INTO inventory_items (id, variant_id, quantity) VALUES (?, ?, ?)",
+      ).bind(crypto.randomUUID(), variantId, variant.inventory_quantity));
+      for (const [name, selectedValue] of Object.entries(variant.option_values)) {
+        const optionId = optionIds.get(name);
+        if (optionId) {
+          statements.push(env.DB.prepare(
+            "INSERT INTO variant_option_values (variant_id, option_id, value) VALUES (?, ?, ?)",
+          ).bind(variantId, optionId, selectedValue));
+        }
       }
     }
   }
@@ -2735,32 +2757,103 @@ async function route(
     if (!productId || productId.includes("/") || productId.length > 100) {
       throw new ApiError("Product was not found.", 404);
     }
-    const [currentProduct] = await db.select({ id: products.id, supplierId: products.supplierId }).from(products).where(eq(products.id, productId)).limit(1);
+    const [currentProduct] = await db.select({
+      id: products.id,
+      supplierId: products.supplierId,
+      supplierProductId: products.supplierProductId,
+      sku: products.sku,
+      supplierSku: products.supplierSku,
+      supplier: products.supplier,
+      stockQuantity: products.stockQuantity,
+    }).from(products).where(eq(products.id, productId)).limit(1);
     if (!currentProduct) throw new ApiError("Product was not found.", 404);
-    const product = normalizeProductInput(await bodyAsJson(request));
-    if (currentProduct.supplierId) {
-      const supplierInventory = await db.select({ sku: variants.sku, optionsJson: variants.optionsJson, quantity: inventoryItems.quantity })
-        .from(variants).innerJoin(inventoryItems, eq(inventoryItems.variantId, variants.id)).where(eq(variants.productId, productId));
-      const optionKey = (values: Record<string, string>) => JSON.stringify(Object.entries(values).sort(([left], [right]) => left.localeCompare(right)));
-      const usedInventory = new Set<number>();
-      const quantities = product.variants.map((variant) => {
-        let index = supplierInventory.findIndex((item, itemIndex) => !usedInventory.has(itemIndex) && item.sku.toLowerCase() === variant.sku.toLowerCase());
-        if (index < 0) index = supplierInventory.findIndex((item, itemIndex) => {
-          if (usedInventory.has(itemIndex)) return false;
-          try {
-            const parsed = JSON.parse(item.optionsJson) as Record<string, string>;
-            return optionKey(parsed) === optionKey(variant.option_values);
-          } catch { return false; }
-        });
-        if (index < 0 && product.variants.length === 1 && supplierInventory.length === 1) index = 0;
-        if (index >= 0) usedInventory.add(index);
-        return index >= 0 ? supplierInventory[index].quantity : null;
-      });
-      if (product.variants.length !== supplierInventory.length || quantities.some((quantity) => quantity === null)) {
-        throw new ApiError("Supplier-managed variant options cannot be added or removed because their stock is controlled by the supplier.", 409);
+    const body = await bodyAsJson(request);
+    const supplierManaged = Boolean(currentProduct.supplierId || currentProduct.supplierProductId);
+    let product: ProductInput;
+    if (supplierManaged) {
+      const [storedOptions, storedVariants] = await Promise.all([
+        db.select({ name: options.name, valuesJson: options.valuesJson })
+          .from(options).where(eq(options.productId, productId)).orderBy(asc(options.position)),
+        db.select({
+          id: variants.id,
+          sku: variants.sku,
+          price: variants.price,
+          compareAtPrice: variants.compareAtPrice,
+          barcode: variants.barcode,
+          optionsJson: variants.optionsJson,
+          imageUrl: variants.imageUrl,
+          quantity: inventoryItems.quantity,
+        })
+          .from(variants)
+          .leftJoin(inventoryItems, eq(inventoryItems.variantId, variants.id))
+          .where(eq(variants.productId, productId))
+          .orderBy(asc(variants.createdAt), asc(variants.id)),
+      ]);
+      if (storedVariants.length === 0) {
+        throw new ApiError("This supplier-managed product has no saved variants to protect; its supplier inventory was not changed.", 409);
       }
-      product.variants.forEach((variant, index) => { variant.inventory_quantity = quantities[index]!; });
-      product.stock_quantity = product.variants.reduce((total, variant) => total + variant.inventory_quantity, 0);
+
+      const safeOptions = storedOptions.map((option): ProductOptionInput => {
+        let values: unknown;
+        try { values = JSON.parse(option.valuesJson); }
+        catch { throw new ApiError("Saved supplier option data is invalid; the product was not changed.", 409); }
+        if (!Array.isArray(values) || values.some((value) => typeof value !== "string")) {
+          throw new ApiError("Saved supplier option data is invalid; the product was not changed.", 409);
+        }
+        return { name: option.name, values };
+      });
+      const parseStoredVariantOptions = (optionsJson: string): Record<string, string> => {
+        let value: unknown;
+        try { value = JSON.parse(optionsJson); }
+        catch { throw new ApiError("Saved supplier variant data is invalid; the product was not changed.", 409); }
+        if (!value || typeof value !== "object" || Array.isArray(value)
+          || Object.values(value).some((entry) => typeof entry !== "string")) {
+          throw new ApiError("Saved supplier variant data is invalid; the product was not changed.", 409);
+        }
+        return value as Record<string, string>;
+      };
+      const optionKey = (value: Record<string, string>) =>
+        JSON.stringify(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)));
+      const submittedVariants = Array.isArray(body.variants)
+        ? body.variants.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry))
+        : [];
+      const submittedOptionKey = (entry: Record<string, unknown>) => {
+        const values = entry.option_values;
+        if (!values || typeof values !== "object" || Array.isArray(values)
+          || Object.values(values).some((value) => typeof value !== "string")) return null;
+        return optionKey(values as Record<string, string>);
+      };
+      const safeVariants = storedVariants.map((storedVariant, index) => {
+        const storedValues = parseStoredVariantOptions(storedVariant.optionsJson);
+        const storedKey = optionKey(storedValues);
+        const submitted = submittedVariants.find((entry) => submittedOptionKey(entry) === storedKey)
+          ?? submittedVariants[index];
+        const submittedField = (field: string, fallback: unknown) =>
+          submitted && Object.prototype.hasOwnProperty.call(submitted, field) ? submitted[field] : fallback;
+        const submittedImage = submittedField("image_url", storedVariant.imageUrl);
+        return {
+          sku: storedVariant.sku,
+          price: submittedField("price", storedVariant.price),
+          compare_at_price: submittedField("compare_at_price", storedVariant.compareAtPrice),
+          barcode: storedVariant.barcode,
+          inventory_quantity: storedVariant.quantity ?? 0,
+          option_values: storedValues,
+          image_url: typeof submittedImage === "string" ? submittedImage : storedVariant.imageUrl,
+        };
+      });
+      product = normalizeProductInput({
+        ...body,
+        sku: currentProduct.sku,
+        supplier: body.supplier ?? currentProduct.supplier,
+        supplier_sku: currentProduct.supplierSku,
+        stock_quantity: currentProduct.stockQuantity,
+        options: safeOptions,
+        variants: safeVariants,
+      });
+      product.stock_quantity = currentProduct.stockQuantity;
+      product.variants.forEach((variant, index) => { variant.id = storedVariants[index].id; });
+    } else {
+      product = normalizeProductInput(body);
     }
     const allSkus = [...new Set([product.sku, ...product.variants.map((variant) => variant.sku)].map((sku) => sku.toLowerCase()))];
     const [duplicateProduct] = await db.select({ id: products.id }).from(products).where(and(
@@ -2777,7 +2870,7 @@ async function route(
     if (duplicateProduct || duplicateVariant) {
       throw new ApiError("A product with this SKU or handle, or a variant with one of these SKUs, already exists.", 409);
     }
-    await env.DB!.batch(productInsertStatements(env, product, productId, true));
+    await env.DB!.batch(productInsertStatements(env, product, productId, true, undefined, supplierManaged));
     const [savedProduct] = await db.select(productColumns).from(products).where(eq(products.id, productId)).limit(1);
     if (!savedProduct) throw new Error("The product was not found after its D1 update completed.");
     return json({ product: savedProduct }, 200, { "Cache-Control": "no-store" });
