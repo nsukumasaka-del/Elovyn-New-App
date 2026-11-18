@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Heart, Menu, Search, ShoppingBag, UserRound, X } from "lucide-react";
 import { toast } from "sonner";
 import { useStore, type CheckoutSummary } from "@/lib/store";
+import { normalizeDeliveryAddress } from "@/lib/delivery-address";
 import { isPrimaryAdmin } from "@/lib/store-api";
 import { defaultSiteSettings } from "@/lib/site-settings";
 
@@ -149,7 +150,14 @@ function CartDrawer({ onClose }: { onClose: () => void }) {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [summary, setSummary] = useState<CheckoutSummary | null>(null);
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const hasDeliveryAddress = Boolean(user?.deliveryAddressJson);
+  const hasDeliveryAddress = (() => {
+    try {
+      return normalizeDeliveryAddress(user?.deliveryAddressJson ? JSON.parse(user.deliveryAddressJson) : null).ok;
+    } catch {
+      return false;
+    }
+  })();
+  const summaryAddressValid = summary !== null && normalizeDeliveryAddress(summary.delivery_address).ok;
 
   async function reviewOrder() {
     setError("");
@@ -165,6 +173,10 @@ function CartDrawer({ onClose }: { onClose: () => void }) {
 
   async function payForOrder() {
     setError("");
+    if (!summaryAddressValid) {
+      setError("Enter a valid South African mobile number and 4-digit postal code in your delivery address before paying.");
+      return;
+    }
     setCheckoutLoading(true);
     try { await checkout(summary!.total); }
     catch (reason) {
@@ -255,7 +267,7 @@ function CartDrawer({ onClose }: { onClose: () => void }) {
           {summary ? <div className="space-y-2 text-sm"><div className="flex justify-between"><span>Subtotal</span><span>R {summary.subtotal.toFixed(2)}</span></div><div className="flex justify-between"><span>Delivery fee</span><span>R {summary.shipping_fee.toFixed(2)}</span></div><div className="flex justify-between border-t border-neutral-200 pt-3 text-base font-bold"><span>Total</span><span>R {summary.total.toFixed(2)}</span></div></div> : <><div className="flex justify-between text-base font-semibold"><span>Subtotal</span><span>R {subtotal.toFixed(2)}</span></div><p className="mt-2 text-xs text-neutral-500">The delivery fee and final total are shown before payment.</p></>}
           {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
           {summary ? (
-            <button type="button" onClick={() => void payForOrder()} disabled={checkoutLoading} className="btn-primary mt-5 w-full disabled:cursor-not-allowed disabled:opacity-50">
+            <button type="button" onClick={() => void payForOrder()} disabled={checkoutLoading || !summaryAddressValid} className="btn-primary mt-5 w-full disabled:cursor-not-allowed disabled:opacity-50">
               {checkoutLoading ? "Opening Yoco…" : `Pay R ${summary.total.toFixed(2)} with Yoco`}
             </button>
           ) : user ? (

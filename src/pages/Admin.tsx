@@ -7,6 +7,7 @@ import { useStore } from "@/lib/store";
 import { buildImportProducts, importFieldDefinitions, parseCsv, suggestedMapping, type ImportField, type ImportMapping } from "@/lib/product-import";
 import { supplierUrlValidationError } from "@/lib/supplier-validation";
 import { defaultSiteSettings, type SiteSettings } from "@/lib/site-settings";
+import { calculateRecommendedRetailPrice, DEFAULT_FEE_BUFFER_PERCENT } from "@/lib/pricing";
 import { AdminOrdersPanel } from "@/components/AdminOrdersPanel";
 import { AdminNotificationBell } from "@/components/AdminNotificationBell";
 import defaultHeroImage from "@/assets/Front Page.png";
@@ -22,6 +23,9 @@ type Product = {
   image_url: string | null;
   supplier_id: string | null;
   supplier_product_id: string | null;
+  supplier: "eprolo" | "cj";
+  supplier_sku: string | null;
+  cost_price_usd: number | null;
   is_listed: boolean;
 };
 type Stats = { total_sales: number | string; order_count: number | string; product_count: number | string };
@@ -552,6 +556,14 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
   const [title, setTitle] = useState("");
   const [sku, setSku] = useState("");
   const [price, setPrice] = useState("");
+  const [supplier, setSupplier] = useState<"eprolo" | "cj">("eprolo");
+  const [supplierSku, setSupplierSku] = useState("");
+  const [costPriceUsd, setCostPriceUsd] = useState("");
+  const [usdToZarRate, setUsdToZarRate] = useState("");
+  const [feeBufferPercent, setFeeBufferPercent] = useState(String(DEFAULT_FEE_BUFFER_PERCENT));
+  const [targetMarkupPercent, setTargetMarkupPercent] = useState("");
+  const [savingPricingSettings, setSavingPricingSettings] = useState(false);
+  const [pricingSettingsError, setPricingSettingsError] = useState("");
   const [stock, setStock] = useState("0");
   const [category, setCategory] = useState("Streetwear");
   const [brand, setBrand] = useState("");
@@ -573,6 +585,26 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
   const [optimizationTarget, setOptimizationTarget] = useState<"title" | "description">("title");
   const selectedImagePreviews = useMemo(() => images.map((file) => ({ file, url: URL.createObjectURL(file) })), [images]);
   useEffect(() => () => selectedImagePreviews.forEach(({ url }) => URL.revokeObjectURL(url)), [selectedImagePreviews]);
+  const priceEstimate = useMemo(() => {
+    if (!costPriceUsd.trim() || !targetMarkupPercent.trim()) return null;
+    return calculateRecommendedRetailPrice(Number(costPriceUsd), Number(targetMarkupPercent), {
+      usdToZarRate: usdToZarRate.trim() ? Number(usdToZarRate) : null,
+      feeBufferPercent: Number(feeBufferPercent),
+    });
+  }, [costPriceUsd, feeBufferPercent, targetMarkupPercent, usdToZarRate]);
+
+  useEffect(() => {
+    let active = true;
+    apiRequest<{ settings: { usd_to_zar_rate: number | null; fee_buffer_percent: number } }>("/admin/pricing-settings")
+      .then(({ settings }) => {
+        if (!active) return;
+        setUsdToZarRate(settings.usd_to_zar_rate === null ? "" : String(settings.usd_to_zar_rate));
+        setFeeBufferPercent(String(settings.fee_buffer_percent));
+      })
+      .catch((reason: Error) => { if (active) setPricingSettingsError(reason.message); });
+    return () => { active = false; };
+  }, []);
+
   const matrix = useMemo(() => {
     const options = optionRows.map((option) => ({
       name: option.name.trim(),
@@ -595,7 +627,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
     if (!productId) return;
     let active = true;
     apiRequest<{
-      product: { title: string; sku: string; price: number; stock_quantity: number; category: string | null; brand: string | null; description: string | null; image_url: string | null; images_json: string; supplier_id: string | null };
+      product: { title: string; sku: string; price: number; stock_quantity: number; category: string | null; brand: string | null; description: string | null; image_url: string | null; images_json: string; supplier_id: string | null; supplier: "eprolo" | "cj"; supplier_sku: string | null; cost_price_usd: number | null };
       options: { name: string; values_json: string }[];
       variants: { sku: string; price: number; compare_at_price: number | null; barcode: string | null; options_json: string; image_url: string | null; inventory_quantity: number }[];
     }>(`/products/${encodeURIComponent(productId)}`)
@@ -604,6 +636,9 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
         setTitle(detail.product.title);
         setSku(detail.product.sku);
         setPrice(String(detail.product.price));
+        setSupplier(detail.product.supplier || "eprolo");
+        setSupplierSku(detail.product.supplier_sku || "");
+        setCostPriceUsd(detail.product.cost_price_usd === null ? "" : String(detail.product.cost_price_usd));
         setStock(String(detail.product.stock_quantity));
         setSupplierManaged(Boolean(detail.product.supplier_id));
         setCategory(detail.product.category || "Streetwear");
@@ -645,6 +680,30 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
     const form = new FormData();
     form.set("file", file);
     return (await apiRequest<{ image_url: string }>("/admin/assets", { method: "POST", body: form })).image_url;
+  }
+
+  async function savePricingSettings() {
+    setSavingPricingSettings(true);
+    setPricingSettingsError("");
+    try {
+      const rate = Number(usdToZarRate);
+      const buffer = Number(feeBufferPercent);
+      if (!usdToZarRate.trim() || !Number.isFinite(rate) || rate <= 0) {
+        throw new Error("Enter a positive USD/ZAR exchange rate.");
+      }
+      if (!feeBufferPercent.trim() || !Number.isFinite(buffer) || buffer < 0 || buffer > 100) {
+        throw new Error("Fee buffer must be between 0 and 100 percent.");
+      }
+      await apiRequest("/admin/pricing-settings", {
+        method: "PUT",
+        body: JSON.stringify({ usd_to_zar_rate: rate, fee_buffer_percent: buffer }),
+      });
+      toast.success("Pricing settings saved.");
+    } catch (reason) {
+      setPricingSettingsError(reason instanceof Error ? reason.message : "Could not save pricing settings.");
+    } finally {
+      setSavingPricingSettings(false);
+    }
   }
 
   function addGalleryImages(files: File[]) {
@@ -763,6 +822,9 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
           title,
           sku,
           price: Number(price),
+          supplier,
+          supplier_sku: supplierSku.trim() || null,
+          cost_price_usd: costPriceUsd.trim() ? Number(costPriceUsd) : null,
           stock_quantity: Number(stock),
           category,
           brand,
@@ -805,6 +867,43 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
             <label className="block text-sm font-medium">Stock quantity{supplierManaged && <span className="ml-2 text-xs font-normal text-violet-700">Controlled by supplier</span>}<input required min="0" step="1" type="number" value={stock} disabled={supplierManaged} onChange={(event) => setStock(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500" /></label>
           </div>
           <label className="block text-sm font-medium">Category<select value={category} onChange={(event) => setCategory(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3"><option>Streetwear</option><option>T-Shirts</option><option>Hoodies</option><option>Accessories</option><option>Wigs</option><option>Care</option><option>New Arrivals</option></select></label>
+          <section className="rounded-2xl border border-neutral-200 p-4">
+            <h3 className="text-sm font-semibold">Supplier routing</h3>
+            <p className="mt-1 text-xs text-neutral-500">Choose which supplier receives this product’s order lines.</p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="text-sm font-medium">Supplier<select value={supplier} onChange={(event) => setSupplier(event.target.value as "eprolo" | "cj")} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 bg-white px-3"><option value="eprolo">Eprolo</option><option value="cj">CJ Dropshipping</option></select></label>
+              <label className="text-sm font-medium">Supplier SKU / Variant VID<input value={supplierSku} onChange={(event) => setSupplierSku(event.target.value)} maxLength={150} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
+              <label className="text-sm font-medium sm:col-span-2">Supplier cost (USD, including shipping)<input type="number" min="0" step="0.01" value={costPriceUsd} onChange={(event) => setCostPriceUsd(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
+            </div>
+          </section>
+          <section className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4">
+            <div>
+              <h3 className="text-sm font-semibold text-emerald-950">Smart pricing helper</h3>
+              <p className="mt-1 text-xs text-neutral-600">Estimate retail price using Yoco 2.95% + VAT, 3% FX conversion, and the safety buffer.</p>
+            </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+              <label className="text-sm font-medium">USD/ZAR rate<input type="number" min="0.01" step="0.0001" value={usdToZarRate} onChange={(event) => setUsdToZarRate(event.target.value)} placeholder="Set current rate" className="mt-1.5 h-10 w-full rounded-xl border border-neutral-300 bg-white px-3" /></label>
+              <label className="text-sm font-medium">Fee buffer (%)<input type="number" min="0" max="100" step="0.1" value={feeBufferPercent} onChange={(event) => setFeeBufferPercent(event.target.value)} className="mt-1.5 h-10 w-full rounded-xl border border-neutral-300 bg-white px-3" /></label>
+              <button type="button" disabled={savingPricingSettings} onClick={() => void savePricingSettings()} className="h-10 rounded-xl border border-emerald-800 px-3 text-xs font-semibold text-emerald-900 disabled:opacity-50">{savingPricingSettings ? "Saving…" : "Save pricing settings"}</button>
+            </div>
+            {pricingSettingsError && <p role="alert" className="mt-2 text-xs text-red-700">{pricingSettingsError}</p>}
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="text-sm font-medium">Target markup on cost (%)<input type="number" min="0" step="0.1" value={targetMarkupPercent} onChange={(event) => setTargetMarkupPercent(event.target.value)} placeholder="e.g. 30" className="mt-1.5 h-10 w-full rounded-xl border border-neutral-300 bg-white px-3" /></label>
+              {!usdToZarRate.trim() && <p className="self-end text-xs text-amber-800">Set and save a USD/ZAR rate to calculate a recommendation.</p>}
+            </div>
+            {priceEstimate && <div className="mt-3 rounded-xl border border-emerald-100 bg-white p-3 text-sm">
+              <div className="grid gap-1 text-xs text-neutral-600 sm:grid-cols-2">
+                <p>Base USD cost in ZAR: R {priceEstimate.baseCostZar.toFixed(2)}</p>
+                <p>Estimated Yoco fee: R {priceEstimate.yocoFeeZar.toFixed(2)}</p>
+                <p>Estimated FX fee: R {priceEstimate.fxFeeZar.toFixed(2)}</p>
+                <p>Safety buffer: R {priceEstimate.safetyBufferZar.toFixed(2)}</p>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 pt-3">
+                <p className="font-semibold">Recommended minimum retail: R {priceEstimate.recommendedPriceZar.toFixed(2)}</p>
+                <button type="button" onClick={() => updateProductPrice(priceEstimate.recommendedPriceZar.toFixed(2))} className="rounded-full bg-emerald-800 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-900">Apply recommended price</button>
+              </div>
+            </div>}
+          </section>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block text-sm font-medium">Brand<input value={brand} onChange={(event) => setBrand(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
             <div className="block text-sm font-medium">

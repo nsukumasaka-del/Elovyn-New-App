@@ -75,6 +75,9 @@ export const products = sqliteTable("products", {
   handle: text("handle"),
   imageUrl: text("image_url"),
   imagesJson: text("images_json").notNull().default("[]"),
+  supplier: text("supplier", { enum: ["eprolo", "cj"] }).notNull().default("eprolo"),
+  supplierSku: text("supplier_sku"),
+  costPriceUsd: real("cost_price_usd"),
   supplierId: text("supplier_id"),
   supplierProductId: text("supplier_product_id"),
   isListed: integer("is_listed", { mode: "boolean" }).notNull().default(true),
@@ -152,6 +155,8 @@ export const orders = sqliteTable("orders", {
   userId: text("user_id").notNull().references(() => users.id),
   customerEmail: text("customer_email"),
   customerName: text("customer_name"),
+  customerPhone: text("customer_phone"),
+  postalCode: text("postal_code"),
   totalAmount: real("total_amount").notNull(),
   status: text("status").notNull().default("Pending"),
   fulfillmentStatus: text("fulfillment_status").notNull().default("processing"),
@@ -235,6 +240,9 @@ export const orderItems = sqliteTable("order_items", {
   productId: text("product_id"),
   productName: text("product_name").notNull(),
   variantDetails: text("variant_details"),
+  supplier: text("supplier", { enum: ["eprolo", "cj"] }).notNull().default("eprolo"),
+  supplierSku: text("supplier_sku"),
+  costPriceUsd: real("cost_price_usd"),
   quantity: integer("quantity").notNull(),
   unitPrice: real("unit_price").notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -252,3 +260,10 @@ export const adminNotifications = sqliteTable("admin_notifications", {
 }, (table) => [
   index("admin_notifications_is_read_created_idx").on(table.isRead, table.createdAt),
 ]);
+
+export const pricingSettings = sqliteTable("pricing_settings", {
+  id: integer("id").primaryKey(),
+  usdToZarRate: real("usd_to_zar_rate"),
+  feeBufferPercent: real("fee_buffer_percent").notNull().default(10),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});

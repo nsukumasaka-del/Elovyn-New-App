@@ -9,6 +9,7 @@ import {
   orders,
   paymentProviderSettings,
   paymentWebhookEvents,
+  pricingSettings,
   products,
   siteSettings,
   supplierIntegrations,
@@ -39,6 +40,7 @@ import { cjCategoriesFromPayload, cjImportProductFromDetail, cjSearchResultsFrom
 import { defaultSiteSettings, type SiteSettings } from "../../src/lib/site-settings";
 import { normalizeDeliveryAddress } from "../../src/lib/delivery-address";
 import { calculateCheckoutAmounts, STANDARD_SHIPPING_FEE_CENTS } from "../../src/lib/checkout";
+import { supplierOrdersToCsv, type SupplierExportOrder, type SupplierExportType } from "../../src/lib/supplier-csv";
 import { createYocoCheckout, getYocoCheckout, registerYocoWebhook, verifyYocoWebhookSignature } from "../lib/yoco";
 import {
   configuredSupplierRecords,
@@ -92,6 +94,13 @@ const productColumns = {
   supplier_product_id: products.supplierProductId,
   is_listed: products.isListed,
   updated_at: products.updatedAt,
+};
+
+const adminProductColumns = {
+  ...productColumns,
+  supplier: products.supplier,
+  supplier_sku: products.supplierSku,
+  cost_price_usd: products.costPriceUsd,
 };
 
 const siteSettingsColumns = {
@@ -843,6 +852,13 @@ async function processOrderPaid(
   let items: CheckoutItem[] = [];
   try { items = JSON.parse(order.itemsJson) as CheckoutItem[]; }
   catch { throw new ApiError("Order items could not be read.", 500); }
+  const costProducts = await db.select({
+    id: products.id,
+    supplier: products.supplier,
+    supplierSku: products.supplierSku,
+    costPriceUsd: products.costPriceUsd,
+  }).from(products).where(inArray(products.id, [...new Set(items.map((item) => item.product_id))]));
+  const costProductById = new Map(costProducts.map((product) => [product.id, product]));
 
   const stockRows = await Promise.all(items.map((item) =>
     env.DB!.prepare("SELECT quantity, track_quantity FROM inventory_items WHERE variant_id = ?")
@@ -905,10 +921,23 @@ async function processOrderPaid(
   statements.push(env.DB!.prepare("DELETE FROM carts WHERE user_id = ?").bind(order.userId));
 
   for (const item of items) {
+    const product = costProductById.get(item.product_id);
     statements.push(env.DB!.prepare(`
-      INSERT OR REPLACE INTO order_items (id, order_id, product_id, product_name, variant_details, quantity, unit_price)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).bind(crypto.randomUUID(), order.id, item.product_id, item.title, item.sku || null, item.quantity, item.price));
+      INSERT OR REPLACE INTO order_items
+        (id, order_id, product_id, product_name, variant_details, supplier, supplier_sku, cost_price_usd, quantity, unit_price)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      crypto.randomUUID(),
+      order.id,
+      item.product_id,
+      item.title,
+      item.sku || null,
+      product?.supplier ?? "eprolo",
+      product?.supplierSku ?? item.sku ?? null,
+      product?.costPriceUsd ?? null,
+      item.quantity,
+      item.price,
+    ));
   }
 
   const notificationId = crypto.randomUUID();
@@ -1097,6 +1126,9 @@ type ProductInput = {
   handle: string;
   image_url: string | null;
   images: string[];
+  supplier: "eprolo" | "cj";
+  supplier_sku: string | null;
+  cost_price_usd: number | null;
   options: ProductOptionInput[];
   variants: ProductVariantInput[];
 };
@@ -1130,6 +1162,10 @@ function normalizeProductInput(value: unknown): ProductInput {
   const body = value as Record<string, unknown>;
   const title = requiredString(body.title, "Product title", 200);
   const sku = requiredString(body.sku, "SKU", 100);
+  const supplier = body.supplier === undefined ? "eprolo" : body.supplier;
+  if (supplier !== "eprolo" && supplier !== "cj") {
+    throw new ApiError("Supplier must be Eprolo or CJ Dropshipping.", 400);
+  }
   const rawOptions = body.options === undefined ? [] : body.options;
   if (!Array.isArray(rawOptions) || rawOptions.length > 3) {
     throw new ApiError(`${title}: provide no more than three product options.`, 400);
@@ -1234,6 +1270,9 @@ function normalizeProductInput(value: unknown): ProductInput {
     handle,
     image_url: imageUrl,
     images,
+    supplier,
+    supplier_sku: optionalText(body.supplier_sku, "Supplier SKU", 150),
+    cost_price_usd: nonNegativeAmount(body.cost_price_usd, "USD cost price"),
     options: productOptions,
     variants: variantInputs.length ? variantInputs : [{
       sku,
@@ -1262,24 +1301,31 @@ function productInsertStatements(env: Env, product: ProductInput, productId: str
     product.handle,
     product.image_url,
     JSON.stringify(product.images),
+    product.supplier,
+    product.supplier_sku,
+    product.cost_price_usd,
   ];
   const statement = updateExisting
     ? source
       ? env.DB.prepare(`UPDATE products SET
           title = ?, sku = ?, price = ?, compare_at_price = ?, stock_quantity = ?, status = ?, category = ?,
-          brand = ?, description = ?, handle = ?, image_url = ?, images_json = ?, supplier_id = ?, supplier_product_id = ?, updated_at = CURRENT_TIMESTAMP
+          brand = ?, description = ?, handle = ?, image_url = ?, images_json = ?, supplier = ?, supplier_sku = ?,
+          cost_price_usd = ?, supplier_id = ?, supplier_product_id = ?, updated_at = CURRENT_TIMESTAMP
           WHERE id = ?`).bind(...productValues, source.supplierId, source.externalId, productId)
       : env.DB.prepare(`UPDATE products SET
           title = ?, sku = ?, price = ?, compare_at_price = ?, stock_quantity = ?, status = ?, category = ?,
-          brand = ?, description = ?, handle = ?, image_url = ?, images_json = ?, updated_at = CURRENT_TIMESTAMP
+          brand = ?, description = ?, handle = ?, image_url = ?, images_json = ?, supplier = ?, supplier_sku = ?,
+          cost_price_usd = ?, updated_at = CURRENT_TIMESTAMP
           WHERE id = ?`).bind(...productValues, productId)
     : source
       ? env.DB.prepare(`INSERT INTO products
-          (id, title, sku, price, compare_at_price, stock_quantity, status, category, brand, description, handle, image_url, images_json, supplier_id, supplier_product_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(productId, ...productValues, source.supplierId, source.externalId)
+          (id, title, sku, price, compare_at_price, stock_quantity, status, category, brand, description, handle, image_url, images_json,
+           supplier, supplier_sku, cost_price_usd, supplier_id, supplier_product_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(productId, ...productValues, source.supplierId, source.externalId)
       : env.DB.prepare(`INSERT INTO products
-          (id, title, sku, price, compare_at_price, stock_quantity, status, category, brand, description, handle, image_url, images_json)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(productId, ...productValues);
+          (id, title, sku, price, compare_at_price, stock_quantity, status, category, brand, description, handle, image_url, images_json,
+           supplier, supplier_sku, cost_price_usd)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(productId, ...productValues);
   const statements: D1PreparedStatement[] = [statement];
   if (updateExisting) {
     statements.push(env.DB.prepare("DELETE FROM variants WHERE product_id = ?").bind(productId));
@@ -1407,11 +1453,17 @@ async function processProductImport(env: Env, jobId: string) {
     const importedProducts = rawProducts.map(normalizeProductInput);
     const db = createDb(env.DB);
     if (supplierId) {
-      const [supplier] = await db.select({ id: supplierIntegrations.id }).from(supplierIntegrations).where(eq(supplierIntegrations.id, supplierId)).limit(1);
+      const [supplier] = await db.select({
+        id: supplierIntegrations.id,
+        adapter: supplierIntegrations.adapter,
+      }).from(supplierIntegrations).where(eq(supplierIntegrations.id, supplierId)).limit(1);
       if (!supplier) throw new Error("The supplier linked to this import no longer exists.");
+      const sourceType = supplier.adapter === "cj" ? "cj" : "eprolo";
       const result: ProductImportResult = { imported: [], skipped: [] };
       for (let index = 0; index < importedProducts.length; index += 1) {
         const product = importedProducts[index];
+        product.supplier = sourceType;
+        product.supplier_sku ??= product.sku;
         const raw = rawProducts[index];
         const externalId = raw && typeof raw === "object" && !Array.isArray(raw) && typeof (raw as { supplier_product_id?: unknown }).supplier_product_id === "string"
           ? (raw as { supplier_product_id: string }).supplier_product_id.trim() : "";
@@ -2094,6 +2146,37 @@ async function route(
     return json({ settings: stored ?? defaultSiteSettings }, 200, { "Cache-Control": "no-store" });
   }
 
+  if (path === "/admin/pricing-settings" && method === "GET") {
+    await requireAdmin(db, request, env);
+    const [settings] = await db.select().from(pricingSettings).where(eq(pricingSettings.id, 1)).limit(1);
+    if (!settings) throw new ApiError("Pricing settings have not been initialized. Apply the latest D1 migration.", 503);
+    return json({
+      settings: {
+        usd_to_zar_rate: settings.usdToZarRate,
+        fee_buffer_percent: settings.feeBufferPercent,
+      },
+    }, 200, { "Cache-Control": "no-store" });
+  }
+
+  if (path === "/admin/pricing-settings" && method === "PUT") {
+    await requireAdmin(db, request, env);
+    const body = await bodyAsJson(request);
+    const rate = Number(body.usd_to_zar_rate);
+    const feeBufferPercent = Number(body.fee_buffer_percent);
+    if (!Number.isFinite(rate) || rate <= 0 || rate > 1000) {
+      throw new ApiError("USD/ZAR rate must be a positive number no greater than 1000.", 400);
+    }
+    if (!Number.isFinite(feeBufferPercent) || feeBufferPercent < 0 || feeBufferPercent > 100) {
+      throw new ApiError("Fee buffer must be between 0 and 100 percent.", 400);
+    }
+    await db.update(pricingSettings).set({
+      usdToZarRate: rate,
+      feeBufferPercent,
+      updatedAt: sql`CURRENT_TIMESTAMP`,
+    }).where(eq(pricingSettings.id, 1));
+    return json({ settings: { usd_to_zar_rate: rate, fee_buffer_percent: feeBufferPercent } });
+  }
+
   if (path === "/admin/settings" && method === "PUT") {
     await requireAdmin(db, request, env);
     const next = normalizeSiteSettingsInput(await bodyAsJson(request));
@@ -2270,7 +2353,7 @@ async function route(
     }
     const productIdentity = or(eq(products.id, productKey), eq(products.handle, productKey));
     const currentUser = await getSessionUser(db, request);
-    const [product] = await db.select(productColumns)
+    const [product] = await db.select(isConfiguredAdmin(currentUser, env) ? adminProductColumns : productColumns)
       .from(products)
       .where(isConfiguredAdmin(currentUser, env) ? productIdentity : and(eq(products.isListed, true), productIdentity))
       .limit(1);
@@ -2407,6 +2490,8 @@ async function route(
       userId: user.id,
       customerEmail: user.email,
       customerName: user.fullName || null,
+      customerPhone: deliveryAddress.phone,
+      postalCode: deliveryAddress.postalCode,
       totalAmount: totalCents / 100,
       status: "Awaiting Payment",
       fulfillmentStatus: "processing",
@@ -2495,7 +2580,7 @@ async function route(
   if (path === "/admin/inventory" && method === "GET") {
     await requireAdmin(db, request, env);
     await syncDueSuppliers(env, db, url.hostname);
-    const rows = await db.select(productColumns).from(products).orderBy(
+    const rows = await db.select(adminProductColumns).from(products).orderBy(
       sql`CASE WHEN ${products.stockQuantity} > 0 THEN 0 ELSE 1 END`,
       desc(products.stockQuantity),
       asc(products.title),
@@ -3031,6 +3116,100 @@ async function route(
   }
 
   // ── Admin: List Orders ───────────────────────────────────────────────────
+  if (path === "/admin/orders/export" && method === "POST") {
+    await requireAdmin(db, request, env);
+    const body = await bodyAsJson(request);
+    if (body.supplier !== "eprolo" && body.supplier !== "cj") {
+      throw new ApiError("Choose Eprolo or CJ Dropshipping for this export.", 400);
+    }
+    const supplier = body.supplier as SupplierExportType;
+    let orderIds: string[] | null = null;
+    if (body.order_ids !== undefined) {
+      if (!Array.isArray(body.order_ids) || body.order_ids.length < 1 || body.order_ids.length > 500) {
+        throw new ApiError("Select between 1 and 500 orders, or omit order_ids to export all processing orders.", 400);
+      }
+      orderIds = [...new Set(body.order_ids.map((id) => requiredString(id, "Order id", 100)))];
+    }
+    const eligibleFilters = [
+      eq(orders.fulfillmentStatus, "processing"),
+      inArray(orders.status, ["Paid", "Completed", "Fulfilled"]),
+    ];
+    if (orderIds) eligibleFilters.push(inArray(orders.id, orderIds));
+    if (orderIds) {
+      const eligible = await db.select({ id: orders.id }).from(orders).where(and(...eligibleFilters));
+      if (eligible.length !== orderIds.length) {
+        throw new ApiError("Exports are limited to paid orders with Processing fulfillment status.", 400);
+      }
+    }
+
+    const lineFilters = [
+      eq(orders.fulfillmentStatus, "processing"),
+      inArray(orders.status, ["Paid", "Completed", "Fulfilled"]),
+    ];
+    if (orderIds) lineFilters.push(inArray(orders.id, orderIds));
+    const lines = await db.select({
+      orderId: orders.id,
+      orderNumber: orders.orderNumber,
+      customerName: orders.customerName,
+      customerPhone: orders.customerPhone,
+      postalCode: orders.postalCode,
+      deliveryAddressJson: orders.deliveryAddressJson,
+      supplier: orderItems.supplier,
+      supplierSku: orderItems.supplierSku,
+      productSku: products.sku,
+      variantDetails: orderItems.variantDetails,
+      quantity: orderItems.quantity,
+    })
+      .from(orderItems)
+      .innerJoin(orders, eq(orders.id, orderItems.orderId))
+      .leftJoin(products, eq(products.id, orderItems.productId))
+      .where(and(...lineFilters))
+      .orderBy(asc(orders.createdAt), asc(orderItems.createdAt));
+
+    const exportedOrders = new Map<string, SupplierExportOrder>();
+    for (const line of lines) {
+      if ((line.supplier ?? "eprolo") !== supplier) continue;
+      const supplierSku = line.supplierSku || line.productSku || line.variantDetails || "";
+      if (!supplierSku) {
+        throw new ApiError(`Order ${line.orderNumber || line.orderId} has a supplier line item without a supplier SKU.`, 422);
+      }
+      let rawAddress: unknown;
+      try { rawAddress = line.deliveryAddressJson ? JSON.parse(line.deliveryAddressJson) : null; }
+      catch { rawAddress = null; }
+      const normalizedAddress = normalizeDeliveryAddress(rawAddress);
+      if (!normalizedAddress.ok) {
+        throw new ApiError(`Order ${line.orderNumber || line.orderId} cannot be exported: ${normalizedAddress.error}`, 422);
+      }
+      let exportedOrder = exportedOrders.get(line.orderId);
+      if (!exportedOrder) {
+        const address = normalizedAddress.address;
+        exportedOrder = {
+          orderNumber: line.orderNumber || line.orderId,
+          customerName: line.customerName || address.recipientName,
+          phone: line.customerPhone || address.phone,
+          addressLine1: address.addressLine1,
+          addressLine2: address.addressLine2,
+          suburb: address.suburb,
+          city: address.city,
+          province: address.province,
+          postalCode: line.postalCode || address.postalCode,
+          items: [],
+        };
+        exportedOrders.set(line.orderId, exportedOrder);
+      }
+      exportedOrder.items.push({ supplierSku, quantity: line.quantity });
+    }
+
+    const csv = supplierOrdersToCsv(supplier, [...exportedOrders.values()]);
+    return new Response(csv, {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${supplier}-orders-${new Date().toISOString().slice(0, 10)}.csv"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
   if (path === "/admin/orders" && method === "GET") {
     await requireAdmin(db, request, env);
     const statusParam = url.searchParams.get("status")?.trim().toLowerCase();
@@ -3042,6 +3221,8 @@ async function route(
       user_id: orders.userId,
       customer_email: orders.customerEmail,
       customer_name: orders.customerName,
+      customer_phone: orders.customerPhone,
+      postal_code: orders.postalCode,
       total_amount: orders.totalAmount,
       status: orders.status,
       fulfillment_status: orders.fulfillmentStatus,
@@ -3057,6 +3238,14 @@ async function route(
       email_sent: orders.emailSent,
       created_at: orders.createdAt,
       updated_at: orders.updatedAt,
+      estimated_cost_usd: sql<number | null>`(
+        SELECT CASE
+          WHEN COUNT(*) = 0 OR COUNT(${orderItems.costPriceUsd}) < COUNT(*) THEN NULL
+          ELSE SUM(${orderItems.costPriceUsd} * ${orderItems.quantity})
+        END
+        FROM ${orderItems}
+        WHERE ${orderItems.orderId} = ${orders.id}
+      )`,
     }).from(orders).$dynamic();
 
     const filters = [];

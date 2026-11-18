@@ -6,7 +6,7 @@ import { Footer } from "@/components/Footer";
 import { apiRequest, readSavedProduct, type CartProduct } from "@/lib/store-api";
 import { useStore } from "@/lib/store";
 import { toast } from "sonner";
-import { normalizeDeliveryAddress, type DeliveryAddress } from "@/lib/delivery-address";
+import { normalizeDeliveryAddress, normalizeSouthAfricanMobilePhone, type DeliveryAddress } from "@/lib/delivery-address";
 
 const emptyDeliveryAddress: DeliveryAddress = {
   recipientName: "", phone: "", addressLine1: "", addressLine2: "", suburb: "", city: "", province: "", postalCode: "", country: "South Africa",
@@ -59,6 +59,9 @@ export function AccountPage() {
   const { user, ready, setAuthOpen, saveDeliveryAddress } = useStore();
   const [address, setAddress] = useState<DeliveryAddress>(emptyDeliveryAddress);
   const [savingAddress, setSavingAddress] = useState(false);
+  const phoneValid = normalizeSouthAfricanMobilePhone(address.phone) !== null;
+  const postalCodeValid = /^\d{4}$/.test(address.postalCode);
+  const addressValid = normalizeDeliveryAddress(address).ok;
 
   useEffect(() => {
     setAddress(addressFromJson(user?.deliveryAddressJson, user?.fullName || ""));
@@ -96,16 +99,16 @@ export function AccountPage() {
               <p className="mt-1 text-sm text-neutral-500">Orders can only be checked out after this address has been saved.</p>
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
                 <label className="text-sm font-medium sm:col-span-2">Recipient full name<input required autoComplete="name" maxLength={100} value={address.recipientName} onChange={(event) => updateAddress("recipientName", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
-                <label className="text-sm font-medium sm:col-span-2">Phone number<input required type="tel" autoComplete="tel" minLength={7} maxLength={30} value={address.phone} onChange={(event) => updateAddress("phone", event.target.value)} placeholder="+27 82 123 4567" className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
+                <label className="text-sm font-medium sm:col-span-2">Phone number<input required type="tel" autoComplete="tel" maxLength={30} value={address.phone} onChange={(event) => updateAddress("phone", event.target.value)} placeholder="072 123 4567 or +27 72 123 4567" aria-invalid={!phoneValid} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" />{!phoneValid && <span role="alert" className="mt-1 block text-xs font-normal text-red-700">Enter a valid South African mobile number.</span>}</label>
                 <label className="text-sm font-medium sm:col-span-2">Street address<input required autoComplete="address-line1" maxLength={160} value={address.addressLine1} onChange={(event) => updateAddress("addressLine1", event.target.value)} placeholder="House number and street" className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
                 <label className="text-sm font-medium sm:col-span-2">Apartment, unit, or complex (optional)<input autoComplete="address-line2" maxLength={100} value={address.addressLine2} onChange={(event) => updateAddress("addressLine2", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
                 <label className="text-sm font-medium">Suburb<input required autoComplete="address-level3" maxLength={100} value={address.suburb} onChange={(event) => updateAddress("suburb", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
                 <label className="text-sm font-medium">City or town<input required autoComplete="address-level2" maxLength={100} value={address.city} onChange={(event) => updateAddress("city", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
                 <label className="text-sm font-medium">Province or state<input required autoComplete="address-level1" maxLength={100} value={address.province} onChange={(event) => updateAddress("province", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
-                <label className="text-sm font-medium">Postal code<input required autoComplete="postal-code" maxLength={20} value={address.postalCode} onChange={(event) => updateAddress("postalCode", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
+                <label className="text-sm font-medium">Postal code<input required autoComplete="postal-code" inputMode="numeric" pattern="\d{4}" maxLength={4} value={address.postalCode} onChange={(event) => updateAddress("postalCode", event.target.value)} aria-invalid={!postalCodeValid} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" />{!postalCodeValid && <span role="alert" className="mt-1 block text-xs font-normal text-red-700">Enter a 4-digit postal code.</span>}</label>
                 <label className="text-sm font-medium sm:col-span-2">Country<input required autoComplete="country-name" maxLength={100} value={address.country} onChange={(event) => updateAddress("country", event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
               </div>
-              <button disabled={savingAddress} className="btn-primary mt-6 disabled:opacity-60">{savingAddress ? "Saving…" : user.deliveryAddressJson ? "Update delivery address" : "Save delivery address"}</button>
+              <button disabled={savingAddress || !addressValid} className="btn-primary mt-6 disabled:opacity-60">{savingAddress ? "Saving…" : user.deliveryAddressJson ? "Update delivery address" : "Save delivery address"}</button>
             </form>
           </div>
         ) : (

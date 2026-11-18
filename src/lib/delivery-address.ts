@@ -21,6 +21,17 @@ const requiredFields: Array<[keyof DeliveryAddress, string, number]> = [
   ["country", "Country", 100],
 ];
 
+export function normalizeSouthAfricanMobilePhone(value: string): string | null {
+  const phone = value.trim();
+  if (!phone || !/^\+?[0-9()\s.-]+$/.test(phone) || (phone.startsWith("+") && !phone.startsWith("+27"))) {
+    return null;
+  }
+  const digits = phone.replace(/\D/g, "");
+  if (/^0[6-8]\d{8}$/.test(digits)) return `+27${digits.slice(1)}`;
+  if (/^27[6-8]\d{8}$/.test(digits)) return `+${digits}`;
+  return null;
+}
+
 export function normalizeDeliveryAddress(input: unknown) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return { ok: false as const, error: "Enter a delivery address before checkout." };
@@ -37,7 +48,9 @@ export function normalizeDeliveryAddress(input: unknown) {
   if (addressLine2 !== undefined && typeof addressLine2 !== "string") return { ok: false as const, error: "Apartment or unit must be text." };
   if (typeof addressLine2 === "string" && addressLine2.trim().length > 100) return { ok: false as const, error: "Apartment or unit must be no longer than 100 characters." };
   address.addressLine2 = typeof addressLine2 === "string" ? addressLine2.trim() : "";
-  if (!/^[+0-9() .-]{7,30}$/.test(address.phone)) return { ok: false as const, error: "Enter a valid delivery phone number." };
-  if (!/^[A-Za-z0-9][A-Za-z0-9 -]{1,19}$/.test(address.postalCode)) return { ok: false as const, error: "Enter a valid postal code." };
+  const normalizedPhone = normalizeSouthAfricanMobilePhone(address.phone);
+  if (!normalizedPhone) return { ok: false as const, error: "Enter a valid South African mobile number, such as 072 123 4567 or +27 72 123 4567." };
+  address.phone = normalizedPhone;
+  if (!/^\d{4}$/.test(address.postalCode)) return { ok: false as const, error: "Postal code must be exactly 4 digits." };
   return { ok: true as const, address };
 }
