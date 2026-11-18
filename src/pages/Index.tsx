@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
 import { Header } from "@/components/Header";
 import { Hero } from "@/components/Hero";
@@ -10,21 +11,75 @@ import { Footer } from "@/components/Footer";
 import { Link } from "react-router-dom";
 import clothingImage from "@/assets/CLOTHING.jpg";
 import hoodieImage from "@/assets/Hoodie.png";
-import bagImage from "@/assets/HAND BAG COMBO.jpg";
 import wigImage from "@/assets/WEAVE 1.jpg";
-import shirtImage from "@/assets/Shirt 1.jpg";
 
 const categoryTiles = [
-  { title: "Streetwear", subtitle: "Shop collection", image: clothingImage, href: "/categories/streetwear" },
-  { title: "T-Shirts", subtitle: "Shop essentials", image: shirtImage, href: "/categories/t-shirts" },
-  { title: "Hoodies", subtitle: "Layer up", image: hoodieImage, href: "/categories/hoodies" },
-  { title: "Accessories", subtitle: "Complete the look", image: bagImage, href: "/categories/accessories" },
-  { title: "Wigs", subtitle: "Elevate your style", image: wigImage, href: "/categories/wigs" },
+  { title: "Streetwear", subtitle: "Shop collection", href: "/categories/streetwear" },
+  { title: "T-Shirts", subtitle: "Shop essentials", href: "/categories/t-shirts" },
+  { title: "Hoodies", subtitle: "Layer up", href: "/categories/hoodies" },
+  { title: "Accessories", subtitle: "Complete the look", href: "/categories/accessories" },
+  { title: "Wigs", subtitle: "Elevate your style", href: "/categories/wigs" },
 ];
+
+function productImages(imagesJson: string) {
+  try {
+    const parsed: unknown = JSON.parse(imagesJson);
+    return Array.isArray(parsed)
+      ? parsed.filter((image): image is string => typeof image === "string" && image.trim().length > 0)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function categoryMatches(productCategory: string | null, categoryName: string) {
+  if (!productCategory) return false;
+  const wanted = categoryName.trim().toLocaleLowerCase();
+  return productCategory
+    .split(/[/>|]/)
+    .some((part) => part.trim().toLocaleLowerCase() === wanted);
+}
+
+function CategoryThumbnail({ title, images }: { title: string; images: string[] }) {
+  const [imageIndex, setImageIndex] = useState(0);
+
+  if (imageIndex >= images.length) {
+    return (
+      <div
+        role="img"
+        aria-label={`${title} image unavailable`}
+        className="flex h-full w-full items-center justify-center bg-gradient-to-br from-neutral-800 via-neutral-950 to-stone-800"
+      >
+        <span className="text-sm font-semibold tracking-[0.3em] text-white/70">ELOVYN</span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={images[imageIndex]}
+      alt={`${title} collection`}
+      onError={() => setImageIndex((current) => current + 1)}
+      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+    />
+  );
+}
 
 const Index = () => {
   const { products, addToCart, siteSettings } = useStore();
   const newProducts = products.slice(8);
+  const liveCategoryTiles = useMemo(() => categoryTiles.flatMap((tile) => {
+    const categoryProducts = products
+      .filter((product) => product.stock_quantity > 0 && categoryMatches(product.category, tile.title))
+      .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at));
+    if (categoryProducts.length === 0) return [];
+
+    const images = [...new Set(categoryProducts.flatMap((product) => [
+      ...(product.image_url ? [product.image_url] : []),
+      ...productImages(product.images_json),
+    ]))];
+    return [{ ...tile, images }];
+  }), [products]);
 
   return (
     <div id="top" className="min-h-screen bg-[#f6f1ea] text-neutral-950">
@@ -52,14 +107,10 @@ const Index = () => {
             </div>
 
             <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-5">
-              {categoryTiles.map((tile) => (
+              {liveCategoryTiles.map((tile) => (
                 <Link key={tile.title} to={tile.href} className="category-card group overflow-hidden">
-                  <div className="relative aspect-[4/5] overflow-hidden">
-                    <img
-                      src={tile.image}
-                      alt={tile.title}
-                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                    />
+                  <div className="relative aspect-[4/5] overflow-hidden rounded-2xl">
+                    <CategoryThumbnail key={`${tile.title}:${tile.images.join("|")}`} title={tile.title} images={tile.images} />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
                     <div className="absolute inset-x-0 bottom-0 p-5 text-white">
                       <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/80">{tile.title}</p>

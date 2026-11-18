@@ -30,6 +30,8 @@ export type StoreProduct = {
   stock_quantity: number;
   category: string | null;
   image_url: string | null;
+  images_json: string;
+  updated_at: string;
 };
 
 type StoreContextValue = {
