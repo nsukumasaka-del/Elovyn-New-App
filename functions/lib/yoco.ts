@@ -2,15 +2,43 @@ const yocoApiBase = "https://payments.yoco.com/api";
 
 type Fetcher = typeof fetch;
 
+export function normalizeYocoSecretKey(mode: "live" | "test", value: string | undefined) {
+  const secretKey = value?.trim() ?? "";
+  const prefix = mode === "test" ? "sk_test_" : "sk_live_";
+  if (!secretKey) throw new Error(`Yoco ${mode} secret key is not configured.`);
+  if (!secretKey.startsWith(prefix)) {
+    throw new Error(`Yoco ${mode} secret key must start with ${prefix}.`);
+  }
+  return secretKey;
+}
+
 async function yocoJson(response: Response) {
+  const responseBody = await response.text();
   const contentType = response.headers.get("content-type")?.toLowerCase() || "";
   if (!contentType.includes("application/json")) {
+    console.error("Yoco API returned a non-JSON response.", {
+      status: response.status,
+      url: response.url,
+      body: responseBody,
+    });
     throw new Error(`Yoco returned an unexpected response (HTTP ${response.status}).`);
   }
   let payload: unknown;
-  try { payload = await response.json(); }
-  catch { throw new Error("Yoco returned an invalid JSON response."); }
+  try { payload = JSON.parse(responseBody) as unknown; }
+  catch {
+    console.error("Yoco API returned invalid JSON.", {
+      status: response.status,
+      url: response.url,
+      body: responseBody,
+    });
+    throw new Error("Yoco returned an invalid JSON response.");
+  }
   if (!response.ok) {
+    console.error("Yoco API request failed.", {
+      status: response.status,
+      url: response.url,
+      body: responseBody,
+    });
     const message = payload && typeof payload === "object"
       ? String((payload as { message?: unknown; error?: unknown }).message || (payload as { error?: unknown }).error || "")
       : "";
@@ -50,7 +78,11 @@ export async function createYocoCheckout(secretKey: string, checkout: YocoChecko
   if (redirect.protocol !== "https:" || !(redirect.hostname === "c.yoco.com" || redirect.hostname.endsWith(".yoco.com"))) {
     throw new Error("Yoco returned an invalid checkout redirect URL.");
   }
-  return { id: result.id, redirectUrl: redirect.toString(), processingMode: typeof result.processingMode === "string" ? result.processingMode : "test" };
+  return {
+    id: result.id,
+    redirectUrl: redirect.toString(),
+    ...(typeof result.processingMode === "string" ? { processingMode: result.processingMode } : {}),
+  };
 }
 
 export async function getYocoCheckout(secretKey: string, checkoutId: string, fetcher: Fetcher = fetch) {

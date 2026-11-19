@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createYocoCheckout, verifyYocoWebhookSignature } from "../../functions/lib/yoco";
+import { createYocoCheckout, normalizeYocoSecretKey, verifyYocoWebhookSignature } from "../../functions/lib/yoco";
 
 function bytesToBase64(bytes: Uint8Array) {
   return btoa(String.fromCharCode(...bytes));
@@ -7,11 +7,15 @@ function bytesToBase64(bytes: Uint8Array) {
 
 describe("Yoco payment integration", () => {
   it("creates a server-side checkout with bearer auth and idempotency", async () => {
-    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => new Response(JSON.stringify({
-      id: "ch_test",
-      redirectUrl: "https://c.yoco.com/checkout/test",
-      processingMode: "test",
-    }), { status: 200, headers: { "Content-Type": "application/json" } })) as typeof fetch;
+    let sentRequestBody: BodyInit | null | undefined;
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      sentRequestBody = init?.body;
+      return new Response(JSON.stringify({
+        id: "ch_test",
+        redirectUrl: "https://c.yoco.com/checkout/test",
+        processingMode: "test",
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }) as typeof fetch;
     const checkout = await createYocoCheckout("sk_test", {
       amount: 12500,
       currency: "ZAR",
@@ -27,6 +31,43 @@ describe("Yoco payment integration", () => {
       method: "POST",
       headers: expect.objectContaining({ Authorization: "Bearer sk_test", "Idempotency-Key": "order-1" }),
     }));
+    const requestBody = JSON.parse(String(sentRequestBody)) as Record<string, unknown>;
+    expect(requestBody).toMatchObject({
+      amount: 12500,
+      currency: "ZAR",
+      successUrl: "https://elovyn.store/payment/success",
+      metadata: { orderId: "order-1" },
+    });
+  });
+
+  it("trims mode-specific secret keys and rejects a mismatched key mode", () => {
+    expect(normalizeYocoSecretKey("test", " \nsk_test_example \n")).toBe("sk_test_example");
+    expect(normalizeYocoSecretKey("live", "\tsk_live_example")).toBe("sk_live_example");
+    expect(() => normalizeYocoSecretKey("live", "sk_test_example")).toThrow(/must start with sk_live_/);
+  });
+
+  it("logs Yoco HTTP status and exact response body on API failures", async () => {
+    const errorBody = JSON.stringify({ error: "invalid_key", message: "Secret key is invalid" });
+    const logError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const fetcher = vi.fn(async () => new Response(errorBody, {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    })) as typeof fetch;
+    await expect(createYocoCheckout("sk_test_example", {
+      amount: 100,
+      currency: "ZAR",
+      successUrl: "https://elovyn.store/payment/success",
+      cancelUrl: "https://elovyn.store/payment/cancelled",
+      failureUrl: "https://elovyn.store/payment/failed",
+      metadata: { orderId: "order-1" },
+      externalId: "order-1",
+      clientReferenceId: "order-1",
+    }, fetcher)).rejects.toThrow(/Yoco rejected the request/);
+    expect(logError).toHaveBeenCalledWith("Yoco API request failed.", expect.objectContaining({
+      status: 401,
+      body: errorBody,
+    }));
+    logError.mockRestore();
   });
 
   it("rejects non-JSON checkout responses", async () => {

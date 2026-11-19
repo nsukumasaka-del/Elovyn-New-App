@@ -42,7 +42,7 @@ import { defaultSiteSettings, type SiteSettings } from "../../src/lib/site-setti
 import { normalizeDeliveryAddress } from "../../src/lib/delivery-address";
 import { calculateCheckoutAmounts, STANDARD_SHIPPING_FEE_CENTS } from "../../src/lib/checkout";
 import { supplierOrdersToCsv, type SupplierExportOrder, type SupplierExportType } from "../../src/lib/supplier-csv";
-import { createYocoCheckout, getYocoCheckout, registerYocoWebhook, verifyYocoWebhookSignature } from "../lib/yoco";
+import { createYocoCheckout, getYocoCheckout, normalizeYocoSecretKey, registerYocoWebhook, verifyYocoWebhookSignature } from "../lib/yoco";
 import {
   configuredSupplierRecords,
   configuredSupplierRequest,
@@ -1627,19 +1627,30 @@ async function getYocoMode(db: ReturnType<typeof createDb>): Promise<YocoMode> {
   return setting?.value === "test" ? "test" : "live";
 }
 
+function yocoModeIsConfigured(env: Env, mode: YocoMode) {
+  const publicKey = mode === "test" ? env.YOCO_TEST_PUBLIC_KEY : env.YOCO_LIVE_PUBLIC_KEY;
+  const secretKey = mode === "test" ? env.YOCO_TEST_SECRET_KEY : env.YOCO_LIVE_SECRET_KEY;
+  const prefix = mode === "test" ? "sk_test_" : "sk_live_";
+  return Boolean(publicKey?.trim() && secretKey?.trim().startsWith(prefix));
+}
+
 async function getYocoConfig(env: Env, db: ReturnType<typeof createDb>, requestedMode?: YocoMode) {
   const mode = requestedMode ?? await getYocoMode(db);
-  const publicKey = mode === "test"
+  const publicKey = (mode === "test"
     ? env.YOCO_TEST_PUBLIC_KEY
-    : env.YOCO_LIVE_PUBLIC_KEY || env.YOCO_PUBLIC_KEY;
-  const secretKey = mode === "test"
+    : env.YOCO_LIVE_PUBLIC_KEY || env.YOCO_PUBLIC_KEY)?.trim() || undefined;
+  const configuredSecretKey = mode === "test"
     ? env.YOCO_TEST_SECRET_KEY
     : env.YOCO_LIVE_SECRET_KEY || env.YOCO_SECRET_KEY;
-  if (!secretKey) throw new ApiError(`Yoco ${mode} payments are not configured. Add the ${mode.toUpperCase()} secret key in Cloudflare Pages environment variables.`, 503);
+  let secretKey: string;
+  try { secretKey = normalizeYocoSecretKey(mode, configuredSecretKey); }
+  catch (error) {
+    throw new ApiError(errorMessage(error), 503);
+  }
 
-  let webhookSecret = mode === "test"
+  let webhookSecret = (mode === "test"
     ? env.YOCO_TEST_WEBHOOK_SECRET || env.YOCO_WEBHOOK_SECRET
-    : env.YOCO_LIVE_WEBHOOK_SECRET || env.YOCO_WEBHOOK_SECRET;
+    : env.YOCO_LIVE_WEBHOOK_SECRET || env.YOCO_WEBHOOK_SECRET)?.trim() || undefined;
   if (!webhookSecret) {
     const provider = `yoco_${mode}`;
     const [saved] = await db.select().from(paymentProviderSettings)
@@ -2082,8 +2093,8 @@ async function route(
     const mode = await getYocoMode(db);
     return json({
       mode,
-      liveConfigured: Boolean(env.YOCO_LIVE_SECRET_KEY && env.YOCO_LIVE_PUBLIC_KEY),
-      testConfigured: Boolean(env.YOCO_TEST_SECRET_KEY && env.YOCO_TEST_PUBLIC_KEY),
+      liveConfigured: yocoModeIsConfigured(env, "live"),
+      testConfigured: yocoModeIsConfigured(env, "test"),
     }, 200, { "Cache-Control": "no-store" });
   }
 
@@ -2094,10 +2105,9 @@ async function route(
       throw new ApiError("Payment mode must be 'live' or 'test'.", 400);
     }
     const mode = body.mode as YocoMode;
-    const configured = mode === "live"
-      ? Boolean(env.YOCO_LIVE_SECRET_KEY && env.YOCO_LIVE_PUBLIC_KEY)
-      : Boolean(env.YOCO_TEST_SECRET_KEY && env.YOCO_TEST_PUBLIC_KEY);
-    if (!configured) throw new ApiError(`Yoco ${mode} mode cannot be enabled because its public and secret keys are not configured.`, 400);
+    if (!yocoModeIsConfigured(env, mode)) {
+      throw new ApiError(`Yoco ${mode} mode cannot be enabled because its public and secret keys are missing or invalid.`, 400);
+    }
     const updatedAt = currentTimestamp();
     await db.insert(storeSettings).values({ key: "yoco_mode", value: mode, updatedAt })
       .onConflictDoUpdate({
@@ -2628,14 +2638,20 @@ async function route(
       paymentMode: yocoConfig.mode,
     });
     let checkout: Awaited<ReturnType<typeof createYocoCheckout>>;
+    const returnParams = new URLSearchParams({
+      order: orderId,
+      order_number: orderNumber,
+      payment_mode: yocoConfig.mode,
+    });
+    const returnUrl = (path: string) => `${url.origin}${path}?${returnParams.toString()}`;
     try {
       checkout = await createYocoCheckout(yocoConfig.secretKey, {
         amount: totalCents,
         currency: "ZAR",
-        successUrl: `${url.origin}/payment/success?order=${encodeURIComponent(orderId)}`,
-        cancelUrl: `${url.origin}/payment/cancelled?order=${encodeURIComponent(orderId)}`,
-        failureUrl: `${url.origin}/payment/failed?order=${encodeURIComponent(orderId)}`,
-        metadata: { orderId, orderNumber, userId: user.id },
+        successUrl: returnUrl("/payment/success"),
+        cancelUrl: returnUrl("/payment/cancelled"),
+        failureUrl: returnUrl("/payment/failed"),
+        metadata: { orderId, orderNumber, paymentMode: yocoConfig.mode, userId: user.id },
         externalId: orderId,
         clientReferenceId: orderId,
       });
@@ -2648,7 +2664,7 @@ async function route(
       yocoCheckoutId: checkout.id,
       updatedAt: currentTimestamp(),
     }).where(eq(orders.id, orderId));
-    return json({ order_id: orderId, order_number: orderNumber, redirect_url: checkout.redirectUrl, mode: checkout.processingMode }, 201);
+    return json({ order_id: orderId, order_number: orderNumber, redirect_url: checkout.redirectUrl, mode: yocoConfig.mode }, 201);
   }
 
   if (path.startsWith("/orders/") && method === "GET") {
