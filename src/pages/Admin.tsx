@@ -12,6 +12,7 @@ import { AdminOrdersPanel } from "@/components/AdminOrdersPanel";
 import { AdminNotificationBell } from "@/components/AdminNotificationBell";
 import { AdminReviewsPanel } from "@/components/AdminReviewsPanel";
 import { EditorialBannerEditor } from "@/components/EditorialBannerEditor";
+import { StorefrontFeatureEditor } from "@/components/StorefrontFeatureEditor";
 import defaultHeroImage from "@/assets/Front Page.png";
 
 type Product = {
@@ -455,7 +456,7 @@ export function AdminPage() {
 
           {tab === "imports" && <ImportProductsPanel suppliers={suppliers} onImported={() => void Promise.all([loadData(), refreshProducts()])} />}
           {tab === "reviews" && <AdminReviewsPanel />}
-          {tab === "site-settings" && <><WebsiteContentPanel settings={siteSettings} onSaved={applySiteSettings} /><EditorialBannerEditor /></>}
+          {tab === "site-settings" && <><WebsiteContentPanel settings={siteSettings} onSaved={applySiteSettings} /><EditorialBannerEditor /><StorefrontFeatureEditor /></>}
         </main>
       </div>
       {addOpen && <AddProductDialog onClose={() => setAddOpen(false)} onCreated={(product) => { setAddOpen(false); applyProduct(product); void Promise.all([loadData(), refreshProducts()]).catch((error: Error) => toast.error(`Product saved, but inventory refresh failed: ${error.message}`)); }} />}
@@ -663,6 +664,7 @@ function BulkEditDialog({ count, busy, onClose, onSave }: { count: number; busy:
 }
 
 function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => void; onCreated: (product: StoreProduct) => void; productId?: string }) {
+  const { storefrontCategories } = useStore();
   const [title, setTitle] = useState("");
   const [sku, setSku] = useState("");
   const [price, setPrice] = useState("");
@@ -695,6 +697,14 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
   const [optimization, setOptimization] = useState<{ titles: string[]; descriptions: string[] } | null>(null);
   const [optimizationIndex, setOptimizationIndex] = useState(0);
   const [optimizationTarget, setOptimizationTarget] = useState<"title" | "description">("title");
+  useEffect(() => {
+    if (productId || storefrontCategories.some((storeCategory) => storeCategory.name === category)) return;
+    if (category === "Streetwear" || !category) {
+      setCategory(storefrontCategories.find((storeCategory) => storeCategory.id === "streetwear")?.name
+        ?? storefrontCategories.find((storeCategory) => storeCategory.active)?.name
+        ?? "");
+    }
+  }, [category, productId, storefrontCategories]);
   const selectedImagePreviews = useMemo(() => images.map((file) => ({ file, url: URL.createObjectURL(file) })), [images]);
   useEffect(() => () => selectedImagePreviews.forEach(({ url }) => URL.revokeObjectURL(url)), [selectedImagePreviews]);
   const priceEstimate = useMemo(() => {
@@ -983,7 +993,7 @@ function AddProductDialog({ onClose, onCreated, productId }: { onClose: () => vo
             <label className="block text-sm font-medium">Compare-at price (ZAR)<input min="0" step="0.01" type="number" value={compareAtPrice} onChange={(event) => setCompareAtPrice(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
             <label className="block text-sm font-medium">Stock quantity{supplierManaged && <span className="ml-2 text-xs font-normal text-violet-700">Controlled by supplier</span>}<input required min="0" step="1" type="number" value={stock} disabled={supplierManaged} onChange={(event) => setStock(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3 disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500" /></label>
           </div>
-          <label className="block text-sm font-medium">Category<select value={category} onChange={(event) => setCategory(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3"><option>Streetwear</option><option>T-Shirts</option><option>Hoodies</option><option>Accessories</option><option>Wigs</option><option>Care</option><option>New Arrivals</option></select></label>
+          <label className="block text-sm font-medium">Category<select value={category} onChange={(event) => setCategory(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3">{category && !storefrontCategories.some((storeCategory) => storeCategory.name === category) && <option value={category}>Current category: {category}</option>}{storefrontCategories.map((storeCategory) => <option key={storeCategory.id} value={storeCategory.name}>{storeCategory.name}{storeCategory.active ? "" : " (hidden)"}</option>)}</select></label>
           <section className="rounded-2xl border border-neutral-200 p-4">
             <h3 className="text-sm font-semibold">Supplier routing</h3>
             <p className="mt-1 text-xs text-neutral-500">Choose which supplier receives this product’s order lines.</p>

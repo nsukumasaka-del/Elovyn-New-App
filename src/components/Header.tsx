@@ -7,24 +7,7 @@ import { useStore, type CheckoutSummary } from "@/lib/store";
 import { normalizeDeliveryAddress } from "@/lib/delivery-address";
 import { isPrimaryAdmin } from "@/lib/store-api";
 import { defaultSiteSettings } from "@/lib/site-settings";
-
-const navItems = [
-  { label: "New Arrivals", href: "/categories/new-arrivals" },
-  { label: "Streetwear", href: "/categories/streetwear" },
-  { label: "T-Shirts", href: "/categories/t-shirts" },
-  { label: "Hoodies", href: "/categories/hoodies" },
-  { label: "Accessories", href: "/categories/accessories" },
-];
-
-const collectionSearchItems = [
-  { title: "New Arrivals", href: "/categories/new-arrivals" },
-  { title: "Streetwear", href: "/categories/streetwear" },
-  { title: "T-Shirts", href: "/categories/t-shirts" },
-  { title: "Hoodies", href: "/categories/hoodies" },
-  { title: "Accessories", href: "/categories/accessories" },
-  { title: "Wigs", href: "/categories/wigs" },
-  { title: "Best Sellers", href: "/categories/best-sellers" },
-];
+import { categoryPath } from "@/lib/categories";
 
 function AuthDialog({ onClose }: { onClose: () => void }) {
   const { authMode, setAuthMode, signIn, signUp } = useStore();
@@ -299,7 +282,7 @@ export const Header = () => {
   const location = useLocation();
   const {
     user, cart, wishlist, cartOpen, setCartOpen, authOpen, setAuthOpen,
-    authMode, setAuthMode, signOut, products, siteSettings,
+    authMode, setAuthMode, signOut, products, siteSettings, storefrontCategories,
   } = useStore();
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -318,17 +301,20 @@ export const Header = () => {
     return () => window.removeEventListener("scroll", updateHeader);
   }, [isHomePage]);
   const isTransparent = isHomePage && !pastTransparentThreshold;
+  const navItems = storefrontCategories
+    .filter((category) => category.active)
+    .map((category) => ({ label: category.name, href: categoryPath(category.slug) }));
   const matches = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return [];
-    const collections = collectionSearchItems
-      .filter((item) => item.title.toLowerCase().includes(query))
-      .map((item) => ({ ...item, kind: "collection" as const }));
+    const collections = storefrontCategories
+      .filter((category) => category.active && category.name.toLowerCase().includes(query))
+      .map((category) => ({ title: category.name, href: categoryPath(category.slug), kind: "collection" as const }));
     const productResults = products
       .filter((product) => product.title.toLowerCase().includes(query))
       .map((product) => ({ title: product.title, href: `/products/${product.id}`, kind: "product" as const }));
     return [...productResults, ...collections];
-  }, [products, searchQuery]);
+  }, [products, searchQuery, storefrontCategories]);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   return (

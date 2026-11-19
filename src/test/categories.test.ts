@@ -12,4 +12,8 @@ describe("product category matching", () => {
     expect(productMatchesCategory("t-shirts", "Clothing > T-Shirts")).toBe(true);
     expect(productMatchesCategory("hoodies", "Apparel / T-Shirts")).toBe(false);
   });
+
+  it("matches renamed storefront categories with custom slugs", () => {
+    expect(productMatchesCategory("premium-layers", "Premium Layers", "Premium Layers")).toBe(true);
+  });
 });

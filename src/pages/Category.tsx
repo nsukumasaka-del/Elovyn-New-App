@@ -10,8 +10,8 @@ type SortOrder = "featured" | "newest" | "price-low" | "price-high" | "name";
 
 export function CategoryPage() {
   const { slug } = useParams();
-  const category = findCategory(slug);
-  const { products, addToCart, ready } = useStore();
+  const { products, addToCart, ready, storefrontCategories } = useStore();
+  const category = findCategory(slug, storefrontCategories);
   const [sort, setSort] = useState<SortOrder>("featured");
   const [availability, setAvailability] = useState<"all" | "in-stock" | "out-of-stock">("all");
   const [query, setQuery] = useState("");
@@ -19,7 +19,7 @@ export function CategoryPage() {
   const visibleProducts = useMemo(() => {
     if (!category) return [];
     const normalizedQuery = query.trim().toLowerCase();
-    const result = products.filter((product) => productMatchesCategory(category.slug, product.category))
+    const result = products.filter((product) => productMatchesCategory(category.slug, product.category, category.name))
       .filter((product) => availability === "all" || (availability === "in-stock" ? product.stock_quantity > 0 : product.stock_quantity <= 0))
       .filter((product) => !normalizedQuery || product.title.toLowerCase().includes(normalizedQuery));
     return [...result].sort((left, right) => {

@@ -9,7 +9,7 @@ import { Community } from "@/components/Community";
 import { CTA } from "@/components/CTA";
 import { Footer } from "@/components/Footer";
 import { Link } from "react-router-dom";
-import { productMatchesCategory } from "@/lib/categories";
+import { categoryPath, productMatchesCategory } from "@/lib/categories";
 import clothingImage from "@/assets/CLOTHING.jpg";
 import hoodieImage from "@/assets/Hoodie.png";
 import wigImage from "@/assets/WEAVE 1.jpg";
@@ -17,13 +17,13 @@ import { SiteReviewsShowcase } from "@/components/SiteReviews";
 import { apiRequest } from "@/lib/store-api";
 import { defaultEditorialBanner, type EditorialBanner } from "@/lib/editorial-banner";
 
-const categoryTiles = [
-  { title: "Streetwear", slug: "streetwear", subtitle: "Shop collection", href: "/categories/streetwear" },
-  { title: "T-Shirts", slug: "t-shirts", subtitle: "Shop essentials", href: "/categories/t-shirts" },
-  { title: "Hoodies", slug: "hoodies", subtitle: "Layer up", href: "/categories/hoodies" },
-  { title: "Accessories", slug: "accessories", subtitle: "Complete the look", href: "/categories/accessories" },
-  { title: "Wigs", slug: "wigs", subtitle: "Elevate your style", href: "/categories/wigs" },
-];
+const categorySubtitles: Record<string, string> = {
+  streetwear: "Shop collection",
+  "t-shirts": "Shop essentials",
+  hoodies: "Layer up",
+  accessories: "Complete the look",
+  wigs: "Elevate your style",
+};
 
 function productImages(imagesJson: string) {
   try {
@@ -62,7 +62,7 @@ function CategoryThumbnail({ title, images }: { title: string; images: string[] 
 }
 
 const Index = () => {
-  const { products, addToCart, siteSettings } = useStore();
+  const { products, addToCart, siteSettings, storefrontCategories, dualFeatureCards } = useStore();
   const [editorialBanner, setEditorialBanner] = useState<EditorialBanner>(defaultEditorialBanner);
   useEffect(() => {
     let active = true;
@@ -72,9 +72,9 @@ const Index = () => {
     return () => { active = false; };
   }, []);
   const newProducts = products.slice(8);
-  const liveCategoryTiles = useMemo(() => categoryTiles.flatMap((tile) => {
+  const liveCategoryTiles = useMemo(() => storefrontCategories.filter((category) => category.active).flatMap((category) => {
     const categoryProducts = products
-      .filter((product) => product.stock_quantity > 0 && productMatchesCategory(tile.slug, product.category))
+      .filter((product) => product.stock_quantity > 0 && productMatchesCategory(category.slug, product.category, category.name))
       .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at));
     if (categoryProducts.length === 0) return [];
 
@@ -82,8 +82,14 @@ const Index = () => {
       ...(product.image_url?.trim() ? [product.image_url.trim()] : []),
       ...productImages(product.images_json),
     ]))];
-    return [{ ...tile, images }];
-  }), [products]);
+    return [{
+      title: category.name,
+      slug: category.slug,
+      subtitle: categorySubtitles[category.slug] ?? "Shop collection",
+      href: categoryPath(category.slug),
+      images,
+    }];
+  }), [products, storefrontCategories]);
 
   return (
     <div id="top" className="min-h-screen bg-[#f6f1ea] text-neutral-950">
@@ -112,7 +118,7 @@ const Index = () => {
 
             <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-5">
               {liveCategoryTiles.map((tile) => (
-                <Link key={tile.title} to={tile.href} className="category-card group overflow-hidden">
+                <Link key={tile.slug} to={tile.href} className="category-card group overflow-hidden">
                   <div className="relative aspect-[4/5] overflow-hidden rounded-2xl">
                     <CategoryThumbnail key={`${tile.title}:${tile.images.join("|")}`} title={tile.title} images={tile.images} />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
@@ -161,33 +167,21 @@ const Index = () => {
         <section id="hoodies" className="py-16 sm:py-20">
           <div className="section-shell">
             <div className="grid gap-5 lg:grid-cols-2">
-              <div className="overflow-hidden rounded-[2rem] border border-neutral-200 bg-white">
-                <div className="grid h-full items-end md:grid-cols-[1.1fr_0.9fr]">
-                  <div className="relative min-h-[420px]">
-                    <img src={hoodieImage} alt="Hoodies collection" className="h-full w-full object-cover" />
+              {dualFeatureCards.map((card, index) => (
+                <article key={card.id} id={card.categorySlug} className="overflow-hidden rounded-[2rem] border border-neutral-200 bg-white">
+                  <div className="grid h-full items-end md:grid-cols-[1.1fr_0.9fr]">
+                    <div className="relative min-h-[420px]">
+                      <img src={card.imageUrl || (index === 0 ? hoodieImage : wigImage)} alt={`${card.eyebrow} collection`} className="h-full w-full object-cover" />
+                    </div>
+                    <div className="p-7 sm:p-8">
+                      <p className="eyebrow">{card.eyebrow}</p>
+                      <h3 className="mt-3 text-3xl font-black tracking-[-0.06em]">{card.headline}</h3>
+                      <p className="mt-4 text-sm text-neutral-600">{card.description}</p>
+                      <a href={card.buttonLink || categoryPath(card.categorySlug)} className="btn-secondary mt-6">{card.buttonText}</a>
+                    </div>
                   </div>
-                  <div className="p-7 sm:p-8">
-                    <p className="eyebrow">Hoodies</p>
-                    <h3 className="mt-3 text-3xl font-black tracking-[-0.06em]">Essential layers for every rotation.</h3>
-                    <p className="mt-4 text-sm text-neutral-600">Modern fits, premium weight, and all-day comfort for the pieces you reach for most.</p>
-                    <Link to="/categories/hoodies" className="btn-secondary mt-6">Shop hoodies</Link>
-                  </div>
-                </div>
-              </div>
-
-              <div id="wigs" className="overflow-hidden rounded-[2rem] border border-neutral-200 bg-white">
-                <div className="grid h-full items-end md:grid-cols-[1.1fr_0.9fr]">
-                  <div className="relative min-h-[420px]">
-                    <img src={wigImage} alt="Wigs and styling" className="h-full w-full object-cover" />
-                  </div>
-                  <div className="p-7 sm:p-8">
-                    <p className="eyebrow">Wigs</p>
-                    <h3 className="mt-3 text-3xl font-black tracking-[-0.06em]">Complete the look.</h3>
-                    <p className="mt-4 text-sm text-neutral-600">Polished textures and styling that finish the outfit with ease.</p>
-                    <Link to="/categories/wigs" className="btn-secondary mt-6">Shop wigs</Link>
-                  </div>
-                </div>
-              </div>
+                </article>
+              ))}
             </div>
           </div>
         </section>

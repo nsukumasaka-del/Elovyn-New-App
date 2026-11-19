@@ -11,6 +11,8 @@ import { toast } from "sonner";
 import { apiRequest as request, type CartProduct, type StoreUser } from "@/lib/store-api";
 import type { DeliveryAddress } from "@/lib/delivery-address";
 import { defaultSiteSettings, type SiteSettings } from "@/lib/site-settings";
+import { defaultCategories, type StorefrontCategory } from "@/lib/categories";
+import { defaultDualFeatureCards, type DualFeatureCard } from "@/lib/dual-feature-cards";
 
 export type { CartProduct, StoreUser } from "@/lib/store-api";
 export type { DeliveryAddress } from "@/lib/delivery-address";
@@ -46,6 +48,9 @@ type StoreContextValue = {
   refreshProducts: () => Promise<void>;
   applyProduct: (product: StoreProduct) => void;
   siteSettings: SiteSettings;
+  storefrontCategories: StorefrontCategory[];
+  dualFeatureCards: DualFeatureCard[];
+  refreshStorefrontConfig: () => Promise<void>;
   refreshSiteSettings: () => Promise<void>;
   applySiteSettings: (settings: SiteSettings) => void;
   cart: CartLine[];
@@ -107,6 +112,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [retryCount, setRetryCount] = useState(0);
   const [products, setProducts] = useState<StoreProduct[]>([]);
   const [siteSettings, setSiteSettings] = useState<SiteSettings>(defaultSiteSettings);
+  const [storefrontCategories, setStorefrontCategories] = useState<StorefrontCategory[]>(defaultCategories);
+  const [dualFeatureCards, setDualFeatureCards] = useState<DualFeatureCard[]>(defaultDualFeatureCards);
   const [cart, setCart] = useState<CartLine[]>(readStoredCart);
   const [wishlist, setWishlist] = useState<string[]>(readWishlist);
   const [cartOpen, setCartOpen] = useState(false);
@@ -151,9 +158,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     applySiteSettings(result.settings);
   }, [applySiteSettings]);
 
+  const refreshStorefrontConfig = useCallback(async () => {
+    const config = await request<{ categories: StorefrontCategory[]; dualFeatureCards: DualFeatureCard[] }>("/storefront-config");
+    setStorefrontCategories(config.categories?.length ? config.categories : defaultCategories);
+    setDualFeatureCards(config.dualFeatureCards?.length === 2 ? config.dualFeatureCards : defaultDualFeatureCards);
+  }, []);
+
   useEffect(() => {
     void refreshSiteSettings().catch(() => undefined);
   }, [refreshSiteSettings, retryCount]);
+
+  useEffect(() => {
+    void refreshStorefrontConfig().catch(() => undefined);
+  }, [refreshStorefrontConfig, retryCount]);
 
   useEffect(() => {
     const faviconUrl = siteSettings.favicon_url || defaultSiteSettings.favicon_url;
@@ -341,11 +358,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [cart, user]);
 
   const value = useMemo(() => ({
-    user, ready, connectionError, retryConnection, products, refreshProducts, applyProduct, siteSettings, refreshSiteSettings, applySiteSettings, cart, wishlist, cartOpen, setCartOpen, authOpen, setAuthOpen,
+    user, ready, connectionError, retryConnection, products, refreshProducts, applyProduct, siteSettings, refreshSiteSettings, applySiteSettings, storefrontCategories, dualFeatureCards, refreshStorefrontConfig, cart, wishlist, cartOpen, setCartOpen, authOpen, setAuthOpen,
     authMode, setAuthMode, addToCart, changeQuantity, removeFromCart, clearCart,
     toggleWishlist, signIn, signUp, signOut, saveDeliveryAddress, prepareCheckout, checkout,
   }), [
-    user, ready, connectionError, retryConnection, products, refreshProducts, applyProduct, siteSettings, refreshSiteSettings, applySiteSettings, cart, wishlist, cartOpen, authOpen, authMode, addToCart,
+    user, ready, connectionError, retryConnection, products, refreshProducts, applyProduct, siteSettings, refreshSiteSettings, applySiteSettings, storefrontCategories, dualFeatureCards, refreshStorefrontConfig, cart, wishlist, cartOpen, authOpen, authMode, addToCart,
     changeQuantity, removeFromCart, clearCart, toggleWishlist, signIn, signUp, signOut, saveDeliveryAddress, prepareCheckout, checkout,
   ]);
 

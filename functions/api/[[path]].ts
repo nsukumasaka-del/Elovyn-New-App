@@ -42,6 +42,8 @@ import { cjAccessTokenFromPayload, cjProductRecordsFromPayload } from "../../src
 import { cjCategoriesFromPayload, cjImportProductFromDetail, cjSearchResultsFromPayload, type SupplierCategory, type SupplierProductSearchResult } from "../../src/lib/cj-import";
 import { defaultSiteSettings, type SiteSettings } from "../../src/lib/site-settings";
 import { defaultEditorialBanner, type EditorialBanner } from "../../src/lib/editorial-banner";
+import { defaultCategories, type StorefrontCategory } from "../../src/lib/categories";
+import { defaultDualFeatureCards, type DualFeatureCard } from "../../src/lib/dual-feature-cards";
 import { normalizeDeliveryAddress, normalizeSouthAfricanMobilePhone } from "../../src/lib/delivery-address";
 import { calculateCheckoutAmounts, STANDARD_SHIPPING_FEE_CENTS } from "../../src/lib/checkout";
 import { supplierOrdersToCsv, type SupplierExportOrder, type SupplierExportType } from "../../src/lib/supplier-csv";
@@ -307,6 +309,115 @@ function storedEditorialBanner(value: string | null | undefined): EditorialBanne
   } catch {
     return defaultEditorialBanner;
   }
+}
+
+function storedStorefrontCategories(value: string | null | undefined): StorefrontCategory[] {
+  if (!value) return defaultCategories;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) return defaultCategories;
+    return parsed.flatMap((entry): StorefrontCategory[] => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+      const candidate = entry as Record<string, unknown>;
+      if (typeof candidate.slug !== "string" || typeof candidate.name !== "string") return [];
+      return [{
+        id: typeof candidate.id === "string" ? candidate.id : candidate.slug,
+        slug: candidate.slug,
+        name: candidate.name,
+        description: typeof candidate.description === "string" ? candidate.description : "",
+        active: candidate.active !== false,
+      }];
+    });
+  } catch {
+    return defaultCategories;
+  }
+}
+
+function storedDualFeatureCards(value: string | null | undefined): DualFeatureCard[] {
+  if (!value) return defaultDualFeatureCards;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed) || parsed.length !== 2) return defaultDualFeatureCards;
+    return parsed.map((entry, index) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return defaultDualFeatureCards[index];
+      const candidate = entry as Record<string, unknown>;
+      const fallback = defaultDualFeatureCards[index];
+      return {
+        id: typeof candidate.id === "string" ? candidate.id : fallback.id,
+        imageUrl: typeof candidate.imageUrl === "string" ? candidate.imageUrl : fallback.imageUrl,
+        eyebrow: typeof candidate.eyebrow === "string" ? candidate.eyebrow : fallback.eyebrow,
+        headline: typeof candidate.headline === "string" ? candidate.headline : fallback.headline,
+        description: typeof candidate.description === "string" ? candidate.description : fallback.description,
+        buttonText: typeof candidate.buttonText === "string" ? candidate.buttonText : fallback.buttonText,
+        categorySlug: typeof candidate.categorySlug === "string" ? candidate.categorySlug : fallback.categorySlug,
+        buttonLink: typeof candidate.buttonLink === "string" ? candidate.buttonLink : fallback.buttonLink,
+      };
+    });
+  } catch {
+    return defaultDualFeatureCards;
+  }
+}
+
+function normalizeStorefrontCategories(value: unknown): StorefrontCategory[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 50) {
+    throw new ApiError("Provide between 1 and 50 storefront categories.", 400);
+  }
+  const categories = value.map((entry, index): StorefrontCategory => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new ApiError(`Category ${index + 1} is invalid.`, 400);
+    }
+    const candidate = entry as Record<string, unknown>;
+    const slug = requiredString(candidate.slug, `Category ${index + 1} slug`, 80).toLowerCase();
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+      throw new ApiError(`Category ${index + 1} slug may contain only lowercase letters, numbers, and hyphens.`, 400);
+    }
+    if (typeof candidate.active !== "boolean") {
+      throw new ApiError(`Category ${index + 1} active status must be true or false.`, 400);
+    }
+    return {
+      id: requiredString(candidate.id ?? slug, `Category ${index + 1} ID`, 100),
+      slug,
+      name: requiredString(candidate.name, `Category ${index + 1} name`, 100),
+      description: siteSettingText(candidate.description, `Category ${index + 1} description`, 500),
+      active: candidate.active,
+    };
+  });
+  if (new Set(categories.map((category) => category.slug)).size !== categories.length) {
+    throw new ApiError("Category slugs must be unique.", 400);
+  }
+  if (new Set(categories.map((category) => category.id)).size !== categories.length) {
+    throw new ApiError("Category IDs must be unique.", 400);
+  }
+  if (new Set(categories.map((category) => category.name.toLowerCase())).size !== categories.length) {
+    throw new ApiError("Category names must be unique.", 400);
+  }
+  return categories;
+}
+
+function normalizeDualFeatureCards(value: unknown, categories: StorefrontCategory[]): DualFeatureCard[] {
+  if (!Array.isArray(value) || value.length !== 2) {
+    throw new ApiError("Exactly two homepage feature cards are required.", 400);
+  }
+  return value.map((entry, index): DualFeatureCard => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new ApiError(`Feature card ${index + 1} is invalid.`, 400);
+    }
+    const candidate = entry as Record<string, unknown>;
+    const categorySlug = requiredString(candidate.categorySlug, `Feature card ${index + 1} category`, 80);
+    if (!categories.some((category) => category.slug === categorySlug)) {
+      throw new ApiError(`Feature card ${index + 1} must target an existing category.`, 400);
+    }
+    return {
+      id: requiredString(candidate.id, `Feature card ${index + 1} ID`, 80),
+      imageUrl: siteSettingUrl(candidate.imageUrl, `Feature card ${index + 1} image URL`),
+      eyebrow: siteSettingText(candidate.eyebrow, `Feature card ${index + 1} eyebrow`, 100),
+      headline: requiredString(candidate.headline, `Feature card ${index + 1} headline`, 160),
+      description: siteSettingText(candidate.description, `Feature card ${index + 1} description`, 1000),
+      buttonText: requiredString(candidate.buttonText, `Feature card ${index + 1} button label`, 80),
+      categorySlug,
+      buttonLink: siteSettingUrl(candidate.buttonLink, `Feature card ${index + 1} link`),
+    };
+  });
 }
 
 function normalizeEmail(value: unknown) {
@@ -2319,11 +2430,89 @@ async function route(
   }
 
   if (path === "/storefront-config" && method === "GET") {
+    const savedSettings = await db.select({ key: storeSettings.key, value: storeSettings.value })
+      .from(storeSettings)
+      .where(inArray(storeSettings.key, ["homepage_editorial_banner", "homepage_dual_feature_cards", "storefront_categories"]));
+    const settings = new Map(savedSettings.map((setting) => [setting.key, setting.value]));
+    return json({
+      editorialBanner: storedEditorialBanner(settings.get("homepage_editorial_banner")),
+      dualFeatureCards: storedDualFeatureCards(settings.get("homepage_dual_feature_cards")),
+      categories: storedStorefrontCategories(settings.get("storefront_categories")),
+    }, 200, { "Cache-Control": "no-store" });
+  }
+
+  if (path === "/admin/settings/dual-feature-cards" && method === "GET") {
+    await requireAdmin(db, request, env);
     const [saved] = await db.select({ value: storeSettings.value })
       .from(storeSettings)
-      .where(eq(storeSettings.key, "homepage_editorial_banner"))
+      .where(eq(storeSettings.key, "homepage_dual_feature_cards"))
       .limit(1);
-    return json({ editorialBanner: storedEditorialBanner(saved?.value) }, 200, { "Cache-Control": "no-store" });
+    return json({ dualFeatureCards: storedDualFeatureCards(saved?.value) }, 200, { "Cache-Control": "no-store" });
+  }
+
+  if (path === "/admin/settings/dual-feature-cards" && method === "PUT") {
+    await requireAdmin(db, request, env);
+    const body = await bodyAsJson(request);
+    const [savedCategories] = await db.select({ value: storeSettings.value })
+      .from(storeSettings)
+      .where(eq(storeSettings.key, "storefront_categories"))
+      .limit(1);
+    const cards = normalizeDualFeatureCards(body.dualFeatureCards, storedStorefrontCategories(savedCategories?.value));
+    const updatedAt = currentTimestamp();
+    const value = JSON.stringify(cards);
+    await db.insert(storeSettings).values({ key: "homepage_dual_feature_cards", value, updatedAt })
+      .onConflictDoUpdate({ target: storeSettings.key, set: { value, updatedAt } });
+    return json({ dualFeatureCards: cards }, 200, { "Cache-Control": "no-store" });
+  }
+
+  if (path === "/admin/settings/categories" && method === "GET") {
+    await requireAdmin(db, request, env);
+    const [saved] = await db.select({ value: storeSettings.value })
+      .from(storeSettings)
+      .where(eq(storeSettings.key, "storefront_categories"))
+      .limit(1);
+    return json({ categories: storedStorefrontCategories(saved?.value) }, 200, { "Cache-Control": "no-store" });
+  }
+
+  if (path === "/admin/settings/categories" && method === "PUT") {
+    await requireAdmin(db, request, env);
+    const body = await bodyAsJson(request);
+    const categories = normalizeStorefrontCategories(body.categories);
+    const [saved] = await db.select({ value: storeSettings.value })
+      .from(storeSettings)
+      .where(eq(storeSettings.key, "storefront_categories"))
+      .limit(1);
+    const previousCategories = storedStorefrontCategories(saved?.value);
+    for (const previous of previousCategories) {
+      const current = categories.find((category) => category.id === previous.id);
+      if (current && current.name !== previous.name) {
+        await db.update(products).set({ category: current.name })
+          .where(sql`LOWER(TRIM(${products.category})) = LOWER(TRIM(${previous.name}))`);
+      }
+    }
+    const [savedCards] = await db.select({ value: storeSettings.value })
+      .from(storeSettings)
+      .where(eq(storeSettings.key, "homepage_dual_feature_cards"))
+      .limit(1);
+    const dualFeatureCards = storedDualFeatureCards(savedCards?.value).map((card) => {
+      const previous = previousCategories.find((category) => category.slug === card.categorySlug);
+      const current = previous ? categories.find((category) => category.id === previous.id) : undefined;
+      if (!previous || !current) return card;
+      return {
+        ...card,
+        categorySlug: current.slug,
+        eyebrow: card.eyebrow === previous.name ? current.name : card.eyebrow,
+        buttonLink: card.buttonLink === `/categories/${previous.slug}` ? `/categories/${current.slug}` : card.buttonLink,
+      };
+    });
+    const updatedAt = currentTimestamp();
+    const value = JSON.stringify(categories);
+    await db.insert(storeSettings).values({ key: "storefront_categories", value, updatedAt })
+      .onConflictDoUpdate({ target: storeSettings.key, set: { value, updatedAt } });
+    const cardsValue = JSON.stringify(dualFeatureCards);
+    await db.insert(storeSettings).values({ key: "homepage_dual_feature_cards", value: cardsValue, updatedAt })
+      .onConflictDoUpdate({ target: storeSettings.key, set: { value: cardsValue, updatedAt } });
+    return json({ categories, dualFeatureCards }, 200, { "Cache-Control": "no-store" });
   }
 
   if (path === "/admin/settings/editorial-banner" && method === "GET") {

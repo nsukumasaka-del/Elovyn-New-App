@@ -164,6 +164,58 @@ export function ProductDetailPage() {
     : false;
   const displayPrice = selectedVariant?.price ?? data?.product.price ?? 0;
 
+  useEffect(() => {
+    if (!data) return;
+    const previousTitle = document.title;
+    const previousMeta = new Map<string, { element: HTMLMetaElement | null; content: string | null }>();
+    const setMeta = (selector: string, name: string, content: string) => {
+      let element = document.head.querySelector<HTMLMetaElement>(selector);
+      if (!previousMeta.has(selector)) previousMeta.set(selector, { element, content: element?.content ?? null });
+      if (!element) {
+        element = document.createElement("meta");
+        if (selector.startsWith('meta[property=')) element.setAttribute("property", name);
+        else element.setAttribute("name", name);
+        document.head.appendChild(element);
+      }
+      element.content = content;
+    };
+    const primaryImage = data.product.image_url || images[0] || productFallback;
+    const absoluteImage = new URL(primaryImage, window.location.origin);
+    if (absoluteImage.protocol === "http:" && window.location.protocol === "https:") {
+      absoluteImage.protocol = "https:";
+    }
+    const canonicalUrl = `${window.location.origin}/products/${encodeURIComponent(data.product.id)}`;
+    const description = (data.product.description || `Shop ${data.product.title} at Elovyn.`)
+      .replace(/<[^>]*>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 300);
+    document.title = `${data.product.title} — ELOVYN`;
+    setMeta('meta[name="description"]', "description", description);
+    setMeta('meta[property="og:type"]', "og:type", "product");
+    setMeta('meta[property="og:site_name"]', "og:site_name", "ELOVYN");
+    setMeta('meta[property="og:title"]', "og:title", `${data.product.title} (${priceText(displayPrice)})`);
+    setMeta('meta[property="og:description"]', "og:description", description);
+    setMeta('meta[property="og:image"]', "og:image", absoluteImage.toString());
+    setMeta('meta[property="og:image:secure_url"]', "og:image:secure_url", absoluteImage.toString());
+    setMeta('meta[property="og:image:width"]', "og:image:width", "1200");
+    setMeta('meta[property="og:image:height"]', "og:image:height", "1200");
+    setMeta('meta[property="og:url"]', "og:url", canonicalUrl);
+    setMeta('meta[name="twitter:card"]', "twitter:card", "summary_large_image");
+    setMeta('meta[name="twitter:image"]', "twitter:image", absoluteImage.toString());
+    return () => {
+      document.title = previousTitle;
+      previousMeta.forEach(({ element, content }, selector) => {
+        if (!element) {
+          document.head.querySelector(selector)?.remove();
+          return;
+        }
+        if (content === null) element.remove();
+        else element.content = content;
+      });
+    };
+  }, [data, displayPrice, images]);
+
   function selectOption(name: string, value: string) {
     setSelectedValues((current) => ({ ...current, [name]: value }));
     setQuantity(1);
