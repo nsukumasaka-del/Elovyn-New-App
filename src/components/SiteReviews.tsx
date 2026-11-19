@@ -80,7 +80,7 @@ export function SiteReviewsShowcase() {
   }, []);
 
   if (!reviews.length) return null;
-  return <section className="section-shell py-14 sm:py-18">
+  return <section className="section-shell py-10 sm:py-14">
     <div className="text-center"><p className="eyebrow">Loved by our community</p><h2 className="section-heading mt-3">Real experiences, shared.</h2></div>
     <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {reviews.map((review) => <article key={review.id} className="rounded-2xl border border-neutral-200 bg-white p-5">

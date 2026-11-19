@@ -15,14 +15,14 @@ export const Community = () => {
   const isInView = useInView(ref, { once: true, margin: "-100px" });
 
   return (
-    <section id="community" className="bg-[#f3efe9] py-16 sm:py-20 lg:py-24">
+    <section id="community" className="bg-[#f3efe9] py-10 sm:py-16 lg:py-24">
       <div className="section-shell">
         <motion.div
           ref={ref}
           initial={{ opacity: 0, y: 30 }}
           animate={isInView ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.6 }}
-          className="mb-10 text-left sm:text-center"
+          className="mb-6 text-left sm:mb-10 sm:text-center"
         >
           <p className="eyebrow">Wear it your way</p>
           <h2 className="section-heading mt-3 text-balance">Style that feels personal.</h2>

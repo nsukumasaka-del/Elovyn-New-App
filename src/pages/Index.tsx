@@ -98,17 +98,17 @@ const Index = () => {
       <main>
         <Hero />
 
-        {(siteSettings.promotional_banner_title || siteSettings.promotional_banner_text || siteSettings.promotional_banner_image_url) && <section className="section-shell pt-8 sm:pt-10">
-          <div className="relative isolate overflow-hidden rounded-[1.75rem] bg-neutral-950 px-6 py-10 text-white sm:px-10">
+        {(siteSettings.promotional_banner_title || siteSettings.promotional_banner_text || siteSettings.promotional_banner_image_url) && <section className="section-shell pt-5 sm:pt-10">
+          <div className="relative isolate overflow-hidden rounded-[1.75rem] bg-neutral-950 px-5 py-6 text-white sm:px-10 sm:py-10">
             {siteSettings.promotional_banner_image_url && <><img src={siteSettings.promotional_banner_image_url} alt="" className="absolute inset-0 -z-20 h-full w-full object-cover transition-[transform,object-position] duration-500" style={{ objectPosition: `${siteSettings.promotional_image_position_x}% ${siteSettings.promotional_image_position_y}%`, transform: `scale(${siteSettings.promotional_image_scale / 100})` }} /><div className="absolute inset-0 -z-10 bg-black/65" /></>}
             {siteSettings.promotional_banner_title && <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">{siteSettings.promotional_banner_title}</h2>}
             {siteSettings.promotional_banner_text && <p className="mt-2 max-w-2xl text-sm leading-6 text-white/75 sm:text-base">{siteSettings.promotional_banner_text}</p>}
           </div>
         </section>}
 
-        <section id="streetwear" className="py-16 sm:py-20 lg:py-24">
+        <section id="streetwear" className="py-8 sm:py-12 lg:py-24">
           <div className="section-shell">
-            <div className="mb-10 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div className="mb-6 flex flex-col gap-4 sm:mb-10 md:flex-row md:items-end md:justify-between">
               <div>
                 <p className="eyebrow">Shop by category</p>
                 <h2 className="section-heading mt-3 text-balance">Built for everyday rotation.</h2>
@@ -116,7 +116,7 @@ const Index = () => {
               <p className="section-copy max-w-xl">Premium staples designed to move effortlessly between city days, studio sessions, and night plans.</p>
             </div>
 
-            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-5">
+            <div className="grid gap-4 sm:gap-5 md:grid-cols-2 xl:grid-cols-5">
               {liveCategoryTiles.map((tile) => (
                 <Link key={tile.slug} to={tile.href} className="category-card group overflow-hidden">
                   <div className="relative aspect-[4/5] overflow-hidden rounded-2xl">
@@ -138,11 +138,11 @@ const Index = () => {
 
         <ClothingShowcase />
 
-        <section className="py-10 sm:py-14">
+        <section className="py-6 sm:py-10 lg:py-14">
           <div className="section-shell">
             <div className="overflow-hidden rounded-[2rem] border border-neutral-200 bg-neutral-950 text-white">
               <div className="grid items-center gap-0 lg:grid-cols-[1.1fr_0.9fr]">
-                <div className="relative min-h-[360px] bg-neutral-900">
+                <div className="relative min-h-[240px] bg-neutral-900 sm:min-h-[320px] lg:min-h-[360px]">
                   <img src={editorialBanner.imageUrl || clothingImage} alt="Editorial campaign" className="h-full w-full object-cover opacity-75" />
                 </div>
                 <div className="p-8 sm:p-10 lg:p-12">
@@ -164,13 +164,13 @@ const Index = () => {
 
         <HairproductsShowcase />
 
-        <section id="hoodies" className="py-16 sm:py-20">
+        <section id="hoodies" className="py-8 sm:py-12 lg:py-20">
           <div className="section-shell">
             <div className="grid gap-5 lg:grid-cols-2">
               {dualFeatureCards.map((card, index) => (
                 <article key={card.id} id={card.categorySlug} className="overflow-hidden rounded-[2rem] border border-neutral-200 bg-white">
                   <div className="grid h-full items-end md:grid-cols-[1.1fr_0.9fr]">
-                    <div className="relative min-h-[420px]">
+                    <div className="relative min-h-[280px] sm:min-h-[360px] lg:min-h-[420px]">
                       <img src={card.imageUrl || (index === 0 ? hoodieImage : wigImage)} alt={`${card.eyebrow} collection`} className="h-full w-full object-cover" />
                     </div>
                     <div className="p-7 sm:p-8">
@@ -191,7 +191,7 @@ const Index = () => {
         <SiteReviewsShowcase />
 
         {newProducts.length > 0 && (
-          <section className="bg-white py-16">
+          <section className="bg-white py-10 sm:py-16">
             <div className="section-shell">
               <p className="eyebrow">Fresh from the studio</p>
               <h2 className="section-heading mt-3">Just added</h2>
@@ -223,7 +223,7 @@ const Index = () => {
           </section>
         )}
 
-        <section className="pb-16 pt-6 sm:pb-20 lg:pb-24">
+        <section className="pb-10 pt-5 sm:pb-16 sm:pt-6 lg:pb-24">
           <div className="section-shell">
             <div className="rounded-[2rem] border border-neutral-200 bg-white px-5 py-8 sm:px-8 lg:px-12 lg:py-12">
               <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">

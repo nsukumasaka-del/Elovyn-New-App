@@ -11,8 +11,8 @@ export const HairproductsShowcase = () => {
   const featuredProducts = useMemo(() => products.filter((product) => product.stock_quantity > 0).slice(4, 8), [products]);
   if (!featuredProducts.length) return null;
 
-  return <section id="sale" className="bg-white py-16 sm:py-20 lg:py-24"><div className="section-shell">
-    <motion.div ref={ref} initial={{ opacity: 0, y: 30 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.6 }} className="mb-10 flex flex-col gap-4 md:flex-row md:items-end md:justify-between"><div><p className="eyebrow">More to explore</p><h2 className="section-heading mt-3">FEATURED PICKS</h2></div><p className="section-copy max-w-xl">More listed products from the latest Elovyn collection.</p></motion.div>
+  return <section id="sale" className="bg-white py-10 sm:py-16 lg:py-24"><div className="section-shell">
+    <motion.div ref={ref} initial={{ opacity: 0, y: 30 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.6 }} className="mb-6 flex flex-col gap-4 sm:mb-10 md:flex-row md:items-end md:justify-between"><div><p className="eyebrow">More to explore</p><h2 className="section-heading mt-3">FEATURED PICKS</h2></div><p className="section-copy max-w-xl">More listed products from the latest Elovyn collection.</p></motion.div>
     <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">{featuredProducts.map((product, index) => {
       const imageUrl = product.image_url || clothingFallback;
       return <motion.article key={product.id} id={`product-${product.id}`} initial={{ opacity: 0, y: 30 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.45, delay: index * 0.08 }} className="product-card group">

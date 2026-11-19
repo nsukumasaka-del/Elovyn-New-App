@@ -8,7 +8,7 @@ export const CTA = () => {
   const isInView = useInView(ref, { once: true, margin: "-100px" });
 
   return (
-    <section className="bg-neutral-950 py-16 text-white sm:py-20 lg:py-24">
+    <section className="bg-neutral-950 py-10 text-white sm:py-16 lg:py-24">
       <div className="section-shell">
         <motion.div
           ref={ref}

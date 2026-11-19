@@ -17,7 +17,7 @@ export const Hero = () => {
         <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/35 to-black/10" />
       </div>
 
-      <div className="section-shell relative z-10 flex min-h-[660px] items-end pb-12 pt-20 sm:pb-14 lg:min-h-[760px]">
+      <div className="section-shell relative z-10 flex min-h-[520px] items-end pb-8 pt-20 sm:min-h-[620px] sm:pb-14 lg:min-h-[760px]">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
@@ -31,7 +31,7 @@ export const Hero = () => {
           <p className="mt-5 max-w-md text-base text-white/75 sm:text-lg">
             {siteSettings.hero_subtitle}
           </p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+          <div className="mt-6 flex flex-col gap-3 sm:mt-8 sm:flex-row">
             {siteSettings.hero_primary_cta_text && siteSettings.hero_primary_cta_url && <Link to={siteSettings.hero_primary_cta_url} className="btn-primary bg-white text-neutral-950 hover:bg-neutral-200">
               {siteSettings.hero_primary_cta_text}
             </Link>}

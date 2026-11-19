@@ -13,8 +13,8 @@ export const AccessoriesShowcase = () => {
   const accessories = useMemo(() => products.filter((product) => accessoryCategories.includes((product.category || "").toLocaleLowerCase())).slice(0, 4), [products]);
   if (!accessories.length) return null;
 
-  return <section id="accessories" className="bg-[#f3efe9] py-16 sm:py-20 lg:py-24"><div className="section-shell">
-    <motion.div ref={ref} initial={{ opacity: 0, y: 30 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.6 }} className="mb-10 flex flex-col gap-4 md:flex-row md:items-end md:justify-between"><div><p className="eyebrow">Complete the look</p><h2 className="section-heading mt-3">ACCESSORIES</h2></div><p className="section-copy max-w-xl">Listed finishing touches from the current store inventory.</p></motion.div>
+  return <section id="accessories" className="bg-[#f3efe9] py-10 sm:py-16 lg:py-24"><div className="section-shell">
+    <motion.div ref={ref} initial={{ opacity: 0, y: 30 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.6 }} className="mb-6 flex flex-col gap-4 sm:mb-10 md:flex-row md:items-end md:justify-between"><div><p className="eyebrow">Complete the look</p><h2 className="section-heading mt-3">ACCESSORIES</h2></div><p className="section-copy max-w-xl">Listed finishing touches from the current store inventory.</p></motion.div>
     <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">{accessories.map((product, index) => {
       const imageUrl = product.image_url || bagFallback;
       const inStock = product.stock_quantity > 0;

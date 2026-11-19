@@ -20,9 +20,9 @@ export const ClothingShowcase = () => {
     .slice(0, 8), [activeCategory, products]);
 
   return (
-    <section id="new-arrivals" className="bg-[#f6f1ea] py-16 sm:py-20 lg:py-24">
+    <section id="new-arrivals" className="bg-[#f6f1ea] py-10 sm:py-16 lg:py-24">
       <div className="section-shell">
-        <motion.div ref={ref} initial={{ opacity: 0, y: 30 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.6 }} className="mb-10 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <motion.div ref={ref} initial={{ opacity: 0, y: 30 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.6 }} className="mb-6 flex flex-col gap-4 sm:mb-10 md:flex-row md:items-end md:justify-between">
           <div><p className="eyebrow">New arrivals</p><h2 className="section-heading mt-3">NEW ARRIVALS</h2></div>
           <div className="flex flex-wrap gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-neutral-500">
             {categoryTabs.map((tab) => <button key={tab} type="button" aria-pressed={activeCategory === tab} onClick={() => setActiveCategory(tab)} className={`rounded-full border px-3 py-2 transition-colors ${activeCategory === tab ? "border-neutral-950 bg-neutral-950 text-white" : "border-neutral-300 bg-white hover:border-neutral-900 hover:text-neutral-900"}`}>{tab}</button>)}
