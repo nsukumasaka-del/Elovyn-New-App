@@ -3,6 +3,7 @@ import { createDb } from "../../db";
 import {
   adminNotifications,
   carts,
+  contactMessages,
   inventoryItems,
   options,
   orderItems,
@@ -45,7 +46,11 @@ import { defaultEditorialBanner, type EditorialBanner } from "../../src/lib/edit
 import { defaultCategories, type StorefrontCategory } from "../../src/lib/categories";
 import { defaultDualFeatureCards, type DualFeatureCard } from "../../src/lib/dual-feature-cards";
 import { normalizeDeliveryAddress, normalizeSouthAfricanMobilePhone } from "../../src/lib/delivery-address";
-import { calculateCheckoutAmounts, STANDARD_SHIPPING_FEE_CENTS } from "../../src/lib/checkout";
+import {
+  calculateCheckoutAmounts,
+  DEFAULT_FREE_SHIPPING_THRESHOLD_CENTS,
+  STANDARD_SHIPPING_FEE_CENTS,
+} from "../../src/lib/checkout";
 import { supplierOrdersToCsv, type SupplierExportOrder, type SupplierExportType } from "../../src/lib/supplier-csv";
 import { createYocoCheckout, getYocoCheckout, normalizeYocoSecretKey, registerYocoWebhook, verifyYocoWebhookSignature } from "../lib/yoco";
 import {
@@ -566,14 +571,20 @@ async function geminiText(env: Env, input: {
   }
 }
 
-async function enforceBrixyRateLimit(request: Request, env: Env, waitUntil: PagesContext["waitUntil"]) {
+async function enforceRateLimit(
+  request: Request,
+  env: Env,
+  waitUntil: PagesContext["waitUntil"],
+  scope: string,
+  resourceLabel: string,
+) {
   const windowSeconds = 5 * 60;
   const limit = 12;
   const nowSeconds = Math.floor(Date.now() / 1000);
   const windowStart = Math.floor(nowSeconds / windowSeconds) * windowSeconds;
   const clientIdentity = request.headers.get("CF-Connecting-IP")
     || `${request.headers.get("User-Agent") || "unknown"}:${request.headers.get("Accept-Language") || ""}`;
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`brixy:${windowStart}:${clientIdentity}`));
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${scope}:${windowStart}:${clientIdentity}`));
   const key = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
   const row = await env.DB!.prepare(`
     INSERT INTO ai_rate_limits (id, window_start, request_count, updated_at)
@@ -587,7 +598,7 @@ async function enforceBrixyRateLimit(request: Request, env: Env, waitUntil: Page
   }
   if (requestCount > limit) {
     const retryAfter = Math.max(1, windowStart + windowSeconds - nowSeconds);
-    throw new ApiError("Brixy has received too many messages from this connection. Please try again in a few minutes.", 429, {
+    throw new ApiError(`Too many ${resourceLabel} requests from this connection. Please try again in a few minutes.`, 429, {
       "Retry-After": String(retryAfter),
       "X-RateLimit-Limit": String(limit),
       "X-RateLimit-Remaining": "0",
@@ -596,7 +607,7 @@ async function enforceBrixyRateLimit(request: Request, env: Env, waitUntil: Page
   return { limit, remaining: Math.max(0, limit - requestCount) };
 }
 
-async function brixyCatalogContext(env: Env) {
+async function brixyCatalogContext(env: Env, db: ReturnType<typeof createDb>) {
   const result = await env.DB!.prepare(`
     SELECT id, title, category, price, stock_quantity
     FROM products
@@ -627,10 +638,11 @@ async function brixyCatalogContext(env: Env) {
       price_zar: Number(product.price),
       in_stock: Number(product.stock_quantity) > 0,
     }));
+  const freeShippingThreshold = (await getFreeShippingThresholdCents(db)) / 100;
   return {
     categories: [...new Set(catalog.map((product) => product.category).filter((category): category is string => Boolean(category)))].slice(0, 10),
     popular_and_recent_products: productsForPrompt,
-    shipping_policy: `Standard delivery is R${(STANDARD_SHIPPING_FEE_CENTS / 100).toFixed(2)}. The final delivery address and complete order summary are confirmed before payment.`,
+    shipping_policy: `Standard delivery is R${(STANDARD_SHIPPING_FEE_CENTS / 100).toFixed(2)} below an item subtotal of R${freeShippingThreshold.toFixed(2)}. Delivery is free at or above that threshold. The final delivery address and complete order summary are confirmed before payment.`,
   };
 }
 
@@ -1876,8 +1888,22 @@ function savedDeliveryAddress(user: StoreUser) {
   return normalized.address;
 }
 
-function checkoutAmounts(items: CheckoutItem[]) {
-  const { subtotalCents, shippingCents, totalCents } = calculateCheckoutAmounts(items);
+async function getFreeShippingThresholdCents(db: ReturnType<typeof createDb>) {
+  const [saved] = await db.select({ value: storeSettings.value })
+    .from(storeSettings)
+    .where(eq(storeSettings.key, "free_shipping_threshold_zar"))
+    .limit(1);
+  if (!saved) return DEFAULT_FREE_SHIPPING_THRESHOLD_CENTS;
+  const thresholdZar = Number(saved.value);
+  const thresholdCents = Math.round(thresholdZar * 100);
+  if (!Number.isFinite(thresholdZar) || thresholdZar < 0 || thresholdZar > 1_000_000 || !Number.isSafeInteger(thresholdCents)) {
+    throw new ApiError("The free-delivery threshold in store settings is invalid.", 500);
+  }
+  return thresholdCents;
+}
+
+function checkoutAmounts(items: CheckoutItem[], freeShippingThresholdCents: number) {
+  const { subtotalCents, shippingCents, totalCents } = calculateCheckoutAmounts(items, freeShippingThresholdCents);
   if (!Number.isSafeInteger(totalCents) || subtotalCents < 1) throw new ApiError("The order subtotal must be at least R0.01.", 400);
   return { subtotalCents, shippingCents, totalCents };
 }
@@ -2379,6 +2405,31 @@ async function route(
     }, 200, { "Cache-Control": "no-store" });
   }
 
+  if (path === "/contact" && method === "POST") {
+    await enforceRateLimit(request, env, waitUntil, "contact", "contact form");
+    const body = await bodyAsJson(request);
+    const name = requiredString(body.name, "Name", 120).trim();
+    const email = requiredString(body.email, "Email", 254).trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new ApiError("Enter a valid email address.", 400);
+    }
+    const orderNumber = body.order_number === undefined || body.order_number === null || body.order_number === ""
+      ? null
+      : requiredString(body.order_number, "Order number", 80).trim();
+    const subject = requiredString(body.subject, "Subject", 160).trim();
+    const message = requiredString(body.message, "Message", 5_000).trim();
+    await db.insert(contactMessages).values({
+      id: crypto.randomUUID(),
+      name,
+      email,
+      orderNumber,
+      subject,
+      message,
+      createdAt: currentTimestamp(),
+    });
+    return json({ ok: true }, 201, { "Cache-Control": "no-store" });
+  }
+
   if (path === "/admin/yoco-mode" && method === "GET") {
     await requireAdmin(db, request, env);
     const mode = await getYocoMode(db);
@@ -2569,6 +2620,7 @@ async function route(
       editorialBanner: storedEditorialBanner(settings.get("homepage_editorial_banner")),
       dualFeatureCards: storedDualFeatureCards(settings.get("homepage_dual_feature_cards")),
       categories: storedStorefrontCategories(settings.get("storefront_categories")),
+      freeShippingThreshold: await getFreeShippingThresholdCents(db) / 100,
     }, 200, { "Cache-Control": "no-store" });
   }
 
@@ -2644,6 +2696,29 @@ async function route(
     await db.insert(storeSettings).values({ key: "homepage_dual_feature_cards", value: cardsValue, updatedAt })
       .onConflictDoUpdate({ target: storeSettings.key, set: { value: cardsValue, updatedAt } });
     return json({ categories, dualFeatureCards }, 200, { "Cache-Control": "no-store" });
+  }
+
+  if (path === "/admin/settings/shipping" && method === "GET") {
+    await requireAdmin(db, request, env);
+    return json({ freeShippingThreshold: await getFreeShippingThresholdCents(db) / 100 }, 200, { "Cache-Control": "no-store" });
+  }
+
+  if (path === "/admin/settings/shipping" && method === "PUT") {
+    await requireAdmin(db, request, env);
+    const body = await bodyAsJson(request);
+    const threshold = body.free_shipping_threshold;
+    if (typeof threshold !== "number" || !Number.isFinite(threshold) || threshold < 0 || threshold > 1_000_000) {
+      throw new ApiError("Free-delivery threshold must be between R0 and R1,000,000.", 400);
+    }
+    await db.insert(storeSettings).values({
+      key: "free_shipping_threshold_zar",
+      value: String(Math.round(threshold * 100) / 100),
+      updatedAt: currentTimestamp(),
+    }).onConflictDoUpdate({
+      target: storeSettings.key,
+      set: { value: String(Math.round(threshold * 100) / 100), updatedAt: currentTimestamp() },
+    });
+    return json({ freeShippingThreshold: Math.round(threshold * 100) / 100 }, 200, { "Cache-Control": "no-store" });
   }
 
   if (path === "/admin/settings/editorial-banner" && method === "GET") {
@@ -2847,9 +2922,9 @@ async function route(
   }
 
   if (path === "/chat" && method === "POST") {
-    const rate = await enforceBrixyRateLimit(request, env, waitUntil);
+    const rate = await enforceRateLimit(request, env, waitUntil, "brixy", "Brixy");
     const messages = brixyMessages((await bodyAsJson(request)).messages);
-    const catalogContext = await brixyCatalogContext(env);
+    const catalogContext = await brixyCatalogContext(env, db);
     const answer = await geminiText(env, {
       systemInstruction: [
         "You are Brixy, the warm, helpful, and stylish shopping assistant for Elovyn Store.",
@@ -3070,7 +3145,34 @@ async function route(
     const rows = await db.select(productColumns).from(products)
       .where(eq(products.isListed, true))
       .orderBy(desc(products.updatedAt));
-    return json({ products: rows }, 200, { "Cache-Control": "no-store" });
+    const optionRows = await db.select({
+      productId: options.productId,
+      name: options.name,
+      valuesJson: options.valuesJson,
+    }).from(options)
+      .innerJoin(products, eq(options.productId, products.id))
+      .where(eq(products.isListed, true));
+    const variantValues = new Map<string, Set<string>>();
+    for (const option of optionRows) {
+      if (!/size|variant/i.test(option.name)) continue;
+      try {
+        const values: unknown = JSON.parse(option.valuesJson);
+        if (!Array.isArray(values)) continue;
+        const productValues = variantValues.get(option.productId) ?? new Set<string>();
+        values.forEach((value) => {
+          if (typeof value === "string" && value.trim()) productValues.add(value.trim());
+        });
+        variantValues.set(option.productId, productValues);
+      } catch {
+        console.error("Could not parse product option values for the catalog.", { productId: option.productId, optionName: option.name });
+      }
+    }
+    return json({
+      products: rows.map((product) => ({
+        ...product,
+        variant_values: [...(variantValues.get(product.id) ?? [])],
+      })),
+    }, 200, { "Cache-Control": "no-store" });
   }
 
   if (path.startsWith("/products/") && method === "GET") {
@@ -3189,7 +3291,8 @@ async function route(
     const body = await bodyAsJson(request);
     const deliveryAddress = savedDeliveryAddress(user);
     const checkoutItems = await resolveCheckoutItems(env, body.items);
-    const amounts = checkoutAmounts(checkoutItems);
+    const freeShippingThresholdCents = await getFreeShippingThresholdCents(db);
+    const amounts = checkoutAmounts(checkoutItems, freeShippingThresholdCents);
     const yocoConfig = await getYocoConfig(env, db);
     return json({
       items: checkoutItems.map((item) => ({ ...item, line_total: Math.round(item.price * 100) * item.quantity / 100 })),
@@ -3212,7 +3315,8 @@ async function route(
     }
     const deliveryAddress = savedDeliveryAddress(user);
     const checkoutItems = await resolveCheckoutItems(env, body.items);
-    const { shippingCents, totalCents } = checkoutAmounts(checkoutItems);
+    const freeShippingThresholdCents = await getFreeShippingThresholdCents(db);
+    const { shippingCents, totalCents } = checkoutAmounts(checkoutItems, freeShippingThresholdCents);
     const expectedTotalCents = Math.round(Number(body.expected_total) * 100);
     if (!Number.isSafeInteger(expectedTotalCents) || expectedTotalCents !== totalCents) {
       throw new ApiError("Your order total changed. Review the updated order summary before payment.", 409);

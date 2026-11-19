@@ -14,6 +14,8 @@ import { CategoryPage } from "./pages/Category";
 import { PaymentResultPage } from "./pages/PaymentResult";
 import { RouteScrollManager } from "./components/RouteScrollManager";
 import { BrixyChat } from "./components/BrixyChat";
+import { CookieConsent } from "@/components/CookieConsent";
+import { StoreInformationPage } from "./pages/StoreInformation";
 
 const queryClient = new QueryClient();
 
@@ -39,9 +41,16 @@ const App = () => (
             <Route path="/payment/success" element={<PaymentResultPage kind="success" />} />
             <Route path="/payment/cancelled" element={<PaymentResultPage kind="cancelled" />} />
             <Route path="/payment/failed" element={<PaymentResultPage kind="failed" />} />
+            <Route path="/contact" element={<StoreInformationPage />} />
+            <Route path="/faq" element={<StoreInformationPage />} />
+            <Route path="/shipping-policy" element={<StoreInformationPage />} />
+            <Route path="/returns-policy" element={<StoreInformationPage />} />
+            <Route path="/privacy-policy" element={<StoreInformationPage />} />
+            <Route path="/terms" element={<StoreInformationPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
           <BrixyChat />
+          <CookieConsent />
         </StoreProvider>
       </BrowserRouter>
     </TooltipProvider>

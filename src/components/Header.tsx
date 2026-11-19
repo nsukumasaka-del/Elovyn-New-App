@@ -128,11 +128,15 @@ function AuthDialog({ onClose }: { onClose: () => void }) {
 }
 
 function CartDrawer({ onClose }: { onClose: () => void }) {
-  const { cart, changeQuantity, removeFromCart, prepareCheckout, checkout, user, setAuthOpen } = useStore();
+  const { cart, changeQuantity, removeFromCart, prepareCheckout, checkout, user, setAuthOpen, freeShippingThreshold } = useStore();
   const [error, setError] = useState("");
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [summary, setSummary] = useState<CheckoutSummary | null>(null);
-  const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const subtotalCents = cart.reduce((sum, item) => sum + Math.round(item.price * 100) * item.quantity, 0);
+  const subtotal = subtotalCents / 100;
+  const thresholdCents = Math.round(freeShippingThreshold * 100);
+  const deliveryProgress = thresholdCents > 0 ? Math.min(100, subtotalCents / thresholdCents * 100) : 100;
+  const remainingForFreeDelivery = Math.max(0, thresholdCents - subtotalCents) / 100;
   const hasDeliveryAddress = (() => {
     try {
       return normalizeDeliveryAddress(user?.deliveryAddressJson ? JSON.parse(user.deliveryAddressJson) : null).ok;
@@ -252,6 +256,18 @@ function CartDrawer({ onClose }: { onClose: () => void }) {
           )}
         </div>
         <footer className="border-t border-neutral-200 p-6">
+          {!summary && cart.length > 0 && (
+            <div className="mb-5">
+              <p className="text-xs text-neutral-600">
+                {remainingForFreeDelivery > 0
+                  ? `Add R ${remainingForFreeDelivery.toFixed(2)} to unlock free nationwide delivery.`
+                  : "You have unlocked FREE nationwide delivery!"}
+              </p>
+              <div role="progressbar" aria-label="Free delivery progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(deliveryProgress)} className="mt-2 h-1.5 overflow-hidden rounded-full bg-neutral-200">
+                <div className="h-full rounded-full bg-neutral-950 transition-[width]" style={{ width: `${deliveryProgress}%` }} />
+              </div>
+            </div>
+          )}
           {summary ? <div className="space-y-2 text-sm"><div className="flex justify-between"><span>Subtotal</span><span>R {summary.subtotal.toFixed(2)}</span></div><div className="flex justify-between"><span>Delivery fee</span><span>R {summary.shipping_fee.toFixed(2)}</span></div><div className="flex justify-between border-t border-neutral-200 pt-3 text-base font-bold"><span>Total</span><span>R {summary.total.toFixed(2)}</span></div></div> : <><div className="flex justify-between text-base font-semibold"><span>Subtotal</span><span>R {subtotal.toFixed(2)}</span></div><p className="mt-2 text-xs text-neutral-500">The delivery fee and final total are shown before payment.</p></>}
           {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
           {summary ? (
@@ -406,13 +422,22 @@ export const Header = () => {
       <AnimatePresence>
         {mobileOpen && (
           <motion.div className="fixed inset-0 z-[70] bg-black/40 lg:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={() => setMobileOpen(false)}>
-            <motion.aside className="ml-auto flex h-full w-full max-w-sm flex-col bg-white p-6" initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} onMouseDown={(event) => event.stopPropagation()}>
+            <motion.aside className="ml-auto flex h-full w-full max-w-sm flex-col overflow-y-auto bg-white p-6" initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} onMouseDown={(event) => event.stopPropagation()}>
               <div className="mb-7 flex items-center justify-between">
                 <Link to="/" aria-label="Elovyn home" className="grid place-items-center overflow-hidden rounded-xl" style={{ width: siteSettings.logo_size, height: siteSettings.logo_size }}><img src={siteSettings.logo_url || defaultSiteSettings.logo_url} alt="" className="h-full w-full object-cover" style={{ objectPosition: `${siteSettings.logo_position_x}% ${siteSettings.logo_position_y}%` }} /></Link>
                 <button aria-label="Close menu" onClick={() => setMobileOpen(false)} className="rounded-full p-2 hover:bg-neutral-100"><X className="h-5 w-5" /></button>
               </div>
               <nav className="space-y-1">
                 {navItems.map((item) => <Link key={item.label} to={item.href} onClick={() => setMobileOpen(false)} className="block border-b border-neutral-200 py-4 text-sm font-semibold uppercase tracking-widest">{item.label}</Link>)}
+              </nav>
+              <nav aria-label="Customer care and legal" className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-neutral-200 pt-5 text-sm text-neutral-600">
+                <Link to="/contact" onClick={() => setMobileOpen(false)} className="hover:text-black">Contact us</Link>
+                <Link to="/faq" onClick={() => setMobileOpen(false)} className="hover:text-black">FAQ</Link>
+                <Link to="/shipping-policy" onClick={() => setMobileOpen(false)} className="hover:text-black">Shipping</Link>
+                <Link to="/returns-policy" onClick={() => setMobileOpen(false)} className="hover:text-black">Returns</Link>
+                <Link to="/orders/track" onClick={() => setMobileOpen(false)} className="hover:text-black">Track my order</Link>
+                <Link to="/terms" onClick={() => setMobileOpen(false)} className="hover:text-black">Terms</Link>
+                <Link to="/privacy-policy" onClick={() => setMobileOpen(false)} className="hover:text-black">Privacy</Link>
               </nav>
               <div className="mt-auto space-y-3">
                 {user && (

@@ -4,6 +4,7 @@ import { Check, ChevronRight, Star, Truck } from "lucide-react";
 import { Footer } from "@/components/Footer";
 import { Header } from "@/components/Header";
 import { useStore } from "@/lib/store";
+import { categoryPath } from "@/lib/categories";
 import { apiRequest } from "@/lib/store-api";
 import productFallback from "@/assets/CLOTHING.jpg";
 
@@ -79,7 +80,7 @@ function priceText(value: number) {
 
 export function ProductDetailPage() {
   const { productKey = "" } = useParams();
-  const { addToCart, setCartOpen, user, setAuthOpen } = useStore();
+  const { addToCart, setCartOpen, user, setAuthOpen, storefrontCategories } = useStore();
   const [data, setData] = useState<ProductDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -93,6 +94,7 @@ export function ProductDetailPage() {
   const [reviewComment, setReviewComment] = useState("");
   const [reviewError, setReviewError] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
 
   const loadReviews = async (key: string) => {
     const result = await apiRequest<ProductReviewsData>(`/products/${encodeURIComponent(key)}/reviews`);
@@ -214,6 +216,15 @@ export function ProductDetailPage() {
     };
   }, [data, displayPrice]);
 
+  useEffect(() => {
+    if (!sizeGuideOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSizeGuideOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [sizeGuideOpen]);
+
   function selectOption(name: string, value: string) {
     setSelectedValues((current) => ({ ...current, [name]: value }));
     setQuantity(1);
@@ -245,6 +256,16 @@ export function ProductDetailPage() {
     if (openCart) setCartOpen(true);
   }
 
+  const categoryParts = (data?.product.category || "").split(/[/>|]/)
+    .map((part) => part.trim().toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""));
+  const productCategoryLink = storefrontCategories.find((category) =>
+    categoryParts.includes(category.slug) || categoryParts.includes(category.name.toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")),
+  );
+  const showSizeGuide = Boolean(data && (
+    data.options.some((option) => /size/i.test(option.name))
+    || /hoodie|clothing|apparel|streetwear|t-shirt|shirt/i.test(data.product.category || "")
+  ));
+
   return (
     <div className="min-h-screen bg-[#f6f1ea] text-neutral-950">
       <Header />
@@ -252,7 +273,9 @@ export function ProductDetailPage() {
         <nav aria-label="Breadcrumb" className="mb-6 flex items-center gap-2 text-sm text-neutral-500">
           <Link to="/" className="hover:text-neutral-950">Home</Link>
           <ChevronRight className="h-4 w-4" />
-          <span>{data?.product.category || "Shop"}</span>
+          {data?.product.category && productCategoryLink
+            ? <Link to={categoryPath(productCategoryLink.slug)} className="hover:text-neutral-950">{productCategoryLink.name}</Link>
+            : <span>{data?.product.category || "Shop"}</span>}
           {data && <><ChevronRight className="h-4 w-4" /><span className="truncate text-neutral-900">{data.product.title}</span></>}
         </nav>
         {loading && <div className="grid min-h-96 place-items-center text-sm text-neutral-500">Loading product…</div>}
@@ -301,7 +324,10 @@ export function ProductDetailPage() {
                   const values = parseStringArray(option.values_json);
                   return (
                     <fieldset key={option.id}>
-                      <legend className="mb-2 text-sm font-semibold">{option.name}: <span className="font-normal text-neutral-600">{selectedValues[option.name]}</span></legend>
+                      <legend className="mb-2 flex w-full items-center justify-between gap-3 text-sm font-semibold">
+                        <span>{option.name}: <span className="font-normal text-neutral-600">{selectedValues[option.name]}</span></span>
+                        {/size/i.test(option.name) && showSizeGuide && <button type="button" onClick={() => setSizeGuideOpen(true)} className="text-xs font-medium text-neutral-600 underline">Size Guide</button>}
+                      </legend>
                       <div className="flex flex-wrap gap-2">
                         {values.map((value) => (
                           <button key={value} type="button" onClick={() => selectOption(option.name, value)}
@@ -349,10 +375,37 @@ export function ProductDetailPage() {
                 className="mt-3 w-full rounded-full bg-neutral-950 px-5 py-3 text-sm font-semibold text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50">Buy Now</button>
               <div className="mt-5 flex gap-3 border-t border-neutral-100 pt-4 text-sm text-neutral-600">
                 <Truck className="h-5 w-5 shrink-0" />
-                <p>Delivery availability and fees are confirmed once your delivery address is available.</p>
+                <p>Estimated South African delivery: 7-14 business days after processing, with tracked courier delivery. Final delivery fees are shown before payment.</p>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2 text-[11px] text-neutral-600">
+                <span className="rounded-full bg-neutral-100 px-3 py-1.5">Secure Yoco checkout</span>
+                <span className="rounded-full bg-neutral-100 px-3 py-1.5">7-day returns on eligible items</span>
+                <span className="rounded-full bg-neutral-100 px-3 py-1.5">Nationwide SA delivery</span>
               </div>
             </aside>
           </section>
+          {showSizeGuide && sizeGuideOpen && (
+            <div className="fixed inset-0 z-[100] grid place-items-center bg-black/45 p-4" onMouseDown={() => setSizeGuideOpen(false)}>
+              <section role="dialog" aria-modal="true" aria-labelledby="size-guide-title" className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl sm:p-8" onMouseDown={(event) => event.stopPropagation()}>
+                <div className="flex items-start justify-between gap-4">
+                  <div><p className="eyebrow">Fit reference</p><h2 id="size-guide-title" className="mt-2 text-2xl font-bold">Size guide</h2></div>
+                  <button type="button" onClick={() => setSizeGuideOpen(false)} aria-label="Close size guide" className="rounded-full px-3 py-1 text-neutral-600 hover:bg-neutral-100">Close</button>
+                </div>
+                <p className="mt-3 text-sm leading-6 text-neutral-600">General international garment reference in centimetres. Measurements and fit vary by item; use any product-specific sizing details first.</p>
+                <div className="mt-5 overflow-x-auto">
+                  <table className="w-full min-w-[560px] border-collapse text-left text-sm">
+                    <thead><tr className="border-b border-neutral-200 text-xs uppercase tracking-wider text-neutral-500"><th className="py-3 pr-4">Size</th><th className="py-3 pr-4">Chest (cm)</th><th className="py-3 pr-4">Length (cm)</th><th className="py-3 pr-4">Shoulder (cm)</th><th className="py-3">Waist (cm)</th></tr></thead>
+                    <tbody className="divide-y divide-neutral-100">
+                      {[["XS", "84-88", "62", "38-40", "68-72"], ["S", "88-92", "64", "40-42", "72-76"], ["M", "92-100", "66", "42-44", "76-84"], ["L", "100-108", "69", "44-46", "84-92"], ["XL", "108-116", "72", "46-48", "92-100"], ["2XL", "116-124", "75", "48-50", "100-108"]].map((row) => (
+                        <tr key={row[0]}><th className="py-3 pr-4 font-semibold">{row[0]}</th>{row.slice(1).map((value, index) => <td key={`${row[0]}-${index}`} className="py-3 pr-4 text-neutral-600">{value}</td>)}</tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="mt-5 rounded-xl bg-neutral-50 p-4 text-sm leading-6 text-neutral-600">Fit advisory: measure over light clothing and compare with the product details. If you are between sizes, consider the fit you prefer and contact us if you need help.</p>
+              </section>
+            </div>
+          )}
           <section className="mt-14 border-t border-neutral-200 pt-10">
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div><p className="eyebrow">Customer reviews</p><h2 className="mt-2 text-2xl font-bold">Reviews for {data.product.title}</h2></div>

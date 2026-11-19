@@ -13,6 +13,7 @@ import { AdminNotificationBell } from "@/components/AdminNotificationBell";
 import { AdminReviewsPanel } from "@/components/AdminReviewsPanel";
 import { EditorialBannerEditor } from "@/components/EditorialBannerEditor";
 import { StorefrontFeatureEditor } from "@/components/StorefrontFeatureEditor";
+import { FreeShippingEditor } from "@/components/FreeShippingEditor";
 import defaultHeroImage from "@/assets/Front Page.png";
 
 type Product = {
@@ -456,7 +457,7 @@ export function AdminPage() {
 
           {tab === "imports" && <ImportProductsPanel suppliers={suppliers} onImported={() => void Promise.all([loadData(), refreshProducts()])} />}
           {tab === "reviews" && <AdminReviewsPanel />}
-          {tab === "site-settings" && <><WebsiteContentPanel settings={siteSettings} onSaved={applySiteSettings} /><EditorialBannerEditor /><StorefrontFeatureEditor /></>}
+          {tab === "site-settings" && <><WebsiteContentPanel settings={siteSettings} onSaved={applySiteSettings} /><EditorialBannerEditor /><StorefrontFeatureEditor /><FreeShippingEditor /></>}
         </main>
       </div>
       {addOpen && <AddProductDialog onClose={() => setAddOpen(false)} onCreated={(product) => { setAddOpen(false); applyProduct(product); void Promise.all([loadData(), refreshProducts()]).catch((error: Error) => toast.error(`Product saved, but inventory refresh failed: ${error.message}`)); }} />}

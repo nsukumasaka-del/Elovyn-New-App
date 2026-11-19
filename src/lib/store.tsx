@@ -13,6 +13,7 @@ import type { DeliveryAddress } from "@/lib/delivery-address";
 import { defaultSiteSettings, type SiteSettings } from "@/lib/site-settings";
 import { defaultCategories, type StorefrontCategory } from "@/lib/categories";
 import { defaultDualFeatureCards, type DualFeatureCard } from "@/lib/dual-feature-cards";
+import { DEFAULT_FREE_SHIPPING_THRESHOLD_CENTS } from "@/lib/checkout";
 
 export type { CartProduct, StoreUser } from "@/lib/store-api";
 export type { DeliveryAddress } from "@/lib/delivery-address";
@@ -35,6 +36,7 @@ export type StoreProduct = {
   category: string | null;
   image_url: string | null;
   images_json: string;
+  variant_values?: string[];
   updated_at: string;
   is_listed: boolean;
 };
@@ -50,6 +52,7 @@ type StoreContextValue = {
   siteSettings: SiteSettings;
   storefrontCategories: StorefrontCategory[];
   dualFeatureCards: DualFeatureCard[];
+  freeShippingThreshold: number;
   refreshStorefrontConfig: () => Promise<void>;
   refreshSiteSettings: () => Promise<void>;
   applySiteSettings: (settings: SiteSettings) => void;
@@ -114,6 +117,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [siteSettings, setSiteSettings] = useState<SiteSettings>(defaultSiteSettings);
   const [storefrontCategories, setStorefrontCategories] = useState<StorefrontCategory[]>(defaultCategories);
   const [dualFeatureCards, setDualFeatureCards] = useState<DualFeatureCard[]>(defaultDualFeatureCards);
+  const [freeShippingThreshold, setFreeShippingThreshold] = useState(DEFAULT_FREE_SHIPPING_THRESHOLD_CENTS / 100);
   const [cart, setCart] = useState<CartLine[]>(readStoredCart);
   const [wishlist, setWishlist] = useState<string[]>(readWishlist);
   const [cartOpen, setCartOpen] = useState(false);
@@ -159,9 +163,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [applySiteSettings]);
 
   const refreshStorefrontConfig = useCallback(async () => {
-    const config = await request<{ categories: StorefrontCategory[]; dualFeatureCards: DualFeatureCard[] }>("/storefront-config");
+    const config = await request<{
+      categories: StorefrontCategory[];
+      dualFeatureCards: DualFeatureCard[];
+      freeShippingThreshold: number;
+    }>("/storefront-config");
     setStorefrontCategories(config.categories?.length ? config.categories : defaultCategories);
     setDualFeatureCards(config.dualFeatureCards?.length === 2 ? config.dualFeatureCards : defaultDualFeatureCards);
+    setFreeShippingThreshold(Number.isFinite(config.freeShippingThreshold) && config.freeShippingThreshold >= 0
+      ? config.freeShippingThreshold
+      : DEFAULT_FREE_SHIPPING_THRESHOLD_CENTS / 100);
   }, []);
 
   useEffect(() => {
@@ -358,11 +369,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [cart, user]);
 
   const value = useMemo(() => ({
-    user, ready, connectionError, retryConnection, products, refreshProducts, applyProduct, siteSettings, refreshSiteSettings, applySiteSettings, storefrontCategories, dualFeatureCards, refreshStorefrontConfig, cart, wishlist, cartOpen, setCartOpen, authOpen, setAuthOpen,
+    user, ready, connectionError, retryConnection, products, refreshProducts, applyProduct, siteSettings, refreshSiteSettings, applySiteSettings, storefrontCategories, dualFeatureCards, freeShippingThreshold, refreshStorefrontConfig, cart, wishlist, cartOpen, setCartOpen, authOpen, setAuthOpen,
     authMode, setAuthMode, addToCart, changeQuantity, removeFromCart, clearCart,
     toggleWishlist, signIn, signUp, signOut, saveDeliveryAddress, prepareCheckout, checkout,
   }), [
-    user, ready, connectionError, retryConnection, products, refreshProducts, applyProduct, siteSettings, refreshSiteSettings, applySiteSettings, storefrontCategories, dualFeatureCards, refreshStorefrontConfig, cart, wishlist, cartOpen, authOpen, authMode, addToCart,
+    user, ready, connectionError, retryConnection, products, refreshProducts, applyProduct, siteSettings, refreshSiteSettings, applySiteSettings, storefrontCategories, dualFeatureCards, freeShippingThreshold, refreshStorefrontConfig, cart, wishlist, cartOpen, authOpen, authMode, addToCart,
     changeQuantity, removeFromCart, clearCart, toggleWishlist, signIn, signUp, signOut, saveDeliveryAddress, prepareCheckout, checkout,
   ]);
 

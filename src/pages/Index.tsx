@@ -9,6 +9,7 @@ import { Community } from "@/components/Community";
 import { CTA } from "@/components/CTA";
 import { Footer } from "@/components/Footer";
 import { Link } from "react-router-dom";
+import { ProductCardImage } from "@/components/ProductCardImage";
 import { categoryPath, productMatchesCategory } from "@/lib/categories";
 import clothingImage from "@/assets/CLOTHING.jpg";
 import hoodieImage from "@/assets/Hoodie.png";
@@ -197,9 +198,9 @@ const Index = () => {
               <h2 className="section-heading mt-3">Just added</h2>
               <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
                 {newProducts.map((product) => (
-                  <article key={product.id} id={`product-${product.id}`} className="product-card overflow-hidden">
-                    <Link to={`/products/${product.id}`} aria-label={`View ${product.title}`} className="block">
-                      <img src={product.image_url || clothingImage} alt={product.title} className="aspect-[4/5] w-full object-cover" />
+                  <article key={product.id} id={`product-${product.id}`} className="product-card group overflow-hidden">
+                    <Link to={`/products/${product.id}`} aria-label={`View ${product.title}`} className="block aspect-[4/5] overflow-hidden">
+                      <ProductCardImage imageUrl={product.image_url} imagesJson={product.images_json} alt={product.title} fallback={clothingImage} />
                     </Link>
                     <div className="space-y-3 p-5">
                       <p className="text-xs uppercase tracking-wider text-neutral-500">{product.category}</p>

@@ -67,6 +67,18 @@ export const storeSettings = sqliteTable("store_settings", {
   updatedAt: text("updated_at"),
 });
 
+export const contactMessages = sqliteTable("contact_messages", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  orderNumber: text("order_number"),
+  subject: text("subject").notNull(),
+  message: text("message").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  index("contact_messages_created_at_idx").on(table.createdAt),
+]);
+
 export const products = sqliteTable("products", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),

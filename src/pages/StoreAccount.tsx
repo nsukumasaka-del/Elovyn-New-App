@@ -8,6 +8,7 @@ import { useStore } from "@/lib/store";
 import { toast } from "sonner";
 import { normalizeDeliveryAddress, normalizeSouthAfricanMobilePhone, type DeliveryAddress } from "@/lib/delivery-address";
 import { SiteReviewPrompt } from "@/components/SiteReviews";
+import { ProductCardImage } from "@/components/ProductCardImage";
 
 const emptyDeliveryAddress: DeliveryAddress = {
   recipientName: "", phone: "", addressLine1: "", addressLine2: "", suburb: "", city: "", province: "", postalCode: "", country: "South Africa",
@@ -38,8 +39,10 @@ export function WishlistPage() {
         ) : (
           <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {products.map((product) => (
-              <article key={product.id} className="product-card overflow-hidden">
-                <img src={product.imageUrl} alt={product.title} className="aspect-[4/5] w-full object-cover" />
+              <article key={product.id} className="product-card group overflow-hidden">
+                <div className="aspect-[4/5] overflow-hidden">
+                  <ProductCardImage imageUrl={product.imageUrl} imagesJson={product.imagesJson ?? "[]"} alt={product.title} fallback={product.imageUrl} />
+                </div>
                 <div className="space-y-3 p-5">
                   <h2 className="font-semibold">{product.title}</h2>
                   <p className="text-sm">R {product.price.toFixed(2)}</p>
