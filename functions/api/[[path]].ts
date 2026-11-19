@@ -876,7 +876,7 @@ async function processOrderPaid(
   const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
   if (!order) return { ok: false, error: "Order not found" };
 
-  if (["Paid", "Completed", "Fulfilled"].includes(order.status)) {
+  if (["Paid", "Completed", "Fulfilled", "Shipped", "Delivered"].includes(order.status)) {
     return { ok: true, alreadyPaid: true, orderId: order.id, orderNumber: order.orderNumber };
   }
 
@@ -901,9 +901,17 @@ async function processOrderPaid(
 
   if (!stockAvailable) {
     const now = currentTimestamp();
-    await env.DB!.prepare(
-      "UPDATE orders SET status = 'Payment Review', payment_id = ?, paid_at = ?, updated_at = ? WHERE id = ?"
+    const reviewResult = await env.DB!.prepare(
+      "UPDATE orders SET status = 'Payment Review', payment_id = ?, paid_at = ?, updated_at = ? WHERE id = ? AND LOWER(status) NOT IN ('paid', 'completed', 'fulfilled', 'shipped', 'delivered')"
     ).bind(paymentId, now, now, order.id).run();
+    if (reviewResult.meta.changes !== 1) {
+      const [currentOrder] = await db.select({
+        id: orders.id,
+        orderNumber: orders.orderNumber,
+      }).from(orders).where(eq(orders.id, order.id)).limit(1);
+      if (!currentOrder) return { ok: false, error: "Order not found" };
+      return { ok: true, alreadyPaid: true, orderId: currentOrder.id, orderNumber: currentOrder.orderNumber };
+    }
     return { ok: true, review: true, orderId: order.id };
   }
 
@@ -922,6 +930,37 @@ async function processOrderPaid(
 
   const statements: D1PreparedStatement[] = [];
   const paidAt = currentTimestamp();
+  const claimResult = await env.DB!.prepare(`
+    UPDATE orders SET
+      status = 'Paid',
+      order_number = COALESCE(order_number, ?),
+      customer_email = COALESCE(customer_email, ?),
+      customer_name = COALESCE(customer_name, ?),
+      payment_id = COALESCE(?, payment_id),
+      yoco_checkout_id = COALESCE(?, yoco_checkout_id),
+      paid_at = COALESCE(paid_at, ?),
+      updated_at = ?
+    WHERE id = ?
+      AND LOWER(status) NOT IN ('paid', 'completed', 'fulfilled', 'shipped', 'delivered')
+  `).bind(
+    orderNumber,
+    customerEmail,
+    customerName,
+    paymentId,
+    order.yocoCheckoutId ?? order.paymentReference,
+    paidAt,
+    paidAt,
+    order.id,
+  ).run();
+
+  if (claimResult.meta.changes !== 1) {
+    const [currentOrder] = await db.select({
+      id: orders.id,
+      orderNumber: orders.orderNumber,
+    }).from(orders).where(eq(orders.id, order.id)).limit(1);
+    if (!currentOrder) return { ok: false, error: "Order not found" };
+    return { ok: true, alreadyPaid: true, orderId: currentOrder.id, orderNumber: currentOrder.orderNumber };
+  }
 
   for (const item of items) {
     statements.push(env.DB!.prepare(
@@ -936,18 +975,6 @@ async function processOrderPaid(
                     ELSE 'In Stock' END,
       updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(productId, productId, productId, productId));
   }
-
-  statements.push(env.DB!.prepare(`
-    UPDATE orders SET
-      status = 'Paid',
-      order_number = COALESCE(order_number, ?),
-      customer_email = COALESCE(customer_email, ?),
-      customer_name = COALESCE(customer_name, ?),
-      payment_id = ?,
-      paid_at = ?,
-      updated_at = ?
-    WHERE id = ?
-  `).bind(orderNumber, customerEmail, customerName, paymentId, paidAt, paidAt, order.id));
 
   statements.push(env.DB!.prepare("DELETE FROM carts WHERE user_id = ?").bind(order.userId));
 
@@ -2166,7 +2193,7 @@ async function route(
     const [processed] = await db.select({ id: paymentWebhookEvents.id }).from(paymentWebhookEvents).where(eq(paymentWebhookEvents.id, webhookId)).limit(1);
     if (processed) return json({ received: true, duplicate: true });
     if (checkoutId && order.paymentReference && checkoutId !== order.paymentReference) throw new ApiError("Yoco checkout reference does not match the order.", 409);
-    const eventStatement = env.DB!.prepare("INSERT INTO payment_webhook_events (id, provider, event_type) VALUES (?, 'yoco', ?)").bind(webhookId, eventType);
+    const eventStatement = env.DB!.prepare("INSERT OR IGNORE INTO payment_webhook_events (id, provider, event_type) VALUES (?, 'yoco', ?)").bind(webhookId, eventType);
     if (eventType === "payment.succeeded") {
       const amount = Number(payload.amount);
       const currency = payload.currency;
