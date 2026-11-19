@@ -23,6 +23,8 @@ export type AdminOrder = {
   delivery_address_json: string | null;
   shipping_fee: number | string;
   payment_provider: string | null;
+  payment_mode?: "live" | "test";
+  paymentMode?: "live" | "test";
   payment_reference: string | null;
   payment_id: string | null;
   paid_at: string | null;
@@ -43,7 +45,9 @@ type AdminOrderLineItem = {
 };
 
 function isExportableOrder(order: AdminOrder) {
-  return ["Paid", "Completed", "Fulfilled"].includes(order.status) && order.fulfillment_status === "processing";
+  return order.payment_mode !== "test" && order.paymentMode !== "test"
+    && ["Paid", "Completed", "Fulfilled"].includes(order.status)
+    && order.fulfillment_status === "processing";
 }
 
 export function AdminOrdersPanel({ selectedOrderId, onClearSelectedOrder }: { selectedOrderId?: string | null; onClearSelectedOrder?: () => void }) {
@@ -389,6 +393,7 @@ export function AdminOrdersPanel({ selectedOrderId, onClearSelectedOrder }: { se
                       </td>
                       <td className="px-5 py-4 font-bold text-neutral-900">
                         {order.order_number || <span className="font-mono text-xs text-neutral-500">{order.id.slice(0, 8)}…</span>}
+                        {(order.payment_mode === "test" || order.paymentMode === "test") && <span className="ml-2 inline-flex rounded-full bg-orange-100 px-2 py-0.5 align-middle text-[10px] font-bold tracking-wide text-orange-800">TEST</span>}
                       </td>
                       <td className="px-4 py-4 text-xs text-neutral-500 whitespace-nowrap">
                         {new Date(order.created_at).toLocaleDateString(undefined, {
@@ -443,6 +448,7 @@ export function AdminOrdersPanel({ selectedOrderId, onClearSelectedOrder }: { se
               </h2>
               {getFulfillmentBadge(activeOrder.fulfillment_status)}
               {getPaymentBadge(activeOrder.status)}
+              {(activeOrder.payment_mode === "test" || activeOrder.paymentMode === "test") && <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-bold tracking-wide text-orange-800">TEST</span>}
             </div>
             <p className="mt-1 text-xs text-neutral-400">
               Placed {new Date(activeOrder.created_at).toLocaleString()} · ID: {activeOrder.id}

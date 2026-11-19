@@ -178,7 +178,7 @@ function CartDrawer({ onClose }: { onClose: () => void }) {
       return;
     }
     setCheckoutLoading(true);
-    try { await checkout(summary!.total); }
+    try { await checkout(summary!.total, summary!.yocoMode); }
     catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not open the payment gateway.");
       setCheckoutLoading(false);
@@ -207,6 +207,11 @@ function CartDrawer({ onClose }: { onClose: () => void }) {
           {summary ? (
             <div className="py-6">
               <button type="button" onClick={() => { setSummary(null); setError(""); }} className="text-sm font-medium underline">← Back to bag</button>
+              {summary.yocoMode === "test" && (
+                <div role="status" className="mt-4 rounded-xl border border-amber-300 bg-amber-100 p-3 text-sm font-semibold text-amber-950">
+                  Test mode is active. This checkout uses test cards; no real payment will be collected.
+                </div>
+              )}
               <ul className="mt-4 divide-y divide-neutral-200">
                 {summary.items.map((item) => (
                   <li key={item.variant_id} className="flex justify-between gap-4 py-4 text-sm">
@@ -283,7 +288,7 @@ function CartDrawer({ onClose }: { onClose: () => void }) {
               Sign in to continue
             </button>
           )}
-          <p className="mt-3 text-center text-xs text-neutral-500">Secure test checkout powered by Yoco. No live payment will be collected.</p>
+          <p className="mt-3 text-center text-xs text-neutral-500">{summary ? `Secure ${summary.yocoMode} checkout powered by Yoco.` : "Secure checkout powered by Yoco."}</p>
         </footer>
       </aside>
     </div>

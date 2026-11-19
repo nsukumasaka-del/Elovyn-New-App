@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Navigate, Link } from "react-router-dom";
-import { ArrowDownToLine, Boxes, ImageIcon, LayoutDashboard, PackagePlus, Pencil, Plus, Search, Settings2, ShoppingCart, Sparkles, Trash2, Upload, X } from "lucide-react";
+import { ArrowDownToLine, Boxes, CreditCard, ImageIcon, LayoutDashboard, PackagePlus, Pencil, Plus, Search, Settings2, ShoppingCart, Sparkles, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest, isPrimaryAdmin, type StoreUser } from "@/lib/store-api";
 import { useStore, type StoreProduct } from "@/lib/store";
@@ -71,18 +71,23 @@ const customSupplierPresets = {
 const tabs = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "orders", label: "Orders", icon: ShoppingCart },
+  { id: "payments", label: "Payments", icon: CreditCard },
   { id: "inventory", label: "Inventory", icon: Boxes },
   { id: "suppliers", label: "Suppliers", icon: Settings2 },
   { id: "imports", label: "Import products", icon: Upload },
   { id: "site-settings", label: "Site Settings", icon: ImageIcon },
 ] as const;
 type Tab = typeof tabs[number]["id"];
+type YocoMode = "live" | "test";
+type YocoModeStatus = { mode: YocoMode; liveConfigured: boolean; testConfigured: boolean };
 
 export function AdminPage() {
   const { user, ready, refreshProducts, applyProduct, siteSettings, applySiteSettings } = useStore();
   const [verifiedUser, setVerifiedUser] = useState<StoreUser | null>(null);
   const [checking, setChecking] = useState(true);
   const [tab, setTab] = useState<Tab>("overview");
+  const [yocoMode, setYocoMode] = useState<YocoMode>("live");
+  const [yocoConfigured, setYocoConfigured] = useState({ liveConfigured: false, testConfigured: false });
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [stats, setStats] = useState<Stats>({ total_sales: 0, order_count: 0, product_count: 0 });
@@ -150,6 +155,19 @@ export function AdminPage() {
     if (!isPrimaryAdmin(verifiedUser)) return;
     loadData().catch((error: Error) => toast.error(`Could not load admin data: ${error.message}`));
   }, [loadData, verifiedUser]);
+
+  useEffect(() => {
+    if (!isPrimaryAdmin(verifiedUser)) return;
+    let active = true;
+    apiRequest<YocoModeStatus>("/admin/yoco-mode")
+      .then((status) => {
+        if (!active) return;
+        setYocoMode(status.mode);
+        setYocoConfigured({ liveConfigured: status.liveConfigured, testConfigured: status.testConfigured });
+      })
+      .catch((error: Error) => toast.error(`Could not load Yoco payment mode: ${error.message}`));
+    return () => { active = false; };
+  }, [verifiedUser]);
 
   if (checking || !ready) return <div className="grid min-h-screen place-items-center text-sm text-neutral-500">Checking administrator access…</div>;
   if (!verifiedUser || !user) return <Navigate to="/login" replace />;
@@ -289,6 +307,11 @@ export function AdminPage() {
 
   return (
     <div className="min-h-screen bg-[#f6f7f8] text-neutral-950">
+      {yocoMode === "test" && (
+        <div role="alert" className="bg-amber-500 px-4 py-3 text-center text-sm font-extrabold tracking-wide text-amber-950">
+          YOCO TEST MODE ACTIVE — Test cards only; real payments are disabled
+        </div>
+      )}
       <header className="flex h-16 items-center justify-between border-b border-neutral-200 bg-white px-5 lg:px-8">
         <Link to="/" className="flex items-center gap-3 font-semibold"><span className="grid h-9 w-9 place-items-center overflow-hidden rounded-lg"><img src={siteSettings.logo_url || defaultSiteSettings.logo_url} alt="" className="h-full w-full object-cover" style={{ objectPosition: `${siteSettings.logo_position_x}% ${siteSettings.logo_position_y}%` }} /></span> Elovyn Admin</Link>
         <div className="flex items-center gap-4 text-sm">
@@ -345,6 +368,14 @@ export function AdminPage() {
             <AdminOrdersPanel
               selectedOrderId={selectedOrderId}
               onClearSelectedOrder={() => setSelectedOrderId(null)}
+            />
+          )}
+
+          {tab === "payments" && (
+            <YocoPaymentsPanel
+              mode={yocoMode}
+              configured={yocoConfigured}
+              onModeChange={setYocoMode}
             />
           )}
 
@@ -436,6 +467,81 @@ const siteImageFields = [
   { key: "hero_image_url", label: "Hero background", help: "The large image at the top of the home page." },
   { key: "promotional_banner_image_url", label: "Promotional image", help: "Saved for promotional content sections." },
 ] as const;
+
+function YocoPaymentsPanel({
+  mode,
+  configured,
+  onModeChange,
+}: {
+  mode: YocoMode;
+  configured: { liveConfigured: boolean; testConfigured: boolean };
+  onModeChange: (mode: YocoMode) => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function switchMode(nextMode: YocoMode) {
+    if (nextMode === mode) return;
+    if (!window.confirm(`Switch Yoco payments to ${nextMode.toUpperCase()} mode? ${nextMode === "live" ? "Customers will be charged real money." : "Only test cards will work; real payments will be disabled."}`)) return;
+    setSaving(true);
+    setError("");
+    try {
+      const result = await apiRequest<{ mode: YocoMode }>("/admin/yoco-mode", {
+        method: "PUT",
+        body: JSON.stringify({ mode: nextMode }),
+      });
+      onModeChange(result.mode);
+      toast.success(`Yoco ${result.mode} mode is now active.`);
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : "Could not switch Yoco payment mode.";
+      setError(message);
+      toast.error(message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const configuredBadge = (isConfigured: boolean) => (
+    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${isConfigured ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
+      {isConfigured ? "Configured ✓" : "Missing ✗"}
+    </span>
+  );
+
+  return (
+    <section className="max-w-3xl rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+      <p className="eyebrow">Payments</p>
+      <h2 className="mt-2 text-xl font-bold">Yoco Payment Mode</h2>
+      <p className="mt-2 text-sm text-neutral-600">Choose whether new checkouts use Live or Test credentials. Secret keys remain in Cloudflare Pages environment variables and are never sent to this page.</p>
+      <div className="mt-6 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 p-4">
+          <div>
+            <p className="font-semibold">Live key pair</p>
+            <p className="mt-1 text-xs text-neutral-500">YOCO_LIVE_PUBLIC_KEY + YOCO_LIVE_SECRET_KEY</p>
+          </div>
+          {configuredBadge(configured.liveConfigured)}
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 p-4">
+          <div>
+            <p className="font-semibold">Test key pair</p>
+            <p className="mt-1 text-xs text-neutral-500">YOCO_TEST_PUBLIC_KEY + YOCO_TEST_SECRET_KEY</p>
+          </div>
+          {configuredBadge(configured.testConfigured)}
+        </div>
+      </div>
+      <div className="mt-6 flex flex-wrap items-center gap-3">
+        <button type="button" disabled={saving || !configured.liveConfigured} onClick={() => void switchMode("live")} className={`rounded-xl px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${mode === "live" ? "bg-emerald-700 text-white" : "border border-neutral-300 hover:bg-neutral-50"}`}>
+          Live Mode{mode === "live" ? " · Active" : ""}
+        </button>
+        <button type="button" disabled={saving || !configured.testConfigured} onClick={() => void switchMode("test")} className={`rounded-xl px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${mode === "test" ? "bg-amber-500 text-amber-950" : "border border-neutral-300 hover:bg-neutral-50"}`}>
+          Test Mode{mode === "test" ? " · Active" : ""}
+        </button>
+        {saving && <span className="text-sm text-neutral-500">Updating payment mode…</span>}
+      </div>
+      {error && <p role="alert" className="mt-4 text-sm text-red-700">{error}</p>}
+      {mode === "test" && <div role="status" className="mt-5 rounded-xl border border-amber-300 bg-amber-100 p-4 text-sm font-semibold text-amber-950">Test mode is active. New checkouts accept test cards only; real payments are disabled.</div>}
+    </section>
+  );
+}
 
 function WebsiteContentPanel({ settings, onSaved }: { settings: SiteSettings; onSaved: (settings: SiteSettings) => void | Promise<void> }) {
   const [form, setForm] = useState<SiteSettings>(() => ({ ...defaultSiteSettings, ...settings }));

@@ -12,6 +12,7 @@ import {
   pricingSettings,
   products,
   siteSettings,
+  storeSettings,
   supplierIntegrations,
   supplierSyncHistory,
   users,
@@ -63,8 +64,15 @@ export interface Env {
   RESEND_API_KEY?: string;
   RESEND_FROM_EMAIL?: string;
   JWT_SECRET?: string;
+  YOCO_LIVE_PUBLIC_KEY?: string;
+  YOCO_LIVE_SECRET_KEY?: string;
   YOCO_TEST_PUBLIC_KEY?: string;
   YOCO_TEST_SECRET_KEY?: string;
+  YOCO_LIVE_WEBHOOK_SECRET?: string;
+  YOCO_TEST_WEBHOOK_SECRET?: string;
+  YOCO_WEBHOOK_SECRET?: string;
+  YOCO_PUBLIC_KEY?: string;
+  YOCO_SECRET_KEY?: string;
   GEMINI_API_KEY?: string;
 }
 
@@ -1609,18 +1617,67 @@ async function decryptSecret(value: string, secret: string) {
   } catch { throw new ApiError("Saved supplier credential could not be decrypted.", 500); }
 }
 
-async function ensureYocoWebhook(env: Env, db: ReturnType<typeof createDb>, origin: string) {
-  if (!env.YOCO_TEST_SECRET_KEY) throw new ApiError("Yoco test payments are not configured.", 503);
-  const [saved] = await db.select().from(paymentProviderSettings).where(eq(paymentProviderSettings.provider, "yoco")).limit(1);
-  if (saved?.encryptedWebhookSecret) {
-    return decryptSecret(saved.encryptedWebhookSecret, env.SUPPLIER_SECRET_ENCRYPTION_KEY);
+type YocoMode = "live" | "test";
+
+async function getYocoMode(db: ReturnType<typeof createDb>): Promise<YocoMode> {
+  const [setting] = await db.select({ value: storeSettings.value })
+    .from(storeSettings)
+    .where(eq(storeSettings.key, "yoco_mode"))
+    .limit(1);
+  return setting?.value === "test" ? "test" : "live";
+}
+
+async function getYocoConfig(env: Env, db: ReturnType<typeof createDb>, requestedMode?: YocoMode) {
+  const mode = requestedMode ?? await getYocoMode(db);
+  const publicKey = mode === "test"
+    ? env.YOCO_TEST_PUBLIC_KEY
+    : env.YOCO_LIVE_PUBLIC_KEY || env.YOCO_PUBLIC_KEY;
+  const secretKey = mode === "test"
+    ? env.YOCO_TEST_SECRET_KEY
+    : env.YOCO_LIVE_SECRET_KEY || env.YOCO_SECRET_KEY;
+  if (!secretKey) throw new ApiError(`Yoco ${mode} payments are not configured. Add the ${mode.toUpperCase()} secret key in Cloudflare Pages environment variables.`, 503);
+
+  let webhookSecret = mode === "test"
+    ? env.YOCO_TEST_WEBHOOK_SECRET || env.YOCO_WEBHOOK_SECRET
+    : env.YOCO_LIVE_WEBHOOK_SECRET || env.YOCO_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    const provider = `yoco_${mode}`;
+    const [saved] = await db.select().from(paymentProviderSettings)
+      .where(eq(paymentProviderSettings.provider, provider))
+      .limit(1);
+    if (saved?.encryptedWebhookSecret) {
+      webhookSecret = await decryptSecret(saved.encryptedWebhookSecret, env.SUPPLIER_SECRET_ENCRYPTION_KEY);
+    } else if (mode === "test") {
+      const [legacy] = await db.select().from(paymentProviderSettings)
+        .where(eq(paymentProviderSettings.provider, "yoco"))
+        .limit(1);
+      if (legacy?.encryptedWebhookSecret) {
+        webhookSecret = await decryptSecret(legacy.encryptedWebhookSecret, env.SUPPLIER_SECRET_ENCRYPTION_KEY);
+      }
+    }
   }
+  return { mode, publicKey, secretKey, webhookSecret };
+}
+
+async function ensureYocoWebhook(
+  env: Env,
+  db: ReturnType<typeof createDb>,
+  origin: string,
+  config: Awaited<ReturnType<typeof getYocoConfig>>,
+) {
+  const provider = `yoco_${config.mode}`;
+  const [saved] = await db.select().from(paymentProviderSettings)
+    .where(eq(paymentProviderSettings.provider, provider))
+    .limit(1);
+  if (saved?.encryptedWebhookSecret) return;
+  if (config.webhookSecret) return;
+
   let registered: Awaited<ReturnType<typeof registerYocoWebhook>>;
-  try { registered = await registerYocoWebhook(env.YOCO_TEST_SECRET_KEY, `${origin}/api/payments/yoco/webhook`); }
+  try { registered = await registerYocoWebhook(config.secretKey, `${origin}/api/payments/yoco/webhook`); }
   catch (error) { throw new ApiError(errorMessage(error), 502); }
   const encryptedWebhookSecret = await encryptSecret(registered.secret, env.SUPPLIER_SECRET_ENCRYPTION_KEY);
   await db.insert(paymentProviderSettings).values({
-    provider: "yoco",
+    provider,
     mode: registered.mode,
     webhookId: registered.id,
     encryptedWebhookSecret,
@@ -1628,7 +1685,6 @@ async function ensureYocoWebhook(env: Env, db: ReturnType<typeof createDb>, orig
     target: paymentProviderSettings.provider,
     set: { mode: registered.mode, webhookId: registered.id, encryptedWebhookSecret, updatedAt: sql`CURRENT_TIMESTAMP` },
   });
-  return registered.secret;
 }
 
 type CheckoutItem = {
@@ -2012,8 +2068,43 @@ async function route(
     return json({ ok: true, database: "connected" });
   }
 
-  if (path === "/payments/status" && method === "GET") {
-    return json({ provider: "yoco", enabled: Boolean(env.YOCO_TEST_PUBLIC_KEY && env.YOCO_TEST_SECRET_KEY), mode: "test" });
+  if ((path === "/payments/config" || path === "/payments/status") && method === "GET") {
+    const config = await getYocoConfig(env, db);
+    return json({
+      ...(path === "/payments/status" ? { provider: "yoco", enabled: Boolean(config.publicKey) } : {}),
+      yocoMode: config.mode,
+      yocoPublicKey: config.publicKey ?? null,
+    }, 200, { "Cache-Control": "no-store" });
+  }
+
+  if (path === "/admin/yoco-mode" && method === "GET") {
+    await requireAdmin(db, request, env);
+    const mode = await getYocoMode(db);
+    return json({
+      mode,
+      liveConfigured: Boolean(env.YOCO_LIVE_SECRET_KEY && env.YOCO_LIVE_PUBLIC_KEY),
+      testConfigured: Boolean(env.YOCO_TEST_SECRET_KEY && env.YOCO_TEST_PUBLIC_KEY),
+    }, 200, { "Cache-Control": "no-store" });
+  }
+
+  if (path === "/admin/yoco-mode" && method === "PUT") {
+    await requireAdmin(db, request, env);
+    const body = await bodyAsJson(request);
+    if (body.mode !== "live" && body.mode !== "test") {
+      throw new ApiError("Payment mode must be 'live' or 'test'.", 400);
+    }
+    const mode = body.mode as YocoMode;
+    const configured = mode === "live"
+      ? Boolean(env.YOCO_LIVE_SECRET_KEY && env.YOCO_LIVE_PUBLIC_KEY)
+      : Boolean(env.YOCO_TEST_SECRET_KEY && env.YOCO_TEST_PUBLIC_KEY);
+    if (!configured) throw new ApiError(`Yoco ${mode} mode cannot be enabled because its public and secret keys are not configured.`, 400);
+    const updatedAt = currentTimestamp();
+    await db.insert(storeSettings).values({ key: "yoco_mode", value: mode, updatedAt })
+      .onConflictDoUpdate({
+        target: storeSettings.key,
+        set: { value: mode, updatedAt },
+      });
+    return json({ mode });
   }
 
   if (path === "/payments/yoco/webhook" && method === "POST") {
@@ -2022,14 +2113,6 @@ async function route(
     const signature = request.headers.get("webhook-signature") || "";
     const rawBody = await request.text();
     if (!webhookId || !timestamp || !signature) throw new ApiError("Yoco webhook signature headers are missing.", 401);
-    const [settings] = await db.select().from(paymentProviderSettings).where(eq(paymentProviderSettings.provider, "yoco")).limit(1);
-    if (!settings?.encryptedWebhookSecret) throw new ApiError("Yoco webhook verification is not configured.", 503);
-    const webhookSecret = await decryptSecret(settings.encryptedWebhookSecret, env.SUPPLIER_SECRET_ENCRYPTION_KEY);
-    if (!await verifyYocoWebhookSignature({ secret: webhookSecret, webhookId, timestamp, signature, rawBody })) {
-      throw new ApiError("Yoco webhook signature is invalid or expired.", 401);
-    }
-    const [processed] = await db.select({ id: paymentWebhookEvents.id }).from(paymentWebhookEvents).where(eq(paymentWebhookEvents.id, webhookId)).limit(1);
-    if (processed) return json({ received: true, duplicate: true });
     let event: unknown;
     try { event = JSON.parse(rawBody); } catch { throw new ApiError("Yoco webhook body is invalid JSON.", 400); }
     if (!event || typeof event !== "object") throw new ApiError("Yoco webhook body is invalid.", 400);
@@ -2043,6 +2126,13 @@ async function route(
       ? await db.select().from(orders).where(eq(orders.id, orderId)).limit(1)
       : checkoutId ? await db.select().from(orders).where(eq(orders.paymentReference, checkoutId)).limit(1) : [];
     if (!order) throw new ApiError("Yoco webhook does not match an Elovyn order.", 404);
+    const config = await getYocoConfig(env, db, order.paymentMode);
+    if (!config.webhookSecret) throw new ApiError(`Yoco ${config.mode} webhook verification is not configured.`, 503);
+    if (!await verifyYocoWebhookSignature({ secret: config.webhookSecret, webhookId, timestamp, signature, rawBody })) {
+      throw new ApiError("Yoco webhook signature is invalid or expired.", 401);
+    }
+    const [processed] = await db.select({ id: paymentWebhookEvents.id }).from(paymentWebhookEvents).where(eq(paymentWebhookEvents.id, webhookId)).limit(1);
+    if (processed) return json({ received: true, duplicate: true });
     if (checkoutId && order.paymentReference && checkoutId !== order.paymentReference) throw new ApiError("Yoco checkout reference does not match the order.", 409);
     const eventStatement = env.DB!.prepare("INSERT INTO payment_webhook_events (id, provider, event_type) VALUES (?, 'yoco', ?)").bind(webhookId, eventType);
     if (eventType === "payment.succeeded") {
@@ -2486,6 +2576,7 @@ async function route(
     const deliveryAddress = savedDeliveryAddress(user);
     const checkoutItems = await resolveCheckoutItems(env, body.items);
     const amounts = checkoutAmounts(checkoutItems);
+    const yocoConfig = await getYocoConfig(env, db);
     return json({
       items: checkoutItems.map((item) => ({ ...item, line_total: Math.round(item.price * 100) * item.quantity / 100 })),
       delivery_address: deliveryAddress,
@@ -2493,13 +2584,18 @@ async function route(
       shipping_fee: amounts.shippingCents / 100,
       total: amounts.totalCents / 100,
       currency: "ZAR",
+      yocoMode: yocoConfig.mode,
+      yocoPublicKey: yocoConfig.publicKey ?? null,
     });
   }
 
   if (path === "/orders" && method === "POST") {
     const user = await requireUser(db, request);
-    if (!env.YOCO_TEST_SECRET_KEY) throw new ApiError("Yoco test payments are not configured.", 503);
     const body = await bodyAsJson(request);
+    const yocoConfig = await getYocoConfig(env, db);
+    if (body.expected_yoco_mode !== yocoConfig.mode) {
+      throw new ApiError("Yoco payment mode changed. Review the updated checkout summary before continuing.", 409);
+    }
     const deliveryAddress = savedDeliveryAddress(user);
     const checkoutItems = await resolveCheckoutItems(env, body.items);
     const { shippingCents, totalCents } = checkoutAmounts(checkoutItems);
@@ -2507,7 +2603,7 @@ async function route(
     if (!Number.isSafeInteger(expectedTotalCents) || expectedTotalCents !== totalCents) {
       throw new ApiError("Your order total changed. Review the updated order summary before payment.", 409);
     }
-    await ensureYocoWebhook(env, db, url.origin);
+    await ensureYocoWebhook(env, db, url.origin, yocoConfig);
     const orderId = crypto.randomUUID();
     const orderNumber = await generateOrderNumber(db);
     const now = currentTimestamp();
@@ -2529,10 +2625,11 @@ async function route(
       shippingAddress: JSON.stringify(deliveryAddress),
       shippingFee: shippingCents / 100,
       paymentProvider: "yoco",
+      paymentMode: yocoConfig.mode,
     });
     let checkout: Awaited<ReturnType<typeof createYocoCheckout>>;
     try {
-      checkout = await createYocoCheckout(env.YOCO_TEST_SECRET_KEY, {
+      checkout = await createYocoCheckout(yocoConfig.secretKey, {
         amount: totalCents,
         currency: "ZAR",
         successUrl: `${url.origin}/payment/success?order=${encodeURIComponent(orderId)}`,
@@ -2570,14 +2667,16 @@ async function route(
       delivery_address_json: orders.deliveryAddressJson,
       payment_provider: orders.paymentProvider,
       payment_reference: orders.paymentReference,
+      payment_mode: orders.paymentMode,
       created_at: orders.createdAt,
       updated_at: orders.updatedAt,
     }).from(orders).where(and(eq(orders.id, orderId), eq(orders.userId, user.id))).limit(1);
     if (!order) throw new ApiError("Order was not found.", 404);
 
-    if (order.status === "Awaiting Payment" && order.payment_reference && env.YOCO_TEST_SECRET_KEY) {
+    if (order.status === "Awaiting Payment" && order.payment_reference) {
       try {
-        const yocoCheck = await getYocoCheckout(env.YOCO_TEST_SECRET_KEY, order.payment_reference);
+        const yocoConfig = await getYocoConfig(env, db, order.payment_mode);
+        const yocoCheck = await getYocoCheckout(yocoConfig.secretKey, order.payment_reference);
         if (yocoCheck.status === "completed" || yocoCheck.status === "paid") {
           await processOrderPaid(env, db, order.id, yocoCheck.paymentId ?? null, waitUntil);
           const [refreshed] = await db.select({
@@ -2593,6 +2692,7 @@ async function route(
             delivery_address_json: orders.deliveryAddressJson,
             payment_provider: orders.paymentProvider,
             payment_reference: orders.paymentReference,
+            payment_mode: orders.paymentMode,
             created_at: orders.createdAt,
             updated_at: orders.updatedAt,
           }).from(orders).where(eq(orders.id, orderId)).limit(1);
@@ -2600,6 +2700,7 @@ async function route(
         }
       } catch (checkErr) {
         console.warn("Could not check Yoco status for order:", checkErr);
+        if (checkErr instanceof ApiError) throw checkErr;
       }
     }
 
@@ -3237,6 +3338,7 @@ async function route(
     const eligibleFilters = [
       eq(orders.fulfillmentStatus, "processing"),
       inArray(orders.status, ["Paid", "Completed", "Fulfilled"]),
+      ne(orders.paymentMode, "test"),
     ];
     if (orderIds) eligibleFilters.push(inArray(orders.id, orderIds));
     if (orderIds) {
@@ -3249,6 +3351,7 @@ async function route(
     const lineFilters = [
       eq(orders.fulfillmentStatus, "processing"),
       inArray(orders.status, ["Paid", "Completed", "Fulfilled"]),
+      ne(orders.paymentMode, "test"),
     ];
     if (orderIds) lineFilters.push(inArray(orders.id, orderIds));
     const lines = await db.select({
@@ -3336,6 +3439,7 @@ async function route(
       delivery_address_json: orders.deliveryAddressJson,
       shipping_fee: orders.shippingFee,
       payment_provider: orders.paymentProvider,
+      payment_mode: orders.paymentMode,
       payment_reference: orders.paymentReference,
       payment_id: orders.paymentId,
       paid_at: orders.paidAt,

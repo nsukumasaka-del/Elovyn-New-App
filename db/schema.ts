@@ -61,6 +61,12 @@ export const siteSettings = sqliteTable("site_settings", {
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const storeSettings = sqliteTable("store_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: text("updated_at"),
+});
+
 export const products = sqliteTable("products", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
@@ -166,6 +172,7 @@ export const orders = sqliteTable("orders", {
   deliveryAddressJson: text("delivery_address_json"),
   shippingFee: real("shipping_fee").notNull().default(0),
   paymentProvider: text("payment_provider"),
+  paymentMode: text("payment_mode", { enum: ["live", "test"] }).notNull().default("live"),
   paymentReference: text("payment_reference"),
   yocoCheckoutId: text("yoco_checkout_id"),
   paymentId: text("payment_id"),

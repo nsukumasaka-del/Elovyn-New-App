@@ -22,6 +22,8 @@ export type CheckoutSummary = {
   shipping_fee: number;
   total: number;
   currency: "ZAR";
+  yocoMode: "live" | "test";
+  yocoPublicKey: string | null;
 };
 export type StoreProduct = {
   id: string;
@@ -64,7 +66,7 @@ type StoreContextValue = {
   signOut: () => Promise<void>;
   saveDeliveryAddress: (deliveryAddress: DeliveryAddress) => Promise<void>;
   prepareCheckout: () => Promise<CheckoutSummary>;
-  checkout: (expectedTotal: number) => Promise<void>;
+  checkout: (expectedTotal: number, expectedYocoMode: CheckoutSummary["yocoMode"]) => Promise<void>;
 };
 
 const StoreContext = createContext<StoreContextValue | null>(null);
@@ -325,11 +327,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   }, [cart, user]);
 
-  const checkout = useCallback(async (expectedTotal: number) => {
+  const checkout = useCallback(async (expectedTotal: number, expectedYocoMode: CheckoutSummary["yocoMode"]) => {
     if (!user) throw new Error("Sign in to place your order.");
     const result = await request<{ redirect_url: string }>("/orders", {
       method: "POST",
-      body: JSON.stringify({ items: cart.map(({ id, quantity }) => ({ id, quantity })), expected_total: expectedTotal }),
+      body: JSON.stringify({
+        items: cart.map(({ id, quantity }) => ({ id, quantity })),
+        expected_total: expectedTotal,
+        expected_yoco_mode: expectedYocoMode,
+      }),
     });
     window.location.assign(result.redirect_url);
   }, [cart, user]);
