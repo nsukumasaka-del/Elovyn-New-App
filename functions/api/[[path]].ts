@@ -2218,6 +2218,137 @@ async function syncDueSuppliers(env: Env, db: ReturnType<typeof createDb>, store
   }
 }
 
+function productPrimaryImage(imageUrl: string | null, imagesJson: string) {
+  const primary = imageUrl?.trim();
+  if (primary) return primary;
+  try {
+    const images: unknown = JSON.parse(imagesJson);
+    if (Array.isArray(images)) {
+      return images.find((image): image is string => typeof image === "string" && image.trim().length > 0)?.trim() ?? "";
+    }
+  } catch (error) {
+    console.error("Could not parse product images for social preview.", error);
+  }
+  return "";
+}
+
+function dataImageBytes(source: string) {
+  const match = source.match(/^data:(image\/(?:jpeg|png|gif|webp));base64,([a-z0-9+/=\r\n]+)$/i);
+  if (!match) return null;
+  if (match[2].length > 12 * 1024 * 1024) throw new ApiError("Product image is too large for a social preview.", 413);
+  let binary: string;
+  try {
+    binary = atob(match[2].replace(/\s/g, ""));
+  } catch {
+    throw new ApiError("The product image contains invalid base64 data.", 502);
+  }
+  if (binary.length > 8 * 1024 * 1024) throw new ApiError("Product image is too large for a social preview.", 413);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  return { bytes, contentType: match[1].toLowerCase() };
+}
+
+function validImageResponse(response: Response) {
+  return response.ok && (response.headers.get("content-type") ?? "").toLowerCase().startsWith("image/");
+}
+
+function imageResponseHeaders(contentType: string, contentLength?: number | string | null) {
+  const headers = new Headers({
+    "Content-Type": contentType,
+    "Cache-Control": "public, max-age=86400, s-maxage=86400",
+    "X-Content-Type-Options": "nosniff",
+    "Content-Disposition": "inline",
+  });
+  if (contentLength !== undefined && contentLength !== null && String(contentLength).trim()) {
+    headers.set("Content-Length", String(contentLength));
+  }
+  return headers;
+}
+
+async function fetchProductSocialImage(source: string, request: Request, env: Env): Promise<Response> {
+  const embedded = dataImageBytes(source);
+  if (embedded) {
+    return new Response(embedded.bytes, {
+      headers: imageResponseHeaders(embedded.contentType, embedded.bytes.byteLength),
+    });
+  }
+
+  const isRelative = source.startsWith("/") && !source.startsWith("//");
+  let sourceUrl: URL;
+  try {
+    sourceUrl = new URL(source, new URL(request.url).origin);
+  } catch {
+    throw new ApiError("The product image URL is invalid.", 502);
+  }
+  if ((!isRelative && sourceUrl.protocol !== "https:") || sourceUrl.username || sourceUrl.password
+    || sourceUrl.hostname === "localhost" || sourceUrl.hostname.endsWith(".localhost")
+    || sourceUrl.hostname.endsWith(".local") || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(sourceUrl.hostname)
+    || sourceUrl.hostname.startsWith("[")) {
+    throw new ApiError("The product image must use a public HTTPS URL.", 502);
+  }
+
+  if (sourceUrl.origin === new URL(request.url).origin && sourceUrl.pathname.startsWith("/api/assets/")) {
+    const key = decodeURIComponent(sourceUrl.pathname.slice("/api/assets/".length));
+    if (!key || key.includes("/") || key.includes("..") || !env.PRODUCT_ASSETS) {
+      throw new ApiError("Product image storage is unavailable.", 502);
+    }
+    const asset = await env.PRODUCT_ASSETS.get(key);
+    if (!asset) throw new ApiError("The product image could not be found.", 404);
+    const contentType = asset.httpMetadata?.contentType ?? "application/octet-stream";
+    if (!contentType.startsWith("image/")) throw new ApiError("The product image has an unsupported format.", 502);
+    try {
+      const transformed = await fetch(sourceUrl, { cf: { image: { format: "jpeg", width: 1200, quality: 85 } } });
+      if (validImageResponse(transformed) && transformed.headers.get("content-type")?.toLowerCase().includes("jpeg")) {
+        return new Response(transformed.body, {
+          headers: imageResponseHeaders("image/jpeg", transformed.headers.get("content-length")),
+        });
+      }
+      if (transformed.body) await transformed.body.cancel();
+    } catch (error) {
+      console.error("Could not convert stored product image for a social preview; serving its original format.", error);
+    }
+    return new Response(asset.body, {
+      headers: imageResponseHeaders(contentType, asset.size),
+    });
+  }
+
+  const imageTransform = { format: "jpeg" as const, width: 1200, quality: 85 };
+  let response: Response;
+  try {
+    response = await fetch(sourceUrl, {
+      headers: { Accept: "image/jpeg,image/png,image/*;q=0.8" },
+      cf: { image: imageTransform },
+    });
+  } catch (error) {
+    console.error("Cloudflare image transformation failed for a product social preview.", error);
+    try {
+      response = await fetch(sourceUrl, { headers: { Accept: "image/jpeg,image/png,image/*;q=0.8" } });
+    } catch (fetchError) {
+      console.error("Could not fetch product image for a social preview.", fetchError);
+      throw new ApiError("The product image could not be fetched.", 502);
+    }
+  }
+  if (!validImageResponse(response)) {
+    if (response.body) await response.body.cancel();
+    try {
+      response = await fetch(sourceUrl, { headers: { Accept: "image/jpeg,image/png,image/*;q=0.8" } });
+    } catch (error) {
+      console.error("Could not fetch product image for a social preview.", error);
+      throw new ApiError("The product image could not be fetched.", 502);
+    }
+  }
+  if (!validImageResponse(response)) {
+    console.error("Product social image source returned a non-image response.", {
+      status: response.status,
+      contentType: response.headers.get("content-type"),
+      sourceHost: sourceUrl.hostname,
+    });
+    throw new ApiError("The product image source did not return a valid image.", 502);
+  }
+  const responseType = response.headers.get("content-type") ?? "image/jpeg";
+  const headers = imageResponseHeaders(responseType, response.headers.get("content-length"));
+  return new Response(response.body, { status: 200, headers });
+}
+
 async function route(
   request: Request,
   env: Env,
@@ -3735,6 +3866,28 @@ async function route(
     if (managedProduct) throw new ApiError("This supplier still manages imported products. Delete those products before removing the supplier connection.", 409);
     await db.delete(supplierIntegrations).where(eq(supplierIntegrations.id, id));
     return json({ deleted: true, supplier });
+  }
+
+  if (path.startsWith("/og-image/") && method === "GET") {
+    let productKey: string;
+    try {
+      productKey = decodeURIComponent(path.slice("/og-image/".length));
+    } catch {
+      throw new ApiError("Product image was not found.", 404);
+    }
+    if (!productKey || productKey.length > 200 || productKey.includes("/")) {
+      throw new ApiError("Product image was not found.", 404);
+    }
+    const [product] = await db.select({
+      imageUrl: products.imageUrl,
+      imagesJson: products.imagesJson,
+    }).from(products).where(and(
+      eq(products.isListed, true),
+      or(eq(products.id, productKey), eq(products.handle, productKey)),
+    )).limit(1);
+    if (!product) throw new ApiError("Product image was not found.", 404);
+    const source = productPrimaryImage(product.imageUrl, product.imagesJson) || "/elovyn-logo.jpeg?v=3";
+    return fetchProductSocialImage(source, request, env);
   }
 
   if (path.startsWith("/assets/") && method === "GET") {

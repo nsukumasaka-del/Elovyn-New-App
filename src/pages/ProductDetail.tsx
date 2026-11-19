@@ -32,6 +32,7 @@ type ProductDetailData = {
     description: string | null;
     image_url: string | null;
     images_json: string;
+    updated_at: string;
   };
   options: ProductOption[];
   variants: ProductVariant[];
@@ -179,11 +180,8 @@ export function ProductDetailPage() {
       }
       element.content = content;
     };
-    const primaryImage = data.product.image_url || images[0] || productFallback;
-    const absoluteImage = new URL(primaryImage, window.location.origin);
-    if (absoluteImage.protocol === "http:" && window.location.protocol === "https:") {
-      absoluteImage.protocol = "https:";
-    }
+    const imageVersion = encodeURIComponent(data.product.updated_at || "1");
+    const socialImage = `https://elovyn.store/api/og-image/${encodeURIComponent(data.product.id)}?v=${imageVersion}`;
     const canonicalUrl = `${window.location.origin}/products/${encodeURIComponent(data.product.id)}`;
     const description = (data.product.description || `Shop ${data.product.title} at Elovyn.`)
       .replace(/<[^>]*>/g, " ")
@@ -196,13 +194,13 @@ export function ProductDetailPage() {
     setMeta('meta[property="og:site_name"]', "og:site_name", "ELOVYN");
     setMeta('meta[property="og:title"]', "og:title", `${data.product.title} (${priceText(displayPrice)})`);
     setMeta('meta[property="og:description"]', "og:description", description);
-    setMeta('meta[property="og:image"]', "og:image", absoluteImage.toString());
-    setMeta('meta[property="og:image:secure_url"]', "og:image:secure_url", absoluteImage.toString());
+    setMeta('meta[property="og:image"]', "og:image", socialImage);
+    setMeta('meta[property="og:image:secure_url"]', "og:image:secure_url", socialImage);
     setMeta('meta[property="og:image:width"]', "og:image:width", "1200");
     setMeta('meta[property="og:image:height"]', "og:image:height", "1200");
     setMeta('meta[property="og:url"]', "og:url", canonicalUrl);
     setMeta('meta[name="twitter:card"]', "twitter:card", "summary_large_image");
-    setMeta('meta[name="twitter:image"]', "twitter:image", absoluteImage.toString());
+    setMeta('meta[name="twitter:image"]', "twitter:image", socialImage);
     return () => {
       document.title = previousTitle;
       previousMeta.forEach(({ element, content }, selector) => {
@@ -214,7 +212,7 @@ export function ProductDetailPage() {
         else element.content = content;
       });
     };
-  }, [data, displayPrice, images]);
+  }, [data, displayPrice]);
 
   function selectOption(name: string, value: string) {
     setSelectedValues((current) => ({ ...current, [name]: value }));
