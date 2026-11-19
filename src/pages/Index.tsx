@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
 import { Header } from "@/components/Header";
 import { Hero } from "@/components/Hero";
@@ -13,6 +13,9 @@ import { productMatchesCategory } from "@/lib/categories";
 import clothingImage from "@/assets/CLOTHING.jpg";
 import hoodieImage from "@/assets/Hoodie.png";
 import wigImage from "@/assets/WEAVE 1.jpg";
+import { SiteReviewsShowcase } from "@/components/SiteReviews";
+import { apiRequest } from "@/lib/store-api";
+import { defaultEditorialBanner, type EditorialBanner } from "@/lib/editorial-banner";
 
 const categoryTiles = [
   { title: "Streetwear", slug: "streetwear", subtitle: "Shop collection", href: "/categories/streetwear" },
@@ -60,6 +63,14 @@ function CategoryThumbnail({ title, images }: { title: string; images: string[] 
 
 const Index = () => {
   const { products, addToCart, siteSettings } = useStore();
+  const [editorialBanner, setEditorialBanner] = useState<EditorialBanner>(defaultEditorialBanner);
+  useEffect(() => {
+    let active = true;
+    apiRequest<{ editorialBanner: EditorialBanner }>("/storefront-config")
+      .then(({ editorialBanner: saved }) => { if (active) setEditorialBanner({ ...defaultEditorialBanner, ...saved }); })
+      .catch(() => { if (active) setEditorialBanner(defaultEditorialBanner); });
+    return () => { active = false; };
+  }, []);
   const newProducts = products.slice(8);
   const liveCategoryTiles = useMemo(() => categoryTiles.flatMap((tile) => {
     const categoryProducts = products
@@ -126,19 +137,19 @@ const Index = () => {
             <div className="overflow-hidden rounded-[2rem] border border-neutral-200 bg-neutral-950 text-white">
               <div className="grid items-center gap-0 lg:grid-cols-[1.1fr_0.9fr]">
                 <div className="relative min-h-[360px] bg-neutral-900">
-                  <img src={clothingImage} alt="Editorial campaign" className="h-full w-full object-cover opacity-75" />
+                  <img src={editorialBanner.imageUrl || clothingImage} alt="Editorial campaign" className="h-full w-full object-cover opacity-75" />
                 </div>
                 <div className="p-8 sm:p-10 lg:p-12">
-                  <p className="eyebrow text-white/70">The streetwear edit</p>
+                  <p className="eyebrow text-white/70">{editorialBanner.eyebrow}</p>
                   <h2 className="mt-4 text-3xl font-black tracking-[-0.06em] sm:text-4xl lg:text-5xl">
-                    Everyday pieces.<br />Elevated.
+                    {editorialBanner.headline}
                   </h2>
                   <p className="mt-4 max-w-lg text-base text-white/70">
-                    Thoughtful layers, sharp silhouettes, and textures that transition from laid-back to standout in seconds.
+                    {editorialBanner.description}
                   </p>
-                  <Link to="/categories/streetwear" className="btn-primary mt-8 bg-white text-neutral-950 hover:bg-neutral-200">
-                    Explore the collection
-                  </Link>
+                  <a href={editorialBanner.buttonLink || defaultEditorialBanner.buttonLink} className="btn-primary mt-8 bg-white text-neutral-950 hover:bg-neutral-200">
+                    {editorialBanner.buttonText}
+                  </a>
                 </div>
               </div>
             </div>
@@ -183,6 +194,7 @@ const Index = () => {
 
         <AccessoriesShowcase />
         <Community />
+        <SiteReviewsShowcase />
 
         {newProducts.length > 0 && (
           <section className="bg-white py-16">

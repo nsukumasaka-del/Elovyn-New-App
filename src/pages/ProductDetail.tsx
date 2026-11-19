@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Check, ChevronRight, Truck } from "lucide-react";
+import { Check, ChevronRight, Star, Truck } from "lucide-react";
 import { Footer } from "@/components/Footer";
 import { Header } from "@/components/Header";
 import { useStore } from "@/lib/store";
@@ -36,6 +36,20 @@ type ProductDetailData = {
   options: ProductOption[];
   variants: ProductVariant[];
 };
+type ProductReview = {
+  id: string;
+  customer_name: string;
+  rating: number;
+  title: string | null;
+  comment: string;
+  created_at: string;
+};
+type ProductReviewsData = {
+  reviews: ProductReview[];
+  averageRating: number;
+  reviewCount: number;
+  eligibleOrders: { id: string; order_number: string | null }[];
+};
 
 function parseStringArray(value: string) {
   try {
@@ -64,13 +78,26 @@ function priceText(value: number) {
 
 export function ProductDetailPage() {
   const { productKey = "" } = useParams();
-  const { addToCart, setCartOpen } = useStore();
+  const { addToCart, setCartOpen, user, setAuthOpen } = useStore();
   const [data, setData] = useState<ProductDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [heroImage, setHeroImage] = useState("");
   const [quantity, setQuantity] = useState(1);
   const [selectedValues, setSelectedValues] = useState<Record<string, string>>({});
+  const [reviewsData, setReviewsData] = useState<ProductReviewsData>({ reviews: [], averageRating: 0, reviewCount: 0, eligibleOrders: [] });
+  const [reviewOrderId, setReviewOrderId] = useState("");
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewTitle, setReviewTitle] = useState("");
+  const [reviewComment, setReviewComment] = useState("");
+  const [reviewError, setReviewError] = useState("");
+  const [submittingReview, setSubmittingReview] = useState(false);
+
+  const loadReviews = async (key: string) => {
+    const result = await apiRequest<ProductReviewsData>(`/products/${encodeURIComponent(key)}/reviews`);
+    setReviewsData(result);
+    setReviewOrderId((current) => current || result.eligibleOrders[0]?.id || "");
+  };
 
   useEffect(() => {
     let active = true;
@@ -90,6 +117,33 @@ export function ProductDetailPage() {
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [productKey]);
+
+  useEffect(() => {
+    void loadReviews(productKey).catch(() => setReviewsData({ reviews: [], averageRating: 0, reviewCount: 0, eligibleOrders: [] }));
+  }, [productKey, user?.id]);
+
+  async function submitProductReview(event: FormEvent) {
+    event.preventDefault();
+    if (!user) {
+      setAuthOpen(true);
+      return;
+    }
+    if (!reviewOrderId) return;
+    setSubmittingReview(true);
+    setReviewError("");
+    try {
+      await apiRequest(`/products/${encodeURIComponent(productKey)}/reviews`, {
+        method: "POST",
+        body: JSON.stringify({ order_id: reviewOrderId, rating: reviewRating, title: reviewTitle, comment: reviewComment }),
+      });
+      setReviewTitle("");
+      setReviewComment("");
+      setReviewOrderId("");
+      await loadReviews(productKey);
+    } catch (reason) {
+      setReviewError(reason instanceof Error ? reason.message : "Could not submit your review.");
+    } finally { setSubmittingReview(false); }
+  }
 
   const images = useMemo(() => {
     if (!data) return [];
@@ -160,6 +214,7 @@ export function ProductDetailPage() {
           </section>
         )}
         {!loading && data && (
+          <>
           <section className="grid gap-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.85fr)_minmax(270px,0.68fr)] lg:gap-7">
             <div className={images.length > 1 ? "grid items-start gap-3 sm:grid-cols-[72px_minmax(0,1fr)]" : "block"}>
               {images.length > 1 && (
@@ -248,6 +303,38 @@ export function ProductDetailPage() {
               </div>
             </aside>
           </section>
+          <section className="mt-14 border-t border-neutral-200 pt-10">
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div><p className="eyebrow">Customer reviews</p><h2 className="mt-2 text-2xl font-bold">Reviews for {data.product.title}</h2></div>
+              <div className="flex items-center gap-2 text-sm text-neutral-600">
+                <span className="flex text-amber-500">{Array.from({ length: 5 }, (_, index) => <Star key={index} className={`h-4 w-4 ${index < Math.round(reviewsData.averageRating) ? "fill-current" : ""}`} />)}</span>
+                <span>{reviewsData.reviewCount ? `${reviewsData.averageRating.toFixed(1)} · ${reviewsData.reviewCount} review${reviewsData.reviewCount === 1 ? "" : "s"}` : "No reviews yet"}</span>
+              </div>
+            </div>
+            {reviewsData.eligibleOrders.length > 0 ? <form onSubmit={(event) => void submitProductReview(event)} className="mt-6 rounded-2xl border border-neutral-200 bg-white p-5">
+              <h3 className="font-semibold">Share your experience as a verified buyer</h3>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <label className="text-sm font-medium">Purchased in order
+                  <select required value={reviewOrderId} onChange={(event) => setReviewOrderId(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 bg-white px-3">
+                    {reviewsData.eligibleOrders.map((order) => <option key={order.id} value={order.id}>{order.order_number || order.id}</option>)}
+                  </select>
+                </label>
+                <div><span className="text-sm font-medium">Your rating</span><div className="mt-2 flex gap-1">{[1, 2, 3, 4, 5].map((value) => <button key={value} type="button" onClick={() => setReviewRating(value)} aria-label={`${value} stars`} aria-pressed={reviewRating === value} className="p-1 text-amber-500"><Star className={`h-5 w-5 ${value <= reviewRating ? "fill-current" : ""}`} /></button>)}</div></div>
+              </div>
+              <label className="mt-4 block text-sm font-medium">Headline (optional)<input maxLength={120} value={reviewTitle} onChange={(event) => setReviewTitle(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
+              <label className="mt-4 block text-sm font-medium">Review<textarea required maxLength={2000} rows={4} value={reviewComment} onChange={(event) => setReviewComment(event.target.value)} className="mt-1.5 w-full rounded-xl border border-neutral-300 px-3 py-2" /></label>
+              {reviewError && <p role="alert" className="mt-3 text-sm text-red-700">{reviewError}</p>}
+              <button type="submit" disabled={submittingReview || !reviewComment.trim()} className="btn-primary mt-4 disabled:opacity-50">{submittingReview ? "Submitting…" : "Submit review"}</button>
+            </form> : !user ? <p className="mt-5 text-sm text-neutral-600">Sign in after purchasing to leave a verified-buyer review.</p> : null}
+            <div className="mt-6 space-y-4">
+              {reviewsData.reviews.map((review) => <article key={review.id} className="rounded-2xl border border-neutral-200 bg-white p-5">
+                <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="font-semibold">{review.title || "Customer review"}</p><p className="mt-1 text-xs text-neutral-500">{review.customer_name} <span className="ml-2 rounded-full bg-emerald-50 px-2 py-1 font-semibold text-emerald-700">Verified Buyer</span></p></div><div className="flex text-amber-500" aria-label={`${review.rating} out of 5 stars`}>{Array.from({ length: 5 }, (_, index) => <Star key={index} className={`h-4 w-4 ${index < review.rating ? "fill-current" : ""}`} />)}</div></div>
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-neutral-700">{review.comment}</p>
+              </article>)}
+              {reviewsData.reviewCount === 0 && <p className="rounded-2xl bg-white p-5 text-sm text-neutral-500">Be the first to review this product.</p>}
+            </div>
+          </section>
+          </>
         )}
       </main>
       <Footer />

@@ -25,6 +25,8 @@ export type AdminOrder = {
   payment_provider: string | null;
   payment_mode?: "live" | "test";
   paymentMode?: "live" | "test";
+  courier?: string | null;
+  admin_notes?: string | null;
   payment_reference: string | null;
   payment_id: string | null;
   paid_at: string | null;
@@ -44,6 +46,30 @@ type AdminOrderLineItem = {
   unitPrice: number;
 };
 
+type EditableAddress = {
+  recipientName: string;
+  phone: string;
+  addressLine1: string;
+  addressLine2: string;
+  suburb: string;
+  city: string;
+  province: string;
+  postalCode: string;
+  country: string;
+};
+
+const blankAddress: EditableAddress = {
+  recipientName: "",
+  phone: "",
+  addressLine1: "",
+  addressLine2: "",
+  suburb: "",
+  city: "",
+  province: "",
+  postalCode: "",
+  country: "South Africa",
+};
+
 function isExportableOrder(order: AdminOrder) {
   return order.payment_mode !== "test" && order.paymentMode !== "test"
     && ["Paid", "Completed", "Fulfilled"].includes(order.status)
@@ -59,6 +85,7 @@ export function AdminOrdersPanel({ selectedOrderId, onClearSelectedOrder }: { se
   const [activeLineItems, setActiveLineItems] = useState<AdminOrderLineItem[]>([]);
   const [lineItemsLoading, setLineItemsLoading] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(() => new Set());
+  const [deleteOrderIds, setDeleteOrderIds] = useState<Set<string>>(() => new Set());
   const [exportingSupplier, setExportingSupplier] = useState<SupplierExportType | null>(null);
   const [pricingSettings, setPricingSettings] = useState<PricingSettings>({
     usdToZarRate: null,
@@ -67,9 +94,18 @@ export function AdminOrdersPanel({ selectedOrderId, onClearSelectedOrder }: { se
 
   // Fulfillment update form state
   const [editFulfillmentStatus, setEditFulfillmentStatus] = useState<string>("processing");
+  const [editOrderStatus, setEditOrderStatus] = useState<string>("Awaiting Payment");
+  const [editCustomerName, setEditCustomerName] = useState("");
+  const [editCustomerPhone, setEditCustomerPhone] = useState("");
+  const [editAddress, setEditAddress] = useState<EditableAddress>(blankAddress);
+  const [editTotalAmount, setEditTotalAmount] = useState("");
+  const [editShippingFee, setEditShippingFee] = useState("");
+  const [editCourier, setEditCourier] = useState("");
+  const [editAdminNotes, setEditAdminNotes] = useState("");
   const [editTrackingNumber, setEditTrackingNumber] = useState<string>("");
   const [editTrackingUrl, setEditTrackingUrl] = useState<string>("");
   const [updating, setUpdating] = useState(false);
+  const [deletingOrder, setDeletingOrder] = useState(false);
 
   const loadOrders = async () => {
     setLoading(true);
@@ -82,6 +118,8 @@ export function AdminOrdersPanel({ selectedOrderId, onClearSelectedOrder }: { se
       setOrders(data.orders);
       const eligibleIds = new Set(data.orders.filter(isExportableOrder).map((order) => order.id));
       setSelectedOrderIds((current) => new Set([...current].filter((id) => eligibleIds.has(id))));
+      const testOrderIds = new Set(data.orders.filter((order) => order.payment_mode === "test" || order.paymentMode === "test").map((order) => order.id));
+      setDeleteOrderIds((current) => new Set([...current].filter((id) => testOrderIds.has(id))));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not load orders");
     } finally {
@@ -143,7 +181,31 @@ export function AdminOrdersPanel({ selectedOrderId, onClearSelectedOrder }: { se
 
   const openOrderDetail = (order: AdminOrder) => {
     setActiveOrder(order);
+    setEditOrderStatus(order.status || "Pending");
     setEditFulfillmentStatus(order.fulfillment_status || "processing");
+    setEditCustomerName(order.customer_name || "");
+    let address: Record<string, unknown> = {};
+    try {
+      const parsed: unknown = order.delivery_address_json ? JSON.parse(order.delivery_address_json) : null;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) address = parsed as Record<string, unknown>;
+    } catch { /* The form remains editable with any saved dedicated address fields. */ }
+    const text = (value: unknown) => typeof value === "string" ? value : "";
+    setEditAddress({
+      recipientName: text(address.recipientName) || order.customer_name || "",
+      phone: order.customer_phone || text(address.phone),
+      addressLine1: text(address.addressLine1),
+      addressLine2: text(address.addressLine2),
+      suburb: text(address.suburb),
+      city: text(address.city),
+      province: text(address.province),
+      postalCode: order.postal_code || text(address.postalCode),
+      country: text(address.country) || "South Africa",
+    });
+    setEditCustomerPhone(order.customer_phone || text(address.phone));
+    setEditTotalAmount(String(order.total_amount));
+    setEditShippingFee(String(order.shipping_fee || 0));
+    setEditCourier(order.courier || "");
+    setEditAdminNotes(order.admin_notes || "");
     setEditTrackingNumber(order.tracking_number || "");
     setEditTrackingUrl(order.tracking_url || "");
   };
@@ -198,27 +260,31 @@ export function AdminOrdersPanel({ selectedOrderId, onClearSelectedOrder }: { se
     }
   }
 
-  const saveFulfillment = async (e: React.FormEvent) => {
+  const saveOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeOrder) return;
     setUpdating(true);
     try {
       const { order: updated } = await apiRequest<{ order: AdminOrder }>(
-        `/admin/orders/${encodeURIComponent(activeOrder.id)}/fulfillment`,
+        `/admin/orders/${encodeURIComponent(activeOrder.id)}`,
         {
-          method: "PATCH",
+          method: "PUT",
           body: JSON.stringify({
+            status: editOrderStatus,
             fulfillment_status: editFulfillmentStatus,
+            customer_name: editCustomerName,
+            ...(editCustomerPhone.trim() ? { customer_phone: editCustomerPhone } : {}),
+            ...(editAddress.addressLine1.trim() ? { delivery_address: editAddress } : {}),
+            total_amount: Number(editTotalAmount),
+            shipping_fee: Number(editShippingFee),
+            courier: editCourier,
             tracking_number: editTrackingNumber,
             tracking_url: editTrackingUrl,
+            admin_notes: editAdminNotes,
           }),
         }
       );
-      toast.success(
-        editFulfillmentStatus === "shipped" && activeOrder.fulfillment_status !== "shipped"
-          ? `Order updated to Shipped! Shipping notification email sent to ${updated.customer_email || "customer"}.`
-          : "Fulfillment details updated successfully."
-      );
+      toast.success("Order updated successfully.");
       setActiveOrder(updated);
       setOrders((prev) => prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)));
     } catch (err) {
@@ -227,6 +293,43 @@ export function AdminOrdersPanel({ selectedOrderId, onClearSelectedOrder }: { se
       setUpdating(false);
     }
   };
+
+  async function deleteOrder(order: AdminOrder) {
+    if (!window.confirm(`Permanently delete order ${order.order_number || order.id}? This also deletes its order items and notifications and cannot be undone.`)) return;
+    setDeletingOrder(true);
+    try {
+      await apiRequest(`/admin/orders/${encodeURIComponent(order.id)}`, { method: "DELETE" });
+      setOrders((current) => current.filter((entry) => entry.id !== order.id));
+      setSelectedOrderIds((current) => { const next = new Set(current); next.delete(order.id); return next; });
+      setDeleteOrderIds((current) => { const next = new Set(current); next.delete(order.id); return next; });
+      if (activeOrder?.id === order.id) closeOrderDetail();
+      toast.success("Order permanently deleted.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not delete the order.");
+    } finally {
+      setDeletingOrder(false);
+    }
+  }
+
+  async function bulkDeleteTestOrders() {
+    const orderIds = [...deleteOrderIds];
+    if (!orderIds.length || !window.confirm(`Permanently delete ${orderIds.length} selected Test Mode order${orderIds.length === 1 ? "" : "s"}? This cannot be undone.`)) return;
+    setDeletingOrder(true);
+    try {
+      await apiRequest("/admin/orders/bulk-delete", {
+        method: "POST",
+        body: JSON.stringify({ order_ids: orderIds }),
+      });
+      setOrders((current) => current.filter((order) => !deleteOrderIds.has(order.id)));
+      if (activeOrder && deleteOrderIds.has(activeOrder.id)) closeOrderDetail();
+      setDeleteOrderIds(new Set());
+      toast.success(`${orderIds.length} Test Mode order${orderIds.length === 1 ? "" : "s"} deleted.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not delete selected test orders.");
+    } finally {
+      setDeletingOrder(false);
+    }
+  }
 
   const getFulfillmentBadge = (status: string) => {
     const s = (status || "processing").toLowerCase();
@@ -311,6 +414,14 @@ export function AdminOrdersPanel({ selectedOrderId, onClearSelectedOrder }: { se
             : "Export all paid orders currently in Processing"}
         </div>
         <div className="flex flex-wrap gap-2">
+          {deleteOrderIds.size > 0 && <button
+            type="button"
+            onClick={() => void bulkDeleteTestOrders()}
+            disabled={deletingOrder}
+            className="rounded-xl border border-red-300 px-3.5 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+          >
+            {deletingOrder ? "Deleting…" : `Delete ${deleteOrderIds.size} selected test order${deleteOrderIds.size === 1 ? "" : "s"}`}
+          </button>}
           <button
             type="button"
             onClick={() => void exportSupplierOrders("eprolo")}
@@ -344,23 +455,26 @@ export function AdminOrdersPanel({ selectedOrderId, onClearSelectedOrder }: { se
               <thead className="bg-neutral-50 text-xs uppercase tracking-wider text-neutral-500">
                 <tr>
                   <th className="w-10 px-4 py-3.5">
-                    <input
-                      type="checkbox"
-                      aria-label="Select all eligible processing orders"
-                      checked={allVisibleEligibleSelected}
-                      disabled={eligibleVisibleOrders.length === 0}
-                      onChange={(event) => {
-                        const checked = event.target.checked;
-                        setSelectedOrderIds((current) => {
-                          const next = new Set(current);
-                          for (const order of eligibleVisibleOrders) {
-                            if (checked) next.add(order.id);
-                            else next.delete(order.id);
-                          }
-                          return next;
-                        });
-                      }}
-                    />
+                    <div className="flex flex-col gap-1">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all eligible processing orders"
+                        checked={allVisibleEligibleSelected}
+                        disabled={eligibleVisibleOrders.length === 0}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setSelectedOrderIds((current) => {
+                            const next = new Set(current);
+                            for (const order of eligibleVisibleOrders) {
+                              if (checked) next.add(order.id);
+                              else next.delete(order.id);
+                            }
+                            return next;
+                          });
+                        }}
+                      />
+                      <span className="text-[8px] text-neutral-400">CSV</span>
+                    </div>
                   </th>
                   <th className="px-5 py-3.5">Order Ref</th>
                   <th className="px-4 py-3.5">Date</th>
@@ -383,13 +497,27 @@ export function AdminOrdersPanel({ selectedOrderId, onClearSelectedOrder }: { se
                   return (
                     <tr key={order.id} className="hover:bg-neutral-50/70 transition">
                       <td className="px-4 py-4">
-                        <input
-                          type="checkbox"
-                          aria-label={`Select order ${order.order_number || order.id}`}
-                          checked={selectedOrderIds.has(order.id)}
-                          disabled={!eligible}
-                          onChange={() => toggleOrderSelection(order.id)}
-                        />
+                        <div className="flex flex-col gap-1">
+                          <input
+                            type="checkbox"
+                            aria-label={`Select order ${order.order_number || order.id} for supplier export`}
+                            checked={selectedOrderIds.has(order.id)}
+                            disabled={!eligible}
+                            onChange={() => toggleOrderSelection(order.id)}
+                          />
+                          {(order.payment_mode === "test" || order.paymentMode === "test") && <input
+                            type="checkbox"
+                            aria-label={`Select test order ${order.order_number || order.id} for deletion`}
+                            checked={deleteOrderIds.has(order.id)}
+                            disabled={deletingOrder}
+                            onChange={() => setDeleteOrderIds((current) => {
+                              const next = new Set(current);
+                              if (next.has(order.id)) next.delete(order.id);
+                              else next.add(order.id);
+                              return next;
+                            })}
+                          />}
+                        </div>
                       </td>
                       <td className="px-5 py-4 font-bold text-neutral-900">
                         {order.order_number || <span className="font-mono text-xs text-neutral-500">{order.id.slice(0, 8)}…</span>}
@@ -415,12 +543,17 @@ export function AdminOrdersPanel({ selectedOrderId, onClearSelectedOrder }: { se
                       <td className="px-4 py-4">{getPaymentBadge(order.status)}</td>
                       <td className="px-4 py-4">{getFulfillmentBadge(order.fulfillment_status)}</td>
                       <td className="px-4 py-4 text-right">
+                        <div className="inline-flex items-center gap-2">
                         <button
                           onClick={() => openOrderDetail(order)}
                           className="rounded-xl border border-neutral-300 px-3.5 py-1.5 text-xs font-semibold text-neutral-800 hover:bg-neutral-100 transition"
                         >
                           Manage
                         </button>
+                        <button type="button" onClick={() => void deleteOrder(order)} disabled={deletingOrder} className="rounded-xl border border-red-200 px-3.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50">
+                          Delete
+                        </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -529,16 +662,19 @@ export function AdminOrdersPanel({ selectedOrderId, onClearSelectedOrder }: { se
               </div>
             </div>
 
-            {/* Fulfillment Status Controls Form */}
-            <form onSubmit={saveFulfillment} className="mt-6 rounded-2xl border border-neutral-200 bg-neutral-50/50 p-5">
-              <h3 className="text-sm font-bold text-neutral-900">Update Order Fulfillment</h3>
-              <p className="text-xs text-neutral-500 mt-0.5">
-                Mark order progress and assign tracking information for the customer.
-              </p>
+            <form onSubmit={saveOrder} className="mt-6 rounded-2xl border border-neutral-200 bg-neutral-50/50 p-5">
+              <h3 className="text-sm font-bold text-neutral-900">Edit Order</h3>
+              <p className="mt-0.5 text-xs text-neutral-500">Update payment/fulfillment status, delivery details, totals, and internal notes.</p>
 
-              <div className="mt-4 grid gap-4 sm:grid-cols-3">
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="text-xs font-semibold uppercase tracking-wider text-neutral-600">Status</label>
+                  <label className="text-xs font-semibold uppercase tracking-wider text-neutral-600">Order status</label>
+                  <select value={editOrderStatus} onChange={(event) => setEditOrderStatus(event.target.value)} className="mt-1 h-10 w-full rounded-xl border border-neutral-300 bg-white px-3 text-xs">
+                    {["Awaiting Payment", "Pending", "Paid", "Processing", "Shipped", "Delivered", "Cancelled", "Payment Review", "Payment Failed", "Completed", "Fulfilled"].map((status) => <option key={status}>{status}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-wider text-neutral-600">Fulfillment status</label>
                   <select
                     value={editFulfillmentStatus}
                     onChange={(e) => setEditFulfillmentStatus(e.target.value)}
@@ -550,6 +686,41 @@ export function AdminOrdersPanel({ selectedOrderId, onClearSelectedOrder }: { se
                     <option value="cancelled">Cancelled</option>
                   </select>
                 </div>
+                <label className="text-xs font-semibold uppercase tracking-wider text-neutral-600">Customer name
+                  <input value={editCustomerName} onChange={(event) => setEditCustomerName(event.target.value)} maxLength={100} className="mt-1 h-10 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm font-normal" />
+                </label>
+                <label className="text-xs font-semibold uppercase tracking-wider text-neutral-600">Customer phone
+                  <input type="tel" value={editCustomerPhone} onChange={(event) => setEditCustomerPhone(event.target.value)} className="mt-1 h-10 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm font-normal" />
+                </label>
+                <label className="text-xs font-semibold uppercase tracking-wider text-neutral-600">Order total (ZAR)
+                  <input type="number" min="0" step="0.01" value={editTotalAmount} onChange={(event) => setEditTotalAmount(event.target.value)} className="mt-1 h-10 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm font-normal" />
+                </label>
+                <label className="text-xs font-semibold uppercase tracking-wider text-neutral-600">Delivery fee (ZAR)
+                  <input type="number" min="0" step="0.01" value={editShippingFee} onChange={(event) => setEditShippingFee(event.target.value)} className="mt-1 h-10 w-full rounded-xl border border-neutral-300 bg-white px-3 text-sm font-normal" />
+                </label>
+              </div>
+              <fieldset className="mt-5 rounded-xl border border-neutral-200 bg-white p-4">
+                <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-neutral-600">Shipping address</legend>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {([
+                    ["recipientName", "Recipient name"], ["phone", "Address phone"], ["addressLine1", "Address line 1"],
+                    ["addressLine2", "Address line 2"], ["suburb", "Suburb"], ["city", "City"],
+                    ["province", "Province"], ["postalCode", "Postal code"], ["country", "Country"],
+                  ] as const).map(([field, label]) => <label key={field} className="text-xs font-medium text-neutral-700">{label}
+                    <input value={editAddress[field]} onChange={(event) => {
+                      const value = event.target.value;
+                      setEditAddress((current) => ({ ...current, [field]: value }));
+                      if (field === "recipientName") setEditCustomerName(value);
+                      if (field === "phone") setEditCustomerPhone(value);
+                    }} className="mt-1 h-9 w-full rounded-lg border border-neutral-300 px-2.5 text-sm" />
+                  </label>)}
+                </div>
+              </fieldset>
+              <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-wider text-neutral-600">Courier</label>
+                  <input value={editCourier} onChange={(event) => setEditCourier(event.target.value)} maxLength={100} className="mt-1 h-10 w-full rounded-xl border border-neutral-300 bg-white px-3 text-xs" />
+                </div>
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-wider text-neutral-600">Tracking Number</label>
                   <input
@@ -558,8 +729,7 @@ export function AdminOrdersPanel({ selectedOrderId, onClearSelectedOrder }: { se
                     value={editTrackingNumber}
                     onChange={(e) => setEditTrackingNumber(e.target.value)}
                     className="mt-1 h-10 w-full rounded-xl border border-neutral-300 bg-white px-3 text-xs focus:border-neutral-900 focus:outline-none"
-                  >
-                  </input>
+                  />
                 </div>
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-wider text-neutral-600">Tracking URL</label>
@@ -569,10 +739,12 @@ export function AdminOrdersPanel({ selectedOrderId, onClearSelectedOrder }: { se
                     value={editTrackingUrl}
                     onChange={(e) => setEditTrackingUrl(e.target.value)}
                     className="mt-1 h-10 w-full rounded-xl border border-neutral-300 bg-white px-3 text-xs focus:border-neutral-900 focus:outline-none"
-                  >
-                  </input>
+                  />
                 </div>
               </div>
+              <label className="mt-4 block text-xs font-semibold uppercase tracking-wider text-neutral-600">Internal admin notes
+                <textarea value={editAdminNotes} onChange={(event) => setEditAdminNotes(event.target.value)} maxLength={4000} rows={3} className="mt-1 h-24 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm font-normal normal-case" />
+              </label>
 
               {editFulfillmentStatus === "shipped" && activeOrder.fulfillment_status !== "shipped" && (
                 <p className="mt-3 text-xs font-medium text-sky-700 bg-sky-50 border border-sky-200 rounded-lg p-2.5">
@@ -581,6 +753,9 @@ export function AdminOrdersPanel({ selectedOrderId, onClearSelectedOrder }: { se
               )}
 
               <div className="mt-4 flex justify-end gap-3">
+                <button type="button" onClick={() => void deleteOrder(activeOrder)} disabled={deletingOrder} className="mr-auto rounded-xl border border-red-300 px-4 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50">
+                  {deletingOrder ? "Deleting…" : "Delete Order"}
+                </button>
                 <button
                   type="button"
                   onClick={closeOrderDetail}
@@ -593,7 +768,7 @@ export function AdminOrdersPanel({ selectedOrderId, onClearSelectedOrder }: { se
                   disabled={updating}
                   className="btn-primary text-xs py-2 px-5 disabled:opacity-60"
                 >
-                  {updating ? "Saving…" : "Save Changes"}
+                  {updating ? "Saving…" : "Save Order"}
                 </button>
               </div>
             </form>

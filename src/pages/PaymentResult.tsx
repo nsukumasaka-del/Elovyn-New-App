@@ -5,6 +5,7 @@ import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { apiRequest } from "@/lib/store-api";
 import { useStore } from "@/lib/store";
+import { SiteReviewPrompt } from "@/components/SiteReviews";
 
 type PaymentResultKind = "success" | "cancelled" | "failed";
 
@@ -62,5 +63,5 @@ export function PaymentResultPage({ kind }: { kind: PaymentResultKind }) {
 
   const pending = kind === "success" && !confirmed && !/unsuccessful/i.test(status);
   const Icon = confirmed ? CheckCircle2 : pending ? Clock3 : XCircle;
-  return <div className="min-h-screen bg-[#f6f1ea]"><Header /><main className="section-shell grid min-h-[60vh] place-items-center py-16"><section className="w-full max-w-xl rounded-3xl border border-neutral-200 bg-white p-8 text-center shadow-sm sm:p-12"><Icon className={`mx-auto h-12 w-12 ${confirmed ? "text-emerald-600" : pending ? "text-amber-500" : "text-red-500"}`} /><p className="eyebrow mt-6">{paymentMode ? `Yoco ${paymentMode} checkout` : "Yoco checkout"}</p><h1 className="mt-3 text-3xl font-bold tracking-tight">{status}</h1><p className="mx-auto mt-4 max-w-md text-sm leading-6 text-neutral-600">{message}</p><div className="mt-8 flex flex-wrap justify-center gap-3"><Link to="/orders" className="btn-primary">View order history</Link><Link to="/" className="btn-secondary">Return to store</Link></div>{orderId && <p className="mt-6 break-all text-xs text-neutral-400">Order {orderId}</p>}</section></main><Footer /></div>;
+  return <div className="min-h-screen bg-[#f6f1ea]"><Header /><main className="section-shell grid min-h-[60vh] place-items-center py-16"><div className="w-full max-w-xl space-y-4"><section className="rounded-3xl border border-neutral-200 bg-white p-8 text-center shadow-sm sm:p-12"><Icon className={`mx-auto h-12 w-12 ${confirmed ? "text-emerald-600" : pending ? "text-amber-500" : "text-red-500"}`} /><p className="eyebrow mt-6">{paymentMode ? `Yoco ${paymentMode} checkout` : "Yoco checkout"}</p><h1 className="mt-3 text-3xl font-bold tracking-tight">{status}</h1><p className="mx-auto mt-4 max-w-md text-sm leading-6 text-neutral-600">{message}</p><div className="mt-8 flex flex-wrap justify-center gap-3"><Link to="/orders" className="btn-primary">View order history</Link><Link to="/" className="btn-secondary">Return to store</Link></div>{orderId && <p className="mt-6 break-all text-xs text-neutral-400">Order {orderId}</p>}</section>{confirmed && orderId && <SiteReviewPrompt orderId={orderId} />}</div></main><Footer /></div>;
 }

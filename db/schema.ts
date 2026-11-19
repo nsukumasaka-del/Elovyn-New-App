@@ -168,6 +168,8 @@ export const orders = sqliteTable("orders", {
   fulfillmentStatus: text("fulfillment_status").notNull().default("processing"),
   trackingNumber: text("tracking_number"),
   trackingUrl: text("tracking_url"),
+  courier: text("courier"),
+  adminNotes: text("admin_notes"),
   itemsJson: text("items_json").notNull(),
   deliveryAddressJson: text("delivery_address_json"),
   shippingFee: real("shipping_fee").notNull().default(0),
@@ -266,6 +268,39 @@ export const adminNotifications = sqliteTable("admin_notifications", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   index("admin_notifications_is_read_created_idx").on(table.isRead, table.createdAt),
+]);
+
+export const productReviews = sqliteTable("product_reviews", {
+  id: text("id").primaryKey(),
+  productId: text("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  orderId: text("order_id").notNull().references(() => orders.id, { onDelete: "cascade" }),
+  customerName: text("customer_name").notNull(),
+  rating: integer("rating").notNull(),
+  title: text("title"),
+  comment: text("comment").notNull(),
+  status: text("status", { enum: ["published", "hidden"] }).notNull().default("published"),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  uniqueIndex("product_reviews_purchase_idx").on(table.productId, table.userId, table.orderId),
+  index("product_reviews_product_status_created_idx").on(table.productId, table.status, table.createdAt),
+  check("product_reviews_rating_check", sql`${table.rating} BETWEEN 1 AND 5`),
+  check("product_reviews_status_check", sql`${table.status} IN ('published', 'hidden')`),
+]);
+
+export const siteReviews = sqliteTable("site_reviews", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+  orderId: text("order_id").references(() => orders.id, { onDelete: "set null" }),
+  customerName: text("customer_name").notNull(),
+  rating: integer("rating").notNull(),
+  comment: text("comment").notNull(),
+  isFeatured: integer("is_featured", { mode: "boolean" }).notNull().default(true),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  uniqueIndex("site_reviews_order_idx").on(table.orderId),
+  index("site_reviews_featured_rating_created_idx").on(table.isFeatured, table.rating, table.createdAt),
+  check("site_reviews_rating_check", sql`${table.rating} BETWEEN 1 AND 5`),
 ]);
 
 export const pricingSettings = sqliteTable("pricing_settings", {

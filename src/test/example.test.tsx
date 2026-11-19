@@ -7,7 +7,12 @@ import { StoreProvider } from "@/lib/store";
 describe("homepage storefront", () => {
   it("renders the premium fashion storefront sections", () => {
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
-      const payload = String(input).includes("/auth/me") ? { user: null } : { products: [] };
+      const url = String(input);
+      const payload = url.includes("/auth/me") ? { user: null }
+        : url.includes("/site-reviews") ? { reviews: [] }
+          : url.includes("/storefront-config") ? { editorialBanner: {} }
+            : url.includes("/settings") ? { settings: {} }
+              : { products: [] };
       return Promise.resolve(new Response(JSON.stringify(payload), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -25,9 +30,13 @@ describe("homepage storefront", () => {
       const url = String(input);
       const payload = url.includes("/auth/me")
         ? { user: null }
-        : url.includes("/settings")
-          ? { settings: {} }
-          : { products: [{ id: "live-product", title: "Live Inventory Jacket", price: 750, stock_quantity: 4, category: "Streetwear", image_url: null }] };
+        : url.includes("/site-reviews")
+          ? { reviews: [] }
+          : url.includes("/storefront-config")
+            ? { editorialBanner: {} }
+            : url.includes("/settings")
+              ? { settings: {} }
+              : { products: [{ id: "live-product", title: "Live Inventory Jacket", price: 750, stock_quantity: 4, category: "Streetwear", image_url: null }] };
       return Promise.resolve(new Response(JSON.stringify(payload), {
         status: 200,
         headers: { "Content-Type": "application/json" },

@@ -10,8 +10,10 @@ import {
   paymentProviderSettings,
   paymentWebhookEvents,
   pricingSettings,
+  productReviews,
   products,
   siteSettings,
+  siteReviews,
   storeSettings,
   supplierIntegrations,
   supplierSyncHistory,
@@ -39,7 +41,8 @@ import { readSupplierJsonResponse, supplierUrlValidationError, SUPPLIER_AUTHENTI
 import { cjAccessTokenFromPayload, cjProductRecordsFromPayload } from "../../src/lib/cj-auth";
 import { cjCategoriesFromPayload, cjImportProductFromDetail, cjSearchResultsFromPayload, type SupplierCategory, type SupplierProductSearchResult } from "../../src/lib/cj-import";
 import { defaultSiteSettings, type SiteSettings } from "../../src/lib/site-settings";
-import { normalizeDeliveryAddress } from "../../src/lib/delivery-address";
+import { defaultEditorialBanner, type EditorialBanner } from "../../src/lib/editorial-banner";
+import { normalizeDeliveryAddress, normalizeSouthAfricanMobilePhone } from "../../src/lib/delivery-address";
 import { calculateCheckoutAmounts, STANDARD_SHIPPING_FEE_CENTS } from "../../src/lib/checkout";
 import { supplierOrdersToCsv, type SupplierExportOrder, type SupplierExportType } from "../../src/lib/supplier-csv";
 import { createYocoCheckout, getYocoCheckout, normalizeYocoSecretKey, registerYocoWebhook, verifyYocoWebhookSignature } from "../lib/yoco";
@@ -285,6 +288,25 @@ function normalizeSiteSettingsInput(body: Record<string, unknown>): SiteSettings
     promotional_image_position_x: siteSettingInteger(body.promotional_image_position_x, "Promotional image horizontal position", 0, 100),
     promotional_image_position_y: siteSettingInteger(body.promotional_image_position_y, "Promotional image vertical position", 0, 100),
   };
+}
+
+function storedEditorialBanner(value: string | null | undefined): EditorialBanner {
+  if (!value) return defaultEditorialBanner;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return defaultEditorialBanner;
+    const candidate = parsed as Record<string, unknown>;
+    return {
+      imageUrl: typeof candidate.imageUrl === "string" ? candidate.imageUrl : defaultEditorialBanner.imageUrl,
+      eyebrow: typeof candidate.eyebrow === "string" ? candidate.eyebrow : defaultEditorialBanner.eyebrow,
+      headline: typeof candidate.headline === "string" ? candidate.headline : defaultEditorialBanner.headline,
+      description: typeof candidate.description === "string" ? candidate.description : defaultEditorialBanner.description,
+      buttonText: typeof candidate.buttonText === "string" ? candidate.buttonText : defaultEditorialBanner.buttonText,
+      buttonLink: typeof candidate.buttonLink === "string" ? candidate.buttonLink : defaultEditorialBanner.buttonLink,
+    };
+  } catch {
+    return defaultEditorialBanner;
+  }
 }
 
 function normalizeEmail(value: unknown) {
@@ -2269,6 +2291,46 @@ async function route(
     return json({ user: updated });
   }
 
+  if (path === "/storefront-config" && method === "GET") {
+    const [saved] = await db.select({ value: storeSettings.value })
+      .from(storeSettings)
+      .where(eq(storeSettings.key, "homepage_editorial_banner"))
+      .limit(1);
+    return json({ editorialBanner: storedEditorialBanner(saved?.value) }, 200, { "Cache-Control": "no-store" });
+  }
+
+  if (path === "/admin/settings/editorial-banner" && method === "GET") {
+    await requireAdmin(db, request, env);
+    const [saved] = await db.select({ value: storeSettings.value })
+      .from(storeSettings)
+      .where(eq(storeSettings.key, "homepage_editorial_banner"))
+      .limit(1);
+    return json({ editorialBanner: storedEditorialBanner(saved?.value) }, 200, { "Cache-Control": "no-store" });
+  }
+
+  if (path === "/admin/settings/editorial-banner" && method === "PUT") {
+    await requireAdmin(db, request, env);
+    const body = await bodyAsJson(request);
+    const editorialBanner: EditorialBanner = {
+      imageUrl: siteSettingUrl(body.imageUrl, "Editorial banner image URL"),
+      eyebrow: siteSettingText(body.eyebrow, "Editorial banner eyebrow", 100),
+      headline: requiredString(body.headline, "Editorial banner headline", 160),
+      description: siteSettingText(body.description, "Editorial banner description", 1000),
+      buttonText: requiredString(body.buttonText, "Editorial banner button label", 80),
+      buttonLink: siteSettingUrl(body.buttonLink, "Editorial banner button URL"),
+    };
+    const updatedAt = currentTimestamp();
+    await db.insert(storeSettings).values({
+      key: "homepage_editorial_banner",
+      value: JSON.stringify(editorialBanner),
+      updatedAt,
+    }).onConflictDoUpdate({
+      target: storeSettings.key,
+      set: { value: JSON.stringify(editorialBanner), updatedAt },
+    });
+    return json({ editorialBanner }, 200, { "Cache-Control": "no-store" });
+  }
+
   if ((path === "/settings" || path === "/admin/settings") && method === "GET") {
     if (path === "/admin/settings") await requireAdmin(db, request, env);
     const [stored] = await db.select(siteSettingsColumns).from(siteSettings).where(eq(siteSettings.id, "default")).limit(1);
@@ -2459,6 +2521,201 @@ async function route(
       "X-RateLimit-Limit": String(rate.limit),
       "X-RateLimit-Remaining": String(rate.remaining),
     });
+  }
+
+  const productReviewsRoute = path.match(/^\/products\/([^/]+)\/reviews$/);
+  if (productReviewsRoute && (method === "GET" || method === "POST")) {
+    let productKey: string;
+    try { productKey = decodeURIComponent(productReviewsRoute[1]); }
+    catch { throw new ApiError("Product was not found.", 404); }
+    const currentUser = await getSessionUser(db, request);
+    const identity = or(eq(products.id, productKey), eq(products.handle, productKey));
+    const [product] = await db.select({ id: products.id })
+      .from(products)
+      .where(isConfiguredAdmin(currentUser, env) ? identity : and(eq(products.isListed, true), identity))
+      .limit(1);
+    if (!product) throw new ApiError("Product was not found.", 404);
+
+    if (method === "GET") {
+      const reviews = await db.select({
+        id: productReviews.id,
+        customer_name: productReviews.customerName,
+        rating: productReviews.rating,
+        title: productReviews.title,
+        comment: productReviews.comment,
+        created_at: productReviews.createdAt,
+      }).from(productReviews)
+        .where(and(eq(productReviews.productId, product.id), eq(productReviews.status, "published")))
+        .orderBy(desc(productReviews.createdAt))
+        .limit(100);
+      const [ratingStats] = await db.select({
+        averageRating: sql<number>`COALESCE(AVG(${productReviews.rating}), 0)`,
+        reviewCount: sql<number>`COUNT(*)`,
+      }).from(productReviews)
+        .where(and(eq(productReviews.productId, product.id), eq(productReviews.status, "published")));
+      const eligibleOrders = currentUser
+        ? await db.select({ id: orders.id, order_number: orders.orderNumber })
+          .from(orders)
+          .innerJoin(orderItems, eq(orderItems.orderId, orders.id))
+          .where(and(
+            eq(orders.userId, currentUser.id),
+            eq(orderItems.productId, product.id),
+            or(inArray(orders.status, ["Paid", "Completed", "Fulfilled", "Shipped", "Delivered"]), eq(orders.fulfillmentStatus, "delivered")),
+            sql`NOT EXISTS (
+              SELECT 1 FROM product_reviews
+              WHERE product_reviews.product_id = ${product.id}
+                AND product_reviews.user_id = ${currentUser.id}
+                AND product_reviews.order_id = ${orders.id}
+            )`,
+          ))
+          .orderBy(desc(orders.createdAt))
+          .limit(50)
+        : [];
+      return json({
+        reviews,
+        averageRating: Number(ratingStats?.averageRating ?? 0),
+        reviewCount: Number(ratingStats?.reviewCount ?? 0),
+        eligibleOrders,
+      }, 200, { "Cache-Control": "no-store" });
+    }
+
+    if (!currentUser) throw new ApiError("Sign in to review this product.", 401);
+    const body = await bodyAsJson(request);
+    const orderId = requiredString(body.order_id, "Order id", 100);
+    const rating = Number(body.rating);
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) throw new ApiError("Rating must be a whole number from 1 to 5.", 400);
+    const title = body.title === undefined || body.title === null || body.title === ""
+      ? null
+      : requiredString(body.title, "Review headline", 120);
+    const comment = requiredString(body.comment, "Review comment", 2000);
+    const [purchase] = await db.select({ id: orders.id })
+      .from(orders)
+      .innerJoin(orderItems, eq(orderItems.orderId, orders.id))
+      .where(and(
+        eq(orders.id, orderId),
+        eq(orders.userId, currentUser.id),
+        eq(orderItems.productId, product.id),
+        or(inArray(orders.status, ["Paid", "Completed", "Fulfilled", "Shipped", "Delivered"]), eq(orders.fulfillmentStatus, "delivered")),
+      ))
+      .limit(1);
+    if (!purchase) throw new ApiError("A paid order containing this product is required to submit a review.", 403);
+    const [existingReview] = await db.select({ id: productReviews.id }).from(productReviews)
+      .where(and(
+        eq(productReviews.productId, product.id),
+        eq(productReviews.userId, currentUser.id),
+        eq(productReviews.orderId, orderId),
+      ))
+      .limit(1);
+    if (existingReview) throw new ApiError("You have already reviewed this product for that order.", 409);
+
+    const customerName = currentUser.fullName?.trim() || currentUser.email.split("@")[0];
+    const review = {
+      id: crypto.randomUUID(),
+      productId: product.id,
+      userId: currentUser.id,
+      orderId,
+      customerName: requiredString(customerName, "Customer name", 100),
+      rating,
+      title,
+      comment,
+      createdAt: currentTimestamp(),
+    };
+    try {
+      await db.insert(productReviews).values(review);
+    } catch (error) {
+      if (errorMessage(error).toLowerCase().includes("unique")) {
+        throw new ApiError("You have already reviewed this product for that order.", 409);
+      }
+      throw error;
+    }
+    return json({
+      review: {
+        id: review.id,
+        customer_name: review.customerName,
+        rating: review.rating,
+        title: review.title,
+        comment: review.comment,
+        created_at: review.createdAt,
+      },
+    }, 201);
+  }
+
+  if (path === "/site-reviews/eligibility" && method === "GET") {
+    const currentUser = await requireUser(db, request);
+    const requestedOrderId = url.searchParams.get("order_id");
+    const filters = [
+      eq(orders.userId, currentUser.id),
+      or(inArray(orders.status, ["Paid", "Completed", "Fulfilled", "Shipped", "Delivered"]), eq(orders.fulfillmentStatus, "delivered")),
+      sql`NOT EXISTS (SELECT 1 FROM site_reviews WHERE site_reviews.order_id = ${orders.id})`,
+    ];
+    if (requestedOrderId) filters.push(eq(orders.id, requestedOrderId));
+    const [eligibleOrder] = await db.select({
+      order_id: orders.id,
+      order_number: orders.orderNumber,
+      customer_name: orders.customerName,
+    }).from(orders)
+      .where(and(...filters))
+      .orderBy(desc(orders.createdAt))
+      .limit(1);
+    return json({ eligible: Boolean(eligibleOrder), eligible_order: eligibleOrder ?? null }, 200, { "Cache-Control": "no-store" });
+  }
+
+  if (path === "/site-reviews" && method === "GET") {
+    const reviews = await db.select({
+      id: siteReviews.id,
+      customer_name: siteReviews.customerName,
+      rating: siteReviews.rating,
+      comment: siteReviews.comment,
+      created_at: siteReviews.createdAt,
+    }).from(siteReviews)
+      .where(and(eq(siteReviews.isFeatured, true), sql`${siteReviews.rating} >= 4`))
+      .orderBy(desc(siteReviews.rating), desc(siteReviews.createdAt))
+      .limit(6);
+    return json({ reviews }, 200, { "Cache-Control": "no-store" });
+  }
+
+  if (path === "/site-reviews" && method === "POST") {
+    const currentUser = await requireUser(db, request);
+    const body = await bodyAsJson(request);
+    const orderId = requiredString(body.order_id, "Order id", 100);
+    const rating = Number(body.rating);
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) throw new ApiError("Rating must be a whole number from 1 to 5.", 400);
+    const comment = requiredString(body.comment, "Review comment", 2000);
+    const [purchase] = await db.select({
+      id: orders.id,
+      customerName: orders.customerName,
+    }).from(orders)
+      .where(and(
+        eq(orders.id, orderId),
+        eq(orders.userId, currentUser.id),
+        or(inArray(orders.status, ["Paid", "Completed", "Fulfilled", "Shipped", "Delivered"]), eq(orders.fulfillmentStatus, "delivered")),
+      ))
+      .limit(1);
+    if (!purchase) throw new ApiError("A paid order is required to submit a store review.", 403);
+    const [existingReview] = await db.select({ id: siteReviews.id }).from(siteReviews)
+      .where(eq(siteReviews.orderId, orderId))
+      .limit(1);
+    if (existingReview) throw new ApiError("You have already reviewed your store experience for that order.", 409);
+    const customerName = currentUser.fullName?.trim() || purchase.customerName?.trim() || currentUser.email.split("@")[0];
+    const review = {
+      id: crypto.randomUUID(),
+      userId: currentUser.id,
+      orderId,
+      customerName: requiredString(customerName, "Customer name", 100),
+      rating,
+      comment,
+      isFeatured: true,
+      createdAt: currentTimestamp(),
+    };
+    try {
+      await db.insert(siteReviews).values(review);
+    } catch (error) {
+      if (errorMessage(error).toLowerCase().includes("unique")) {
+        throw new ApiError("You have already reviewed your store experience for that order.", 409);
+      }
+      throw error;
+    }
+    return json({ review: { ...review, customer_name: review.customerName } }, 201);
   }
 
   if (path === "/products" && method === "GET") {
@@ -3433,6 +3690,288 @@ async function route(
     });
   }
 
+  if (path === "/admin/orders/bulk-delete" && method === "POST") {
+    await requireAdmin(db, request, env);
+    const body = await bodyAsJson(request);
+    if (!Array.isArray(body.order_ids) || body.order_ids.length < 1 || body.order_ids.length > 100) {
+      throw new ApiError("Select between 1 and 100 test orders to delete.", 400);
+    }
+    const orderIds = [...new Set(body.order_ids.map((value) => requiredString(value, "Order id", 100)))];
+    const selected = await db.select({ id: orders.id, paymentMode: orders.paymentMode })
+      .from(orders)
+      .where(inArray(orders.id, orderIds));
+    if (selected.length !== orderIds.length) throw new ApiError("One or more selected orders were not found.", 404);
+    if (selected.some((order) => order.paymentMode !== "test")) {
+      throw new ApiError("Bulk deletion is limited to Test Mode orders. Delete Live orders individually.", 400);
+    }
+    if (!env.DB) throw new ApiError("The D1 database is unavailable.", 503);
+    const statements = orderIds.flatMap((id) => [
+      env.DB!.prepare("DELETE FROM order_items WHERE order_id = ?").bind(id),
+      env.DB!.prepare("DELETE FROM admin_notifications WHERE order_id = ?").bind(id),
+      env.DB!.prepare("DELETE FROM orders WHERE id = ?").bind(id),
+    ]);
+    await env.DB.batch(statements);
+    return json({ deleted: orderIds.length });
+  }
+
+  if (path.startsWith("/admin/orders/") && method === "DELETE") {
+    await requireAdmin(db, request, env);
+    let orderId: string;
+    try { orderId = decodeURIComponent(path.slice("/admin/orders/".length)); }
+    catch { throw new ApiError("Order id is invalid.", 400); }
+    if (!orderId || orderId.includes("/")) throw new ApiError("Order id is invalid.", 400);
+    const [existing] = await db.select({ id: orders.id }).from(orders).where(eq(orders.id, orderId)).limit(1);
+    if (!existing) throw new ApiError("Order not found.", 404);
+    if (!env.DB) throw new ApiError("The D1 database is unavailable.", 503);
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM order_items WHERE order_id = ?").bind(orderId),
+      env.DB.prepare("DELETE FROM admin_notifications WHERE order_id = ?").bind(orderId),
+      env.DB.prepare("DELETE FROM orders WHERE id = ?").bind(orderId),
+    ]);
+    return json({ deleted: true, order_id: orderId });
+  }
+
+  if (path.startsWith("/admin/orders/") && method === "PUT") {
+    await requireAdmin(db, request, env);
+    let orderId: string;
+    try { orderId = decodeURIComponent(path.slice("/admin/orders/".length)); }
+    catch { throw new ApiError("Order id is invalid.", 400); }
+    if (!orderId || orderId.includes("/")) throw new ApiError("Order id is invalid.", 400);
+    const [existing] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+    if (!existing) throw new ApiError("Order not found.", 404);
+    const body = await bodyAsJson(request);
+    const allowedStatuses: Record<string, string> = {
+      pending: "Pending",
+      "awaiting payment": "Awaiting Payment",
+      paid: "Paid",
+      processing: "Processing",
+      shipped: "Shipped",
+      delivered: "Delivered",
+      cancelled: "Cancelled",
+      "payment review": "Payment Review",
+      "payment failed": "Payment Failed",
+      completed: "Completed",
+      fulfilled: "Fulfilled",
+    };
+    const updates: Partial<typeof orders.$inferInsert> = { updatedAt: currentTimestamp() };
+    if (body.status !== undefined) {
+      if (typeof body.status !== "string" || !allowedStatuses[body.status.trim().toLowerCase()]) {
+        throw new ApiError("Choose a supported order status.", 400);
+      }
+      updates.status = allowedStatuses[body.status.trim().toLowerCase()];
+    }
+    if (body.fulfillment_status !== undefined) {
+      if (typeof body.fulfillment_status !== "string" || !["processing", "shipped", "delivered", "cancelled"].includes(body.fulfillment_status)) {
+        throw new ApiError("Choose a supported fulfillment status.", 400);
+      }
+      updates.fulfillmentStatus = body.fulfillment_status;
+    }
+    if (body.customer_name !== undefined) {
+      updates.customerName = body.customer_name === null || body.customer_name === ""
+        ? null
+        : requiredString(body.customer_name, "Customer name", 100);
+    }
+    if (body.customer_phone !== undefined) {
+      if (typeof body.customer_phone !== "string" || !normalizeSouthAfricanMobilePhone(body.customer_phone)) {
+        throw new ApiError("Enter a valid South African mobile number.", 400);
+      }
+      updates.customerPhone = normalizeSouthAfricanMobilePhone(body.customer_phone);
+    }
+    if (body.total_amount !== undefined) {
+      const totalAmount = Number(body.total_amount);
+      if (!Number.isFinite(totalAmount) || totalAmount < 0 || totalAmount > 1_000_000_000) {
+        throw new ApiError("Order total must be between 0 and 1,000,000,000 ZAR.", 400);
+      }
+      updates.totalAmount = totalAmount;
+    }
+    if (body.shipping_fee !== undefined) {
+      const shippingFee = Number(body.shipping_fee);
+      if (!Number.isFinite(shippingFee) || shippingFee < 0 || shippingFee > 1_000_000_000) {
+        throw new ApiError("Delivery fee must be between 0 and 1,000,000,000 ZAR.", 400);
+      }
+      updates.shippingFee = shippingFee;
+    }
+    if (body.tracking_number !== undefined) {
+      updates.trackingNumber = body.tracking_number === null || body.tracking_number === ""
+        ? null
+        : requiredString(body.tracking_number, "Tracking number", 200);
+    }
+    if (body.tracking_url !== undefined) {
+      if (body.tracking_url === null || body.tracking_url === "") {
+        updates.trackingUrl = null;
+      } else {
+        const trackingUrl = requiredString(body.tracking_url, "Tracking URL", 2000);
+        let parsedTrackingUrl: URL;
+        try { parsedTrackingUrl = new URL(trackingUrl); }
+        catch { throw new ApiError("Tracking URL must be an absolute HTTP(S) URL.", 400); }
+        if (parsedTrackingUrl.protocol !== "https:" && parsedTrackingUrl.protocol !== "http:") {
+          throw new ApiError("Tracking URL must be an absolute HTTP(S) URL.", 400);
+        }
+        updates.trackingUrl = parsedTrackingUrl.toString();
+      }
+    }
+    if (body.courier !== undefined) {
+      updates.courier = body.courier === null || body.courier === ""
+        ? null
+        : requiredString(body.courier, "Courier", 100);
+    }
+    if (body.admin_notes !== undefined) {
+      if (body.admin_notes !== null && typeof body.admin_notes !== "string") {
+        throw new ApiError("Admin notes must be text.", 400);
+      }
+      if (typeof body.admin_notes === "string" && body.admin_notes.length > 4000) {
+        throw new ApiError("Admin notes must be no longer than 4000 characters.", 400);
+      }
+      updates.adminNotes = typeof body.admin_notes === "string" && body.admin_notes.trim()
+        ? body.admin_notes.trim()
+        : null;
+    }
+    if (body.delivery_address !== undefined) {
+      if (body.delivery_address === null) {
+        updates.deliveryAddressJson = null;
+        updates.shippingAddress = null;
+        updates.postalCode = null;
+      } else {
+        const normalizedAddress = normalizeDeliveryAddress(body.delivery_address);
+        if (!normalizedAddress.ok) throw new ApiError(normalizedAddress.error, 400);
+        const address = normalizedAddress.address;
+        if (updates.customerPhone) address.phone = updates.customerPhone;
+        if (updates.customerName) address.recipientName = updates.customerName;
+        updates.deliveryAddressJson = JSON.stringify(address);
+        updates.shippingAddress = JSON.stringify(address);
+        updates.postalCode = address.postalCode;
+        if (updates.customerPhone === undefined) updates.customerPhone = address.phone;
+      }
+    }
+    await db.update(orders).set(updates).where(eq(orders.id, orderId));
+    const nextFulfillmentStatus = updates.fulfillmentStatus ?? existing.fulfillmentStatus;
+    if (nextFulfillmentStatus === "shipped" && existing.fulfillmentStatus !== "shipped" && existing.customerEmail) {
+      waitUntil((async () => {
+        await sendShippedEmail(env, {
+          orderNumber: existing.orderNumber || existing.id,
+          customerEmail: existing.customerEmail!,
+          customerName: updates.customerName ?? existing.customerName,
+          trackingNumber: updates.trackingNumber ?? existing.trackingNumber,
+          trackingUrl: updates.trackingUrl ?? existing.trackingUrl,
+        });
+      })());
+    }
+    const [updatedOrder] = await db.select({
+      id: orders.id,
+      order_number: orders.orderNumber,
+      user_id: orders.userId,
+      customer_email: orders.customerEmail,
+      customer_name: orders.customerName,
+      customer_phone: orders.customerPhone,
+      postal_code: orders.postalCode,
+      total_amount: orders.totalAmount,
+      status: orders.status,
+      fulfillment_status: orders.fulfillmentStatus,
+      tracking_number: orders.trackingNumber,
+      tracking_url: orders.trackingUrl,
+      courier: orders.courier,
+      admin_notes: orders.adminNotes,
+      items_json: orders.itemsJson,
+      delivery_address_json: orders.deliveryAddressJson,
+      shipping_fee: orders.shippingFee,
+      payment_provider: orders.paymentProvider,
+      payment_mode: orders.paymentMode,
+      payment_reference: orders.paymentReference,
+      payment_id: orders.paymentId,
+      paid_at: orders.paidAt,
+      email_sent: orders.emailSent,
+      created_at: orders.createdAt,
+      updated_at: orders.updatedAt,
+      estimated_cost_usd: sql<number | null>`(
+        SELECT CASE WHEN COUNT(*) = 0 OR COUNT(${orderItems.costPriceUsd}) < COUNT(*) THEN NULL
+          ELSE SUM(${orderItems.costPriceUsd} * ${orderItems.quantity}) END
+        FROM ${orderItems} WHERE ${orderItems.orderId} = ${orders.id}
+      )`,
+    }).from(orders).where(eq(orders.id, orderId)).limit(1);
+    return json({ order: updatedOrder }, 200, { "Cache-Control": "no-store" });
+  }
+
+  if (path === "/admin/reviews" && method === "GET") {
+    await requireAdmin(db, request, env);
+    const productRows = await db.select({
+      id: productReviews.id,
+      product_id: productReviews.productId,
+      product_title: products.title,
+      order_id: productReviews.orderId,
+      order_number: orders.orderNumber,
+      customer_name: productReviews.customerName,
+      rating: productReviews.rating,
+      title: productReviews.title,
+      comment: productReviews.comment,
+      status: productReviews.status,
+      created_at: productReviews.createdAt,
+    }).from(productReviews)
+      .innerJoin(products, eq(products.id, productReviews.productId))
+      .leftJoin(orders, eq(orders.id, productReviews.orderId))
+      .orderBy(desc(productReviews.createdAt))
+      .limit(300);
+    const siteRows = await db.select({
+      id: siteReviews.id,
+      order_id: siteReviews.orderId,
+      order_number: orders.orderNumber,
+      customer_name: siteReviews.customerName,
+      rating: siteReviews.rating,
+      comment: siteReviews.comment,
+      is_featured: siteReviews.isFeatured,
+      created_at: siteReviews.createdAt,
+    }).from(siteReviews)
+      .leftJoin(orders, eq(orders.id, siteReviews.orderId))
+      .orderBy(desc(siteReviews.createdAt))
+      .limit(300);
+    return json({ product_reviews: productRows, site_reviews: siteRows }, 200, { "Cache-Control": "no-store" });
+  }
+
+  const productReviewAdminRoute = path.match(/^\/admin\/reviews\/product\/([^/]+)$/);
+  if (productReviewAdminRoute && method === "PATCH") {
+    await requireAdmin(db, request, env);
+    const reviewId = decodeURIComponent(productReviewAdminRoute[1]);
+    const body = await bodyAsJson(request);
+    if (body.status !== "published" && body.status !== "hidden") {
+      throw new ApiError("Review status must be published or hidden.", 400);
+    }
+    const [review] = await db.update(productReviews).set({ status: body.status })
+      .where(eq(productReviews.id, reviewId))
+      .returning({ id: productReviews.id, status: productReviews.status });
+    if (!review) throw new ApiError("Product review was not found.", 404);
+    return json({ review });
+  }
+  if (productReviewAdminRoute && method === "DELETE") {
+    await requireAdmin(db, request, env);
+    const reviewId = decodeURIComponent(productReviewAdminRoute[1]);
+    const [review] = await db.delete(productReviews).where(eq(productReviews.id, reviewId))
+      .returning({ id: productReviews.id });
+    if (!review) throw new ApiError("Product review was not found.", 404);
+    return json({ deleted: true });
+  }
+
+  const siteReviewAdminRoute = path.match(/^\/admin\/reviews\/site\/([^/]+)$/);
+  if (siteReviewAdminRoute && method === "PATCH") {
+    await requireAdmin(db, request, env);
+    const reviewId = decodeURIComponent(siteReviewAdminRoute[1]);
+    const body = await bodyAsJson(request);
+    if (typeof body.is_featured !== "boolean") {
+      throw new ApiError("Featured status must be true or false.", 400);
+    }
+    const [review] = await db.update(siteReviews).set({ isFeatured: body.is_featured })
+      .where(eq(siteReviews.id, reviewId))
+      .returning({ id: siteReviews.id, is_featured: siteReviews.isFeatured });
+    if (!review) throw new ApiError("Store review was not found.", 404);
+    return json({ review });
+  }
+  if (siteReviewAdminRoute && method === "DELETE") {
+    await requireAdmin(db, request, env);
+    const reviewId = decodeURIComponent(siteReviewAdminRoute[1]);
+    const [review] = await db.delete(siteReviews).where(eq(siteReviews.id, reviewId))
+      .returning({ id: siteReviews.id });
+    if (!review) throw new ApiError("Store review was not found.", 404);
+    return json({ deleted: true });
+  }
+
   if (path === "/admin/orders" && method === "GET") {
     await requireAdmin(db, request, env);
     const statusParam = url.searchParams.get("status")?.trim().toLowerCase();
@@ -3451,6 +3990,8 @@ async function route(
       fulfillment_status: orders.fulfillmentStatus,
       tracking_number: orders.trackingNumber,
       tracking_url: orders.trackingUrl,
+      courier: orders.courier,
+      admin_notes: orders.adminNotes,
       items_json: orders.itemsJson,
       delivery_address_json: orders.deliveryAddressJson,
       shipping_fee: orders.shippingFee,
@@ -3496,11 +4037,41 @@ async function route(
   if (path.startsWith("/admin/orders/") && !path.includes("/fulfillment") && method === "GET") {
     await requireAdmin(db, request, env);
     const orderId = decodeURIComponent(path.slice("/admin/orders/".length));
-    const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-    if (!order) throw new ApiError("Order not found.", 404);
+    const [storedOrder] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+    if (!storedOrder) throw new ApiError("Order not found.", 404);
 
-    const [orderUser] = await db.select({ email: users.email, fullName: users.fullName }).from(users).where(eq(users.id, order.userId)).limit(1);
-    const items = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
+    const [orderUser] = await db.select({ email: users.email, fullName: users.fullName }).from(users).where(eq(users.id, storedOrder.userId)).limit(1);
+    const items = await db.select().from(orderItems).where(eq(orderItems.orderId, storedOrder.id));
+    const order = {
+      id: storedOrder.id,
+      order_number: storedOrder.orderNumber,
+      user_id: storedOrder.userId,
+      customer_email: storedOrder.customerEmail,
+      customer_name: storedOrder.customerName,
+      customer_phone: storedOrder.customerPhone,
+      postal_code: storedOrder.postalCode,
+      total_amount: storedOrder.totalAmount,
+      status: storedOrder.status,
+      fulfillment_status: storedOrder.fulfillmentStatus,
+      tracking_number: storedOrder.trackingNumber,
+      tracking_url: storedOrder.trackingUrl,
+      courier: storedOrder.courier,
+      admin_notes: storedOrder.adminNotes,
+      items_json: storedOrder.itemsJson,
+      delivery_address_json: storedOrder.deliveryAddressJson,
+      shipping_fee: storedOrder.shippingFee,
+      payment_provider: storedOrder.paymentProvider,
+      payment_mode: storedOrder.paymentMode,
+      payment_reference: storedOrder.paymentReference,
+      payment_id: storedOrder.paymentId,
+      paid_at: storedOrder.paidAt,
+      email_sent: storedOrder.emailSent,
+      created_at: storedOrder.createdAt,
+      updated_at: storedOrder.updatedAt,
+      estimated_cost_usd: items.length > 0 && items.every((item) => item.costPriceUsd !== null)
+        ? items.reduce((total, item) => total + (item.costPriceUsd ?? 0) * item.quantity, 0)
+        : null,
+    };
     return json({ order, user: orderUser, line_items: items }, 200, { "Cache-Control": "no-store" });
   }
 

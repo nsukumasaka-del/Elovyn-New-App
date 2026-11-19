@@ -7,6 +7,7 @@ import { apiRequest, readSavedProduct, type CartProduct } from "@/lib/store-api"
 import { useStore } from "@/lib/store";
 import { toast } from "sonner";
 import { normalizeDeliveryAddress, normalizeSouthAfricanMobilePhone, type DeliveryAddress } from "@/lib/delivery-address";
+import { SiteReviewPrompt } from "@/components/SiteReviews";
 
 const emptyDeliveryAddress: DeliveryAddress = {
   recipientName: "", phone: "", addressLine1: "", addressLine2: "", suburb: "", city: "", province: "", postalCode: "", country: "South Africa",
@@ -225,6 +226,7 @@ export function OrdersPage() {
             Track with order number →
           </Link>
         </div>
+        {orders.some((order) => ["Paid", "Completed", "Fulfilled"].includes(order.status) || order.fulfillment_status === "delivered") && <div className="mt-6"><SiteReviewPrompt /></div>}
 
         {loading ? (
           <p className="mt-8 text-neutral-500">Loading your orders…</p>

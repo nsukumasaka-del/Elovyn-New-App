@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Navigate, Link } from "react-router-dom";
-import { ArrowDownToLine, Boxes, CreditCard, ImageIcon, LayoutDashboard, PackagePlus, Pencil, Plus, Search, Settings2, ShoppingCart, Sparkles, Trash2, Upload, X } from "lucide-react";
+import { ArrowDownToLine, Boxes, CreditCard, ImageIcon, LayoutDashboard, MessageSquare, PackagePlus, Pencil, Plus, Search, Settings2, ShoppingCart, Sparkles, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest, isPrimaryAdmin, type StoreUser } from "@/lib/store-api";
 import { useStore, type StoreProduct } from "@/lib/store";
@@ -10,6 +10,8 @@ import { defaultSiteSettings, type SiteSettings } from "@/lib/site-settings";
 import { calculateRecommendedRetailPrice, DEFAULT_FEE_BUFFER_PERCENT } from "@/lib/pricing";
 import { AdminOrdersPanel } from "@/components/AdminOrdersPanel";
 import { AdminNotificationBell } from "@/components/AdminNotificationBell";
+import { AdminReviewsPanel } from "@/components/AdminReviewsPanel";
+import { EditorialBannerEditor } from "@/components/EditorialBannerEditor";
 import defaultHeroImage from "@/assets/Front Page.png";
 
 type Product = {
@@ -71,6 +73,7 @@ const customSupplierPresets = {
 const tabs = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "orders", label: "Orders", icon: ShoppingCart },
+  { id: "reviews", label: "Reviews", icon: MessageSquare },
   { id: "payments", label: "Payments", icon: CreditCard },
   { id: "inventory", label: "Inventory", icon: Boxes },
   { id: "suppliers", label: "Suppliers", icon: Settings2 },
@@ -451,7 +454,8 @@ export function AdminPage() {
           )}
 
           {tab === "imports" && <ImportProductsPanel suppliers={suppliers} onImported={() => void Promise.all([loadData(), refreshProducts()])} />}
-          {tab === "site-settings" && <WebsiteContentPanel settings={siteSettings} onSaved={applySiteSettings} />}
+          {tab === "reviews" && <AdminReviewsPanel />}
+          {tab === "site-settings" && <><WebsiteContentPanel settings={siteSettings} onSaved={applySiteSettings} /><EditorialBannerEditor /></>}
         </main>
       </div>
       {addOpen && <AddProductDialog onClose={() => setAddOpen(false)} onCreated={(product) => { setAddOpen(false); applyProduct(product); void Promise.all([loadData(), refreshProducts()]).catch((error: Error) => toast.error(`Product saved, but inventory refresh failed: ${error.message}`)); }} />}

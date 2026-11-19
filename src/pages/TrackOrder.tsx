@@ -4,6 +4,7 @@ import { CheckCircle2, Clock, ExternalLink, Package, Search, Truck, ArrowLeft } 
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { apiRequest } from "@/lib/store-api";
+import { SiteReviewPrompt } from "@/components/SiteReviews";
 
 type TrackedOrder = {
   id: string;
@@ -252,6 +253,7 @@ export function TrackOrderPage() {
                     </p>
                   </div>
                 )}
+                {["Paid", "Completed", "Fulfilled", "Shipped", "Delivered"].includes(order.status) && <div className="mt-6"><SiteReviewPrompt orderId={order.id} /></div>}
               </div>
             </div>
           )}
