@@ -186,6 +186,89 @@ function currentTimestamp() {
   return new Date().toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "");
 }
 
+type ReviewProductIdentifiers = {
+  id: string;
+  handle: string | null;
+  sku: string;
+  supplierSku: string | null;
+  supplierProductId: string | null;
+};
+type ReviewOrder = {
+  id: string;
+  orderNumber: string | null;
+  userId: string;
+  customerEmail: string | null;
+  customerName: string | null;
+  status: string;
+  fulfillmentStatus: string;
+  itemsJson: string;
+};
+type ReviewOrderItem = {
+  orderId: string;
+  productId: string | null;
+  supplierSku: string | null;
+  variantDetails: string | null;
+};
+
+function isReviewableOrder(order: Pick<ReviewOrder, "status" | "fulfillmentStatus">) {
+  return ["paid", "completed", "fulfilled", "shipped", "delivered"].includes(order.status.toLowerCase())
+    || order.fulfillmentStatus.toLowerCase() === "delivered";
+}
+
+function orderContainsProduct(order: ReviewOrder, lines: ReviewOrderItem[], identifiers: Set<string>) {
+  if (lines.some((line) => (line.productId && identifiers.has(line.productId.toLowerCase()))
+    || [line.supplierSku, line.variantDetails].some((value) => value && identifiers.has(value.trim().toLowerCase())))) {
+    return true;
+  }
+  try {
+    const items: unknown = JSON.parse(order.itemsJson);
+    if (!Array.isArray(items)) return false;
+    return items.some((item: unknown) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+      const record = item as Record<string, unknown>;
+      return ["product_id", "productId", "product_slug", "productSlug", "slug", "sku", "variant_id", "variantId"]
+        .some((key) => typeof record[key] === "string" && identifiers.has((record[key] as string).trim().toLowerCase()));
+    });
+  } catch {
+    return false;
+  }
+}
+
+async function reviewProductIdentifiers(db: ReturnType<typeof createDb>, product: ReviewProductIdentifiers) {
+  const productVariants = await db.select({ id: variants.id, sku: variants.sku }).from(variants).where(eq(variants.productId, product.id));
+  return new Set([
+    product.id,
+    product.handle,
+    product.sku,
+    product.supplierSku,
+    product.supplierProductId,
+    ...productVariants.flatMap((variant) => [variant.id, variant.sku]),
+  ]
+    .filter((value): value is string => !!value)
+    .map((value) => value.trim().toLowerCase()));
+}
+
+async function reviewOrderLines(db: ReturnType<typeof createDb>, orderIds: string[]): Promise<ReviewOrderItem[]> {
+  if (!orderIds.length) return [];
+  return db.select({
+    orderId: orderItems.orderId,
+    productId: orderItems.productId,
+    supplierSku: orderItems.supplierSku,
+    variantDetails: orderItems.variantDetails,
+  }).from(orderItems).where(inArray(orderItems.orderId, orderIds));
+}
+
+function reviewPhotoKeys(imagesJson: string) {
+  let images: unknown;
+  try { images = JSON.parse(imagesJson); } catch { return []; }
+  if (!Array.isArray(images)) return [];
+  return images.flatMap((image) => {
+    if (typeof image !== "string") return [];
+    const match = image.match(/^\/api\/assets\/([a-f\d-]+\.(?:jpg|png|webp))$/i);
+    return match ? [match[1]] : [];
+  });
+}
+
 async function bodyAsJson(request: Request) {
   const contentLength = Number(request.headers.get("content-length") || 0);
   if (contentLength > 2 * 1024 * 1024) {
@@ -2952,7 +3035,13 @@ async function route(
     catch { throw new ApiError("Product was not found.", 404); }
     const currentUser = await getSessionUser(db, request);
     const identity = or(eq(products.id, productKey), eq(products.handle, productKey));
-    const [product] = await db.select({ id: products.id })
+    const [product] = await db.select({
+      id: products.id,
+      handle: products.handle,
+      sku: products.sku,
+      supplierSku: products.supplierSku,
+      supplierProductId: products.supplierProductId,
+    })
       .from(products)
       .where(isConfiguredAdmin(currentUser, env) ? identity : and(eq(products.isListed, true), identity))
       .limit(1);
@@ -2965,8 +3054,12 @@ async function route(
         rating: productReviews.rating,
         title: productReviews.title,
         comment: productReviews.comment,
+        images: productReviews.images,
         created_at: productReviews.createdAt,
+        verified_purchase: sql<boolean>`CASE WHEN lower(${orders.status}) IN ('paid', 'completed', 'fulfilled', 'shipped', 'delivered')
+          OR lower(${orders.fulfillmentStatus}) = 'delivered' THEN 1 ELSE 0 END`,
       }).from(productReviews)
+        .innerJoin(orders, eq(orders.id, productReviews.orderId))
         .where(and(eq(productReviews.productId, product.id), eq(productReviews.status, "published")))
         .orderBy(desc(productReviews.createdAt))
         .limit(100);
@@ -2975,76 +3068,171 @@ async function route(
         reviewCount: sql<number>`COUNT(*)`,
       }).from(productReviews)
         .where(and(eq(productReviews.productId, product.id), eq(productReviews.status, "published")));
-      const eligibleOrders = currentUser
-        ? await db.select({ id: orders.id, order_number: orders.orderNumber })
-          .from(orders)
-          .innerJoin(orderItems, eq(orderItems.orderId, orders.id))
-          .where(and(
-            eq(orders.userId, currentUser.id),
-            eq(orderItems.productId, product.id),
-            or(inArray(orders.status, ["Paid", "Completed", "Fulfilled", "Shipped", "Delivered"]), eq(orders.fulfillmentStatus, "delivered")),
-            sql`NOT EXISTS (
-              SELECT 1 FROM product_reviews
-              WHERE product_reviews.product_id = ${product.id}
-                AND product_reviews.user_id = ${currentUser.id}
-                AND product_reviews.order_id = ${orders.id}
-            )`,
-          ))
+      let eligibleOrders: { id: string; order_number: string | null }[] = [];
+      if (currentUser) {
+        const identifiers = await reviewProductIdentifiers(db, product);
+        const ownedOrders = await db.select({
+          id: orders.id,
+          orderNumber: orders.orderNumber,
+          userId: orders.userId,
+          customerEmail: orders.customerEmail,
+          customerName: orders.customerName,
+          status: orders.status,
+          fulfillmentStatus: orders.fulfillmentStatus,
+          itemsJson: orders.itemsJson,
+        }).from(orders)
+          .where(eq(orders.userId, currentUser.id))
           .orderBy(desc(orders.createdAt))
-          .limit(50)
-        : [];
+          .limit(200);
+        const reviewableOrders = ownedOrders.filter(isReviewableOrder);
+        const lines = await reviewOrderLines(db, reviewableOrders.map((order) => order.id));
+        const linesByOrder = new Map<string, ReviewOrderItem[]>();
+        lines.forEach((line) => linesByOrder.set(line.orderId, [...(linesByOrder.get(line.orderId) ?? []), line]));
+        const matchedOrderIds = reviewableOrders
+          .filter((order) => orderContainsProduct(order, linesByOrder.get(order.id) ?? [], identifiers))
+          .map((order) => order.id);
+        const existingOrderIds = matchedOrderIds.length
+          ? await db.select({ orderId: productReviews.orderId }).from(productReviews)
+            .where(and(eq(productReviews.productId, product.id), inArray(productReviews.orderId, matchedOrderIds)))
+          : [];
+        const reviewedIds = new Set(existingOrderIds.map((entry) => entry.orderId));
+        eligibleOrders = reviewableOrders
+          .filter((order) => matchedOrderIds.includes(order.id) && !reviewedIds.has(order.id))
+          .slice(0, 50)
+          .map((order) => ({ id: order.id, order_number: order.orderNumber }));
+      }
       return json({
-        reviews,
+        reviews: reviews.map((review) => ({
+          ...review,
+          images: (() => {
+            try {
+              const parsed: unknown = JSON.parse(review.images);
+              return Array.isArray(parsed) ? parsed.filter((image): image is string => typeof image === "string") : [];
+            } catch { return []; }
+          })(),
+        })),
         averageRating: Number(ratingStats?.averageRating ?? 0),
         reviewCount: Number(ratingStats?.reviewCount ?? 0),
         eligibleOrders,
       }, 200, { "Cache-Control": "no-store" });
     }
 
-    if (!currentUser) throw new ApiError("Sign in to review this product.", 401);
-    const body = await bodyAsJson(request);
-    const orderId = requiredString(body.order_id, "Order id", 100);
+    const isMultipart = request.headers.get("content-type")?.toLowerCase().includes("multipart/form-data") ?? false;
+    let body: Record<string, unknown>;
+    let photoFiles: File[] = [];
+    if (isMultipart) {
+      const contentLength = Number(request.headers.get("content-length") || 0);
+      if (contentLength > 22 * 1024 * 1024) throw new ApiError("Review photos must total 22 MB or less.", 413);
+      const form = await request.formData();
+      body = Object.fromEntries([...form.entries()].filter(([, value]) => typeof value === "string")) as Record<string, unknown>;
+      photoFiles = form.getAll("images").filter((file): file is File => typeof file !== "string" && file.size > 0);
+      if (photoFiles.length > 4) throw new ApiError("Attach no more than 4 photos to a review.", 400);
+    } else {
+      body = await bodyAsJson(request);
+    }
+
+    const orderNumber = typeof body.order_number === "string" ? body.order_number.trim() : "";
+    const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+    let purchaseOrder: ReviewOrder | undefined;
+    if (currentUser && typeof body.order_id === "string" && body.order_id.trim()) {
+      [purchaseOrder] = await db.select({
+        id: orders.id,
+        orderNumber: orders.orderNumber,
+        userId: orders.userId,
+        customerEmail: orders.customerEmail,
+        customerName: orders.customerName,
+        status: orders.status,
+        fulfillmentStatus: orders.fulfillmentStatus,
+        itemsJson: orders.itemsJson,
+      }).from(orders).where(and(eq(orders.id, body.order_id.trim()), eq(orders.userId, currentUser.id))).limit(1);
+    } else if (orderNumber && email) {
+      [purchaseOrder] = await db.select({
+        id: orders.id,
+        orderNumber: orders.orderNumber,
+        userId: orders.userId,
+        customerEmail: orders.customerEmail,
+        customerName: orders.customerName,
+        status: orders.status,
+        fulfillmentStatus: orders.fulfillmentStatus,
+        itemsJson: orders.itemsJson,
+      }).from(orders).where(and(
+        sql`lower(${orders.orderNumber}) = ${orderNumber.toLowerCase()}`,
+        sql`lower(${orders.customerEmail}) = ${email}`,
+      )).limit(1);
+    } else if (!currentUser) {
+      throw new ApiError("Sign in, or verify your purchase with its order number and email address.", 401);
+    }
+    if (!purchaseOrder || !isReviewableOrder(purchaseOrder)) {
+      throw new ApiError("A paid order and matching order number/email are required to submit a review.", 403);
+    }
+    const identifiers = await reviewProductIdentifiers(db, product);
+    const purchaseLines = await reviewOrderLines(db, [purchaseOrder.id]);
+    if (!orderContainsProduct(purchaseOrder, purchaseLines, identifiers)) {
+      throw new ApiError("This order does not contain the selected product.", 403);
+    }
     const rating = Number(body.rating);
     if (!Number.isInteger(rating) || rating < 1 || rating > 5) throw new ApiError("Rating must be a whole number from 1 to 5.", 400);
     const title = body.title === undefined || body.title === null || body.title === ""
       ? null
       : requiredString(body.title, "Review headline", 120);
     const comment = requiredString(body.comment, "Review comment", 2000);
-    const [purchase] = await db.select({ id: orders.id })
-      .from(orders)
-      .innerJoin(orderItems, eq(orderItems.orderId, orders.id))
-      .where(and(
-        eq(orders.id, orderId),
-        eq(orders.userId, currentUser.id),
-        eq(orderItems.productId, product.id),
-        or(inArray(orders.status, ["Paid", "Completed", "Fulfilled", "Shipped", "Delivered"]), eq(orders.fulfillmentStatus, "delivered")),
-      ))
-      .limit(1);
-    if (!purchase) throw new ApiError("A paid order containing this product is required to submit a review.", 403);
     const [existingReview] = await db.select({ id: productReviews.id }).from(productReviews)
       .where(and(
         eq(productReviews.productId, product.id),
-        eq(productReviews.userId, currentUser.id),
-        eq(productReviews.orderId, orderId),
+        eq(productReviews.orderId, purchaseOrder.id),
       ))
       .limit(1);
     if (existingReview) throw new ApiError("You have already reviewed this product for that order.", 409);
 
-    const customerName = currentUser.fullName?.trim() || currentUser.email.split("@")[0];
+    const customerName = purchaseOrder.customerName?.trim()
+      || (currentUser?.id === purchaseOrder.userId ? currentUser.fullName?.trim() : "")
+      || purchaseOrder.customerEmail?.split("@")[0]
+      || "Verified buyer";
+    const imageUrls: string[] = [];
+    if (photoFiles.length && !env.PRODUCT_ASSETS) {
+      throw new ApiError("Review photo storage is not configured for this deployment.", 503);
+    }
+    const uploadedKeys: string[] = [];
+    try {
+      for (const file of photoFiles) {
+        const extensions: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+        const extension = extensions[file.type];
+        if (!extension) throw new ApiError("Review photos must be JPG, PNG, or WebP images.", 400);
+        if (file.size > 5 * 1024 * 1024) throw new ApiError("Each review photo must be 5 MB or smaller.", 413);
+        const content = new Uint8Array(await file.arrayBuffer());
+        const validSignature = file.type === "image/jpeg"
+          ? content[0] === 0xff && content[1] === 0xd8 && content[2] === 0xff
+          : file.type === "image/png"
+            ? content.subarray(0, 8).join(",") === "137,80,78,71,13,10,26,10"
+            : content.length >= 12
+                && String.fromCharCode(...content.subarray(0, 4)) === "RIFF"
+                && String.fromCharCode(...content.subarray(8, 12)) === "WEBP";
+        if (!validSignature) throw new ApiError("A selected file is not a valid JPG, PNG, or WebP photo.", 400);
+        const key = `${crypto.randomUUID()}.${extension}`;
+        await env.PRODUCT_ASSETS!.put(key, content, { httpMetadata: { contentType: file.type } });
+        uploadedKeys.push(key);
+        imageUrls.push(`/api/assets/${key}`);
+      }
+    } catch (error) {
+      if (uploadedKeys.length) await env.PRODUCT_ASSETS?.delete(uploadedKeys);
+      throw error;
+    }
     const review = {
       id: crypto.randomUUID(),
       productId: product.id,
-      userId: currentUser.id,
-      orderId,
+      userId: purchaseOrder.userId,
+      orderId: purchaseOrder.id,
       customerName: requiredString(customerName, "Customer name", 100),
       rating,
       title,
       comment,
+      images: JSON.stringify(imageUrls),
       createdAt: currentTimestamp(),
     };
     try {
       await db.insert(productReviews).values(review);
     } catch (error) {
+      if (uploadedKeys.length) await env.PRODUCT_ASSETS?.delete(uploadedKeys);
       if (errorMessage(error).toLowerCase().includes("unique")) {
         throw new ApiError("You have already reviewed this product for that order.", 409);
       }
@@ -3057,6 +3245,8 @@ async function route(
         rating: review.rating,
         title: review.title,
         comment: review.comment,
+        images: imageUrls,
+        verified_purchase: true,
         created_at: review.createdAt,
       },
     }, 201);
@@ -4376,6 +4566,7 @@ async function route(
       rating: productReviews.rating,
       title: productReviews.title,
       comment: productReviews.comment,
+      images: productReviews.images,
       status: productReviews.status,
       created_at: productReviews.createdAt,
     }).from(productReviews)
@@ -4416,6 +4607,14 @@ async function route(
   if (productReviewAdminRoute && method === "DELETE") {
     await requireAdmin(db, request, env);
     const reviewId = decodeURIComponent(productReviewAdminRoute[1]);
+    const [existingReview] = await db.select({ images: productReviews.images })
+      .from(productReviews).where(eq(productReviews.id, reviewId)).limit(1);
+    if (!existingReview) throw new ApiError("Product review was not found.", 404);
+    const imageKeys = reviewPhotoKeys(existingReview.images);
+    if (imageKeys.length && !env.PRODUCT_ASSETS) {
+      throw new ApiError("Review photo storage is unavailable; the review was not deleted.", 503);
+    }
+    if (imageKeys.length) await env.PRODUCT_ASSETS!.delete(imageKeys);
     const [review] = await db.delete(productReviews).where(eq(productReviews.id, reviewId))
       .returning({ id: productReviews.id });
     if (!review) throw new ApiError("Product review was not found.", 404);

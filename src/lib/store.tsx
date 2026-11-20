@@ -71,7 +71,7 @@ type StoreContextValue = {
   toggleWishlist: (id: string, product: CartProduct) => void;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, fullName: string) => Promise<void>;
-  signOut: () => Promise<void>;
+  signOut: (reason?: "inactivity") => Promise<void>;
   saveDeliveryAddress: (deliveryAddress: DeliveryAddress) => Promise<void>;
   prepareCheckout: () => Promise<CheckoutSummary>;
   checkout: (expectedTotal: number, expectedYocoMode: CheckoutSummary["yocoMode"]) => Promise<void>;
@@ -327,10 +327,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     establishSession("/auth/signup", email, password, fullName)
   ), [establishSession]);
 
-  const signOut = useCallback(async () => {
-    await request("/auth/signout", { method: "POST" });
-    setUser(null);
-    toast.success("You have signed out.");
+  const signOut = useCallback(async (reason?: "inactivity") => {
+    let completed = false;
+    try {
+      await request("/auth/logout", { method: "POST" });
+      completed = true;
+    } finally {
+      setUser(null);
+      setAuthOpen(false);
+      if (reason === "inactivity") toast.message("You were signed out due to inactivity.");
+      else if (completed) toast.success("You have signed out.");
+    }
   }, []);
 
   const saveDeliveryAddress = useCallback(async (deliveryAddress: DeliveryAddress) => {

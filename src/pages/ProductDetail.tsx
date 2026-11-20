@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Check, ChevronRight, Star, Truck } from "lucide-react";
+import { Camera, Check, ChevronRight, Star, Truck, X } from "lucide-react";
 import { Footer } from "@/components/Footer";
 import { Header } from "@/components/Header";
 import { useStore } from "@/lib/store";
@@ -44,6 +44,8 @@ type ProductReview = {
   rating: number;
   title: string | null;
   comment: string;
+  images: string[];
+  verified_purchase: boolean;
   created_at: string;
 };
 type ProductReviewsData = {
@@ -78,9 +80,37 @@ function priceText(value: number) {
   return new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR" }).format(value);
 }
 
+async function compressReviewPhoto(file: File) {
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+    throw new Error("Choose JPG, PNG, or WebP photos.");
+  }
+  if (file.size > 20 * 1024 * 1024) throw new Error("Each selected photo must be 20 MB or smaller.");
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  const context = canvas.getContext("2d");
+  if (!context) {
+    bitmap.close();
+    throw new Error("This photo could not be prepared for upload.");
+  }
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  const compressed = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("This photo could not be compressed.")), "image/webp", 0.82);
+  });
+  if (compressed.size > 5 * 1024 * 1024) throw new Error("A photo is still larger than 5 MB after compression.");
+  if (!["image/jpeg", "image/png", "image/webp"].includes(compressed.type)) {
+    throw new Error("This browser could not compress the photo to a supported image format.");
+  }
+  const extension = compressed.type === "image/jpeg" ? "jpg" : compressed.type === "image/png" ? "png" : "webp";
+  return new File([compressed], `${file.name.replace(/\.[^.]+$/, "")}.${extension}`, { type: compressed.type });
+}
+
 export function ProductDetailPage() {
   const { productKey = "" } = useParams();
-  const { addToCart, setCartOpen, user, setAuthOpen, storefrontCategories } = useStore();
+  const { addToCart, setCartOpen, user, setAuthOpen, setAuthMode, storefrontCategories } = useStore();
   const [data, setData] = useState<ProductDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -92,14 +122,18 @@ export function ProductDetailPage() {
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewTitle, setReviewTitle] = useState("");
   const [reviewComment, setReviewComment] = useState("");
+  const [reviewPhotos, setReviewPhotos] = useState<File[]>([]);
+  const [reviewFormOpen, setReviewFormOpen] = useState(false);
+  const [activeReviewImage, setActiveReviewImage] = useState<string | null>(null);
   const [reviewError, setReviewError] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
   const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
+  const reviewFormRef = useRef<HTMLFormElement>(null);
 
   const loadReviews = async (key: string) => {
     const result = await apiRequest<ProductReviewsData>(`/products/${encodeURIComponent(key)}/reviews`);
     setReviewsData(result);
-    setReviewOrderId((current) => current || result.eligibleOrders[0]?.id || "");
+    setReviewOrderId(result.eligibleOrders[0]?.id || "");
   };
 
   useEffect(() => {
@@ -125,23 +159,59 @@ export function ProductDetailPage() {
     void loadReviews(productKey).catch(() => setReviewsData({ reviews: [], averageRating: 0, reviewCount: 0, eligibleOrders: [] }));
   }, [productKey, user?.id]);
 
-  async function submitProductReview(event: FormEvent) {
-    event.preventDefault();
+  const reviewPhotoPreviews = useMemo(() => reviewPhotos.map((file) => URL.createObjectURL(file)), [reviewPhotos]);
+  useEffect(() => () => reviewPhotoPreviews.forEach((url) => URL.revokeObjectURL(url)), [reviewPhotoPreviews]);
+
+  function openReviewForm() {
+    setReviewFormOpen(true);
     if (!user) {
+      setAuthMode("signin");
       setAuthOpen(true);
+    }
+    window.setTimeout(() => reviewFormRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+  }
+
+  function selectReviewPhotos(files: FileList | null) {
+    if (!files) return;
+    const selected = Array.from(files);
+    if (selected.length > 4) {
+      setReviewError("Choose up to 4 photos.");
       return;
     }
-    if (!reviewOrderId) return;
+    setReviewError("");
+    setReviewPhotos(selected);
+  }
+
+  async function submitProductReview(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const needsGuestVerification = !user || reviewsData.eligibleOrders.length === 0;
+    const form = event.currentTarget;
+    const orderNumber = (form.elements.namedItem("order_number") as HTMLInputElement | null)?.value.trim();
+    const email = (form.elements.namedItem("review_email") as HTMLInputElement | null)?.value.trim();
+    if (!needsGuestVerification && !reviewOrderId) return;
     setSubmittingReview(true);
     setReviewError("");
     try {
+      const body = new FormData();
+      body.set("rating", String(reviewRating));
+      body.set("title", reviewTitle);
+      body.set("comment", reviewComment);
+      if (needsGuestVerification) {
+        body.set("order_number", orderNumber ?? "");
+        body.set("email", email ?? "");
+      } else {
+        body.set("order_id", reviewOrderId);
+      }
+      for (const photo of reviewPhotos) body.append("images", await compressReviewPhoto(photo));
       await apiRequest(`/products/${encodeURIComponent(productKey)}/reviews`, {
         method: "POST",
-        body: JSON.stringify({ order_id: reviewOrderId, rating: reviewRating, title: reviewTitle, comment: reviewComment }),
+        body,
       });
       setReviewTitle("");
       setReviewComment("");
       setReviewOrderId("");
+      setReviewPhotos([]);
+      setReviewFormOpen(false);
       await loadReviews(productKey);
     } catch (reason) {
       setReviewError(reason instanceof Error ? reason.message : "Could not submit your review.");
@@ -409,34 +479,77 @@ export function ProductDetailPage() {
           <section className="mt-14 border-t border-neutral-200 pt-10">
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div><p className="eyebrow">Customer reviews</p><h2 className="mt-2 text-2xl font-bold">Reviews for {data.product.title}</h2></div>
-              <div className="flex items-center gap-2 text-sm text-neutral-600">
-                <span className="flex text-amber-500">{Array.from({ length: 5 }, (_, index) => <Star key={index} className={`h-4 w-4 ${index < Math.round(reviewsData.averageRating) ? "fill-current" : ""}`} />)}</span>
-                <span>{reviewsData.reviewCount ? `${reviewsData.averageRating.toFixed(1)} · ${reviewsData.reviewCount} review${reviewsData.reviewCount === 1 ? "" : "s"}` : "No reviews yet"}</span>
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2 text-sm text-neutral-600">
+                  <span className="flex text-amber-500">{Array.from({ length: 5 }, (_, index) => <Star key={index} className={`h-4 w-4 ${index < Math.round(reviewsData.averageRating) ? "fill-current" : ""}`} />)}</span>
+                  <span>{reviewsData.reviewCount ? `${reviewsData.averageRating.toFixed(1)} · ${reviewsData.reviewCount} review${reviewsData.reviewCount === 1 ? "" : "s"}` : "No reviews yet"}</span>
+                </div>
+                <button type="button" onClick={openReviewForm} className="btn-primary">Write a Review</button>
               </div>
             </div>
-            {reviewsData.eligibleOrders.length > 0 ? <form onSubmit={(event) => void submitProductReview(event)} className="mt-6 rounded-2xl border border-neutral-200 bg-white p-5">
-              <h3 className="font-semibold">Share your experience as a verified buyer</h3>
+            {reviewsData.reviews.some((review) => review.images.length > 0) && <div className="mt-7">
+              <h3 className="text-sm font-semibold">Customer Photos</h3>
+              <div className="mt-3 flex gap-3 overflow-x-auto pb-2">
+                {reviewsData.reviews.flatMap((review) => review.images.map((image, index) => (
+                  <button key={`${review.id}-${index}`} type="button" onClick={() => setActiveReviewImage(image)} aria-label="View customer photo" className="h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-neutral-200">
+                    <img src={image} alt={`Customer photo ${index + 1}`} className="h-full w-full object-cover" />
+                  </button>
+                )))}
+              </div>
+            </div>}
+            {reviewFormOpen && <form ref={reviewFormRef} onSubmit={(event) => void submitProductReview(event)} className="mt-6 rounded-2xl border border-neutral-200 bg-white p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div><h3 className="font-semibold">Share your experience</h3><p className="mt-1 text-sm text-neutral-500">Reviews are verified against a completed order.</p></div>
+                <button type="button" onClick={() => setReviewFormOpen(false)} aria-label="Close review form" className="rounded-full p-2 text-neutral-500 hover:bg-neutral-100"><X className="h-4 w-4" /></button>
+              </div>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <label className="text-sm font-medium">Purchased in order
+                {!user || reviewsData.eligibleOrders.length === 0 ? <>
+                  <label className="text-sm font-medium">Order number
+                    <input required name="order_number" autoComplete="off" className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" placeholder="Enter your order number" />
+                  </label>
+                  <label className="text-sm font-medium">Purchase email
+                    <input required type="email" name="review_email" autoComplete="email" className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" placeholder="Email used at checkout" />
+                  </label>
+                </> : <label className="text-sm font-medium">Purchased in order
                   <select required value={reviewOrderId} onChange={(event) => setReviewOrderId(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 bg-white px-3">
                     {reviewsData.eligibleOrders.map((order) => <option key={order.id} value={order.id}>{order.order_number || order.id}</option>)}
                   </select>
-                </label>
+                </label>}
                 <div><span className="text-sm font-medium">Your rating</span><div className="mt-2 flex gap-1">{[1, 2, 3, 4, 5].map((value) => <button key={value} type="button" onClick={() => setReviewRating(value)} aria-label={`${value} stars`} aria-pressed={reviewRating === value} className="p-1 text-amber-500"><Star className={`h-5 w-5 ${value <= reviewRating ? "fill-current" : ""}`} /></button>)}</div></div>
               </div>
+              {!user && <button type="button" onClick={() => { setAuthMode("signin"); setAuthOpen(true); }} className="mt-3 text-sm font-medium text-neutral-700 underline">Sign in instead</button>}
               <label className="mt-4 block text-sm font-medium">Headline (optional)<input maxLength={120} value={reviewTitle} onChange={(event) => setReviewTitle(event.target.value)} className="mt-1.5 h-11 w-full rounded-xl border border-neutral-300 px-3" /></label>
               <label className="mt-4 block text-sm font-medium">Review<textarea required maxLength={2000} rows={4} value={reviewComment} onChange={(event) => setReviewComment(event.target.value)} className="mt-1.5 w-full rounded-xl border border-neutral-300 px-3 py-2" /></label>
+              <div className="mt-4">
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50">
+                  <Camera className="h-4 w-4" /> Add photos (up to 4)
+                  <input type="file" accept="image/jpeg,image/png,image/webp" multiple className="sr-only" onChange={(event) => { selectReviewPhotos(event.target.files); event.target.value = ""; }} />
+                </label>
+                {reviewPhotos.length > 0 && <div className="mt-3 flex flex-wrap gap-3">
+                  {reviewPhotos.map((photo, index) => <div key={`${photo.name}-${index}`} className="relative h-20 w-20 overflow-hidden rounded-xl border border-neutral-200">
+                    <img src={reviewPhotoPreviews[index]} alt={`Selected photo ${index + 1}`} className="h-full w-full object-cover" />
+                    <button type="button" onClick={() => setReviewPhotos((current) => current.filter((_, photoIndex) => photoIndex !== index))} aria-label={`Remove photo ${index + 1}`} className="absolute right-1 top-1 rounded-full bg-white/90 p-1"><X className="h-3 w-3" /></button>
+                  </div>)}
+                </div>}
+              </div>
               {reviewError && <p role="alert" className="mt-3 text-sm text-red-700">{reviewError}</p>}
               <button type="submit" disabled={submittingReview || !reviewComment.trim()} className="btn-primary mt-4 disabled:opacity-50">{submittingReview ? "Submitting…" : "Submit review"}</button>
-            </form> : !user ? <p className="mt-5 text-sm text-neutral-600">Sign in after purchasing to leave a verified-buyer review.</p> : null}
+            </form>}
             <div className="mt-6 space-y-4">
               {reviewsData.reviews.map((review) => <article key={review.id} className="rounded-2xl border border-neutral-200 bg-white p-5">
-                <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="font-semibold">{review.title || "Customer review"}</p><p className="mt-1 text-xs text-neutral-500">{review.customer_name} <span className="ml-2 rounded-full bg-emerald-50 px-2 py-1 font-semibold text-emerald-700">Verified Buyer</span></p></div><div className="flex text-amber-500" aria-label={`${review.rating} out of 5 stars`}>{Array.from({ length: 5 }, (_, index) => <Star key={index} className={`h-4 w-4 ${index < review.rating ? "fill-current" : ""}`} />)}</div></div>
+                <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="font-semibold">{review.title || "Customer review"}</p><p className="mt-1 text-xs text-neutral-500">{review.customer_name} {review.verified_purchase && <span className="ml-2 rounded-full bg-emerald-50 px-2 py-1 font-semibold text-emerald-700">Verified Purchase</span>}</p></div><div className="flex text-amber-500" aria-label={`${review.rating} out of 5 stars`}>{Array.from({ length: 5 }, (_, index) => <Star key={index} className={`h-4 w-4 ${index < review.rating ? "fill-current" : ""}`} />)}</div></div>
                 <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-neutral-700">{review.comment}</p>
+                {review.images.length > 0 && <div className="mt-4 flex flex-wrap gap-2">{review.images.map((image, index) => <button key={`${review.id}-${index}`} type="button" onClick={() => setActiveReviewImage(image)} aria-label="View customer photo" className="h-20 w-20 overflow-hidden rounded-xl border border-neutral-200"><img src={image} alt={`Review photo ${index + 1}`} className="h-full w-full object-cover" /></button>)}</div>}
               </article>)}
-              {reviewsData.reviewCount === 0 && <p className="rounded-2xl bg-white p-5 text-sm text-neutral-500">Be the first to review this product.</p>}
+              {reviewsData.reviewCount === 0 && <button type="button" onClick={openReviewForm} className="w-full rounded-2xl bg-white p-5 text-left text-sm text-neutral-500 transition hover:bg-neutral-50 hover:text-neutral-800">Be the first to review this product.</button>}
             </div>
           </section>
+          {activeReviewImage && <div className="fixed inset-0 z-[130] grid place-items-center bg-black/80 p-4" role="presentation" onMouseDown={() => setActiveReviewImage(null)}>
+            <section role="dialog" aria-modal="true" aria-label="Customer photo" className="relative max-h-[90vh] max-w-5xl" onMouseDown={(event) => event.stopPropagation()}>
+              <button type="button" onClick={() => setActiveReviewImage(null)} aria-label="Close customer photo" className="absolute -right-3 -top-3 z-10 rounded-full bg-white p-2 text-neutral-800 shadow"><X className="h-5 w-5" /></button>
+              <img src={activeReviewImage} alt="Customer-submitted product photo" className="max-h-[85vh] max-w-full rounded-xl object-contain" />
+            </section>
+          </div>}
           </>
         )}
       </main>

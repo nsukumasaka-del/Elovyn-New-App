@@ -127,11 +127,13 @@ export function readSessionToken(request: Request) {
 
 export async function createSession(db: StoreDb, user: StoreUser) {
   const token = randomToken(32);
+  const now = Math.floor(Date.now() / 1000);
   await db.insert(sessions).values({
     id: crypto.randomUUID(),
     tokenHash: await digest(token),
     userId: user.id,
-    expiresAt: Math.floor(Date.now() / 1000) + sessionLifetimeSeconds,
+    expiresAt: now + sessionLifetimeSeconds,
+    lastActiveAt: now,
   });
   return { token, maxAge: sessionLifetimeSeconds };
 }
@@ -140,13 +142,39 @@ export async function getSessionUser(db: StoreDb, request: Request): Promise<Sto
   const token = readSessionToken(request);
   if (!token) return null;
   const tokenHash = await digest(token);
-  const rows = await db
-    .select({ id: users.id, email: users.email, role: users.role, fullName: users.fullName, deliveryAddressJson: users.deliveryAddressJson })
+  const [session] = await db
+    .select({
+      sessionId: sessions.id,
+      lastActiveAt: sessions.lastActiveAt,
+      id: users.id,
+      email: users.email,
+      role: users.role,
+      fullName: users.fullName,
+      deliveryAddressJson: users.deliveryAddressJson,
+    })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
     .where(and(eq(sessions.tokenHash, tokenHash), gt(sessions.expiresAt, sql`unixepoch()`)))
     .limit(1);
-  return rows[0] ?? null;
+  if (!session) return null;
+
+  const now = Math.floor(Date.now() / 1000);
+  const idleLifetime = session.role === "admin" ? 15 * 60 : 30 * 60;
+  if (now - session.lastActiveAt >= idleLifetime) {
+    await db.delete(sessions).where(eq(sessions.id, session.sessionId));
+    return null;
+  }
+  const [activeSession] = await db.update(sessions)
+    .set({ lastActiveAt: now })
+    .where(and(
+      eq(sessions.id, session.sessionId),
+      gt(sessions.expiresAt, now),
+      gt(sessions.lastActiveAt, now - idleLifetime),
+    ))
+    .returning({ id: sessions.id });
+  if (!activeSession) return null;
+  const { sessionId: _sessionId, lastActiveAt: _lastActiveAt, ...user } = session;
+  return user;
 }
 
 export async function deleteSession(db: StoreDb, request: Request) {

@@ -12,6 +12,7 @@ type ProductReview = {
   rating: number;
   title: string | null;
   comment: string;
+  images: string;
   status: "published" | "hidden";
   created_at: string;
 };
@@ -83,6 +84,13 @@ export function AdminReviewsPanel() {
         {productReviews.map((review) => <article key={review.id} className="py-4">
           <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold">{review.title || review.product_title} <span className="text-amber-600">{"★".repeat(review.rating)}</span></p><p className="mt-1 text-xs text-neutral-500">{review.customer_name} · {review.product_title} · {review.order_number || review.order_id}</p></div><div className="flex gap-2"><button type="button" onClick={() => void updateProductReview(review, review.status === "published" ? "hidden" : "published")} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium">{review.status === "published" ? "Hide" : "Publish"}</button><button type="button" onClick={() => void deleteReview("product", review.id)} className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700">Delete</button></div></div>
           <p className="mt-2 whitespace-pre-wrap text-sm text-neutral-700">{review.comment}</p>
+          {(() => {
+            let images: unknown;
+            try { images = JSON.parse(review.images); } catch { images = []; }
+            return Array.isArray(images) && images.some((image) => typeof image === "string")
+              ? <div className="mt-3 flex flex-wrap gap-2">{images.filter((image): image is string => typeof image === "string").map((image, index) => <a key={`${review.id}-${index}`} href={image} target="_blank" rel="noreferrer" aria-label="Open customer review photo"><img src={image} alt={`Review photo ${index + 1}`} className="h-16 w-16 rounded-lg border border-neutral-200 object-cover" /></a>)}</div>
+              : null;
+          })()}
         </article>)}
       </div>}
     </section>

@@ -19,6 +19,7 @@ export const sessions = sqliteTable("sessions", {
   tokenHash: text("token_hash").notNull().unique(),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   expiresAt: integer("expires_at").notNull(),
+  lastActiveAt: integer("last_active_at").notNull().default(0),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   index("sessions_expires_at_idx").on(table.expiresAt),
@@ -291,6 +292,7 @@ export const productReviews = sqliteTable("product_reviews", {
   rating: integer("rating").notNull(),
   title: text("title"),
   comment: text("comment").notNull(),
+  images: text("images").notNull().default("[]"),
   status: text("status", { enum: ["published", "hidden"] }).notNull().default("published"),
   createdAt: text("created_at").notNull(),
 }, (table) => [

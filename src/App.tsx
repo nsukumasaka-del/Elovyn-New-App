@@ -16,6 +16,24 @@ import { RouteScrollManager } from "./components/RouteScrollManager";
 import { BrixyChat } from "./components/BrixyChat";
 import { CookieConsent } from "@/components/CookieConsent";
 import { StoreInformationPage } from "./pages/StoreInformation";
+import { useIdleTimeout } from "@/hooks/useIdleTimeout";
+
+function IdleTimeoutMonitor() {
+  const { warningOpen, staySignedIn, signOutNow } = useIdleTimeout();
+  if (!warningOpen) return null;
+  return (
+    <div className="fixed inset-0 z-[120] grid place-items-center bg-black/35 p-4" role="presentation">
+      <section role="dialog" aria-modal="true" aria-labelledby="idle-warning-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+        <h2 id="idle-warning-title" className="text-lg font-semibold">Still there?</h2>
+        <p className="mt-2 text-sm leading-6 text-neutral-600">You've been inactive for a while. For your security, you will be signed out in 60 seconds.</p>
+        <div className="mt-5 flex flex-wrap justify-end gap-3">
+          <button type="button" onClick={() => void signOutNow()} className="rounded-full border border-neutral-300 px-4 py-2 text-sm font-medium">Sign Out Now</button>
+          <button type="button" onClick={() => void staySignedIn()} className="btn-primary">Stay Signed In</button>
+        </div>
+      </section>
+    </div>
+  );
+}
 
 const queryClient = new QueryClient();
 
@@ -26,6 +44,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <StoreProvider>
+          <IdleTimeoutMonitor />
           <RouteScrollManager />
           <Routes>
             <Route path="/" element={<Index />} />
